@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Корзина — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<h2 class="section-title">Корзина</h2>
+
+{% if cart_items %}
+<div class="row">
+    <div class="col-md-8">
+        {% for item in cart_items %}
+        <div class="card mb-3 cart-item-card">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-2 col-4">
+                        {% if item.product.image %}
+                        <img src="{{ item.product.image.url }}" class="img-fluid rounded" alt="{{ item.product.name }}">
+                        {% else %}
+                        <div class="bg-light rounded d-flex align-items-center justify-content-center" style="height: 80px;">
+                            ☕
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-4 col-8">
+                        <h6 class="mb-1 cart-item-name">{{ item.product.name }}</h6>
+                        {% if item.coffee_weight_grams %}
+                        <small class="cart-item-params">
+                            {{ item.coffee_weight_grams }} г
+                            {% if item.coffee_form == 'ground' %}
+                            · молотый
+                            {% else %}
+                            · в зёрнах
+                            {% endif %}
+                            {% if item.brewing_method %}
+                            · {{ item.brewing_method }}
+                            {% endif %}
+                        </small>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-2 col-4 mt-2 mt-md-0">
+                        <strong>{{ item.unit_price|floatformat:2 }} ₽</strong>
+                    </div>
+                    <div class="col-md-2 col-4 mt-1 mt-md-0">
+                        x{{ item.quantity|default:1 }}
+                    </div>
+                    <div class="col-md-2 col-4 text-md-end mt-1 mt-md-0">
+                        <strong class="cart-item-price">{{ item.price|floatformat:2 }} ₽</strong>
+                        <button class="btn btn-sm text-danger ms-2 js-cart-remove" data-key="{{ forloop.counter }}" title="Удалить">
+                            ✕
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="mb-3">Итого</h5>
+                <h4 id="cartTotal" class="mb-3">{{ total|floatformat:2 }} ₽</h4>
+
+                <!-- Promo Code -->
+                <div class="mb-3">
+                    <input type="text" class="form-control form-control-sm" placeholder="Промокод" id="promoCodeInput">
+                    <button class="btn btn-coffee-outline btn-sm w-100 mt-2" id="applyPromoBtn">
+                        Применить
+                    </button>
+                </div>
+
+                <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee-outline w-100 mb-2">
+                    ← Продолжить покупки
+                </a>
+                <a href="{% url 'orders:checkout' %}" class="btn btn-coffee w-100">
+                    Оформить заказ →
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">🛒</div>
+    <h4>Корзина пуста</h4>
+    <p>Добавьте товары из каталога</p>
+    <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee">Перейти в каталог</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Promo code handler (placeholder)
+document.addEventListener('DOMContentLoaded', function() {
+    var applyBtn = document.getElementById('applyPromoBtn');
+    if (applyBtn) {
+        applyBtn.addEventListener('click', function() {
+            var code = document.getElementById('promoCodeInput').value.trim();
+            if (!code) {
+                CoffeeShop.showToast('Введите промокод', 'warning');
+                return;
+            }
+            // TODO: AJAX call to apply promo
+            CoffeeShop.showToast('Промокод применён!', 'success');
+        });
+    }
+});
+</script>
+{% endblock %}

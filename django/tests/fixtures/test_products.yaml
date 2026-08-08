@@ -1,0 +1,97 @@
+# Test fixtures for products
+- model: catalog.category
+  fields:
+    name: Эспрессо смеси
+    slug: espresso-blends
+    order: 1
+    is_active: true
+- model: catalog.category
+  fields:
+    name: Фильтр-кофе
+    slug: filter-coffee
+    parent: 1
+    order: 2
+    is_active: true
+- model: catalog.category
+  fields:
+    name:非 кофе товары
+    slug: non-coffee
+    order: 3
+    is_active: true
+- model: catalog.product
+  fields:
+    name: Бразилия Сантос
+    slug: brazil-santos
+    description: Классический бразильский кофе с ореховыми нотами
+    category: 1
+    product_type: coffee
+    price_per_50g: 500.00
+    base_price: 0.00
+    stock: 500
+    image: ''
+    is_available: true
+    allow_grinding: true
+    available_brewing_methods: [turka, espresso, geys, pourover, aeropress]
+    coffee_type: Арабика
+    roast_level: medium
+    origin_region: Бразилия, Сантос
+    processing_method: natural
+    sca_score: 85
+    tasting_notes: Ореховые ноты, шоколад, мягкое тело, средняя кислотность
+    is_active: true
+- model: catalog.product
+  fields:
+    name: Кения Аа
+    slug: kenya-aa
+    description: Яркий африканский кофе с фруктовыми нотами
+    category: 1
+    product_type: coffee
+    price_per_50g: 700.00
+    base_price: 0.00
+    stock: 300
+    image: ''
+    is_available: true
+    allow_grinding: true
+    available_brewing_methods: [pourover, chemex, aeropress]
+    coffee_type: Арабика Typica
+    roast_level: light
+    origin_region: Кения, регион Нyerbа
+    processing_method: washed
+    sca_score: 88
+    tasting_notes: Чёрная смородина, грейпфрут, вишнёвая кислота, чайное тело
+    is_active: true
+- model: catalog.product
+  fields:
+    name: Колумбия Супремо
+    slug: colombia-supremo
+    description: Сбалансированный колумбийский кофе
+    category: 1
+    product_type: coffee
+    price_per_50g: 600.00
+    base_price: 0.00
+    stock: 0
+    image: ''
+    is_available: true
+    allow_grinding: true
+    available_brewing_methods: [espresso, turka]
+    coffee_type: Микс арабика
+    roast_level: dark
+    origin_region: Колумбия, Уила
+    processing_method: washed
+    sca_score: 83
+    tasting_notes: Карамель, красное яблоко, мягкая кислотность
+    is_active: true
+- model: catalog.product
+  fields:
+    name: Турка керамическая
+    slug: ceramic-turka
+    description: Классическая керамическая турка объёмом 300 мл
+    category: 3
+    product_type: other
+    price_per_50g: 0.00
+    base_price: 1200.00
+    stock: 10
+    image: ''
+    is_available: true
+    allow_grinding: false
+    is_active: true

@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+venv/
+.venv/
+
+# Environment
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# Django
+db.sqlite3
+staticfiles/
+media/
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Docker
+*.pid
+
+# Certbot
+/etc/letsencrypt/live/
+/etc/letsencrypt/archive/
+/etc/letsencrypt/renewal/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Backups
+backups/
+*.sql.gz
+*.tar.gz

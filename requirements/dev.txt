@@ -1,0 +1,9 @@
+-r base.txt
+pytest-cov
+factory-boy
+responses
+black
+flake8
+django-extensions
+pylint
+django-debug-toolbar

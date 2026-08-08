@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+
+{% block title %}Каталог — Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar Filters -->
+    <div class="col-md-3">
+        <div class="card p-3">
+            <h5>Фильтры</h5>
+            <form method="get">
+                {% if category_id %}
+                <input type="hidden" name="category" value="{{ category_id }}">
+                {% endif %}
+                
+                <div class="mb-3">
+                    <label class="form-label">Обжарка</label>
+                    <select name="roast" class="form-select">
+                        <option value="">Любая</option>
+                        <option value="light" {% if roast_level == 'light' %}selected{% endif %}>Светлая</option>
+                        <option value="medium" {% if roast_level == 'medium' %}selected{% endif %}>Средняя</option>
+                        <option value="medium-dark" {% if roast_level == 'medium-dark' %}selected{% endif %}>Средне-тёмная</option>
+                        <option value="dark" {% if roast_level == 'dark' %}selected{% endif %}>Тёмная</option>
+                        <option value="dark-roast" {% if roast_level == 'dark-roast' %}selected{% endif %}>Очень тёмная</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label class="form-label">Мин. SCA</label>
+                    <input type="number" name="sca_min" class="form-control" value="{{ sca_min }}" min="0" max="100">
+                </div>
+                
+                <button type="submit" class="btn btn-coffee w-100">Применить</button>
+                <a href="{% url 'catalog:catalog' %}" class="btn btn-outline-secondary w-100 mt-2">Сбросить</a>
+            </form>
+        </div>
+    </div>
+
+    <!-- Products -->
+    <div class="col-md-9">
+        <h2>Каталог</h2>
+        <div class="row">
+            {% for product in products %}
+            <div class="col-md-4 mb-4">
+                <div class="card product-card h-100">
+                    {% if product.image %}
+                    <img src="{{ product.image.url }}" class="card-img-top" alt="{{ product.name }}">
+                    {% endif %}
+                    <div class="card-body">
+                        <h6 class="card-title">{{ product.name }}</h6>
+                        {% if product.sca_score %}
+                        <span class="sca-badge">SCA {{ product.sca_score }}</span>
+                        {% endif %}
+                        <p class="card-text mt-2">
+                            <strong>{{ product.price_per_50g }} ₽ / 50 г</strong>
+                        </p>
+                        <p class="card-text">
+                            {% if product.stock > 0 %}
+                            <span class="text-success">В наличии: {{ product.stock }} г</span>
+                            {% else %}
+                            <span class="text-danger">Нет в наличии</span>
+                            {% endif %}
+                        </p>
+                        <a href="{% url 'catalog:product_detail' product.slug %}" class="btn btn-sm btn-coffee w-100">Подробнее</a>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12">
+                <p>Товары не найдены.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

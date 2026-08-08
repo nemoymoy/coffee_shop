@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Профиль — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="list-group list-group-flush">
+                <a href="{% url 'dashboard' %}" class="list-group-item list-group-item-action">
+                    📋 Мои заказы
+                </a>
+                <a href="{% url 'profile' %}" class="list-group-item list-group-item-action active">
+                    ⚙️ Настройки профиля
+                </a>
+                {% if user.is_superuser %}
+                <a href="{% url 'admin:index' %}" class="list-group-item list-group-item-action">
+                    🔧 Админ-панель
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Form -->
+    <div class="col-md-9">
+        <h2 class="section-title">Настройки профиля</h2>
+
+        <div class="row">
+            <!-- Personal Info -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header">Личные данные</div>
+                    <div class="card-body">
+                        <form method="post" action="{% url 'profile' %}">
+                            {% csrf_token %}
+                            {% if user_form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {{ user_form.non_field_errors }}
+                            </div>
+                            {% endif %}
+
+                            <div class="mb-3">
+                                <label for="{{ user_form.first_name.id_for_label }}" class="form-label">Имя</label>
+                                <input type="text" name="first_name" id="{{ user_form.first_name.id_for_label }}"
+                                       class="form-control" value="{{ user.first_name }}">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="{{ user_form.last_name.id_for_label }}" class="form-label">Фамилия</label>
+                                <input type="text" name="last_name" id="{{ user_form.last_name.id_for_label }}"
+                                       class="form-control" value="{{ user.last_name }}">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="{{ user_form.email.id_for_label }}" class="form-label">Email</label>
+                                <input type="email" name="email" id="{{ user_form.email.id_for_label }}"
+                                       class="form-control" value="{{ user.email }}">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="{{ user_form.username.id_for_label }}" class="form-label">Имя пользователя</label>
+                                <input type="text" name="username" id="{{ user_form.username.id_for_label }}"
+                                       class="form-control" value="{{ user.username }}">
+                            </div>
+
+                            <hr>
+
+                            <h6 class="mb-3">Изменить пароль</h6>
+
+                            <div class="mb-3">
+                                <label for="password_current" class="form-label">Текущий пароль</label>
+                                <input type="password" name="password_current" id="password_current" class="form-control">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password_new" class="form-label">Новый пароль</label>
+                                <input type="password" name="password_new" id="password_new" class="form-control">
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password_confirm" class="form-label">Подтверждение пароля</label>
+                                <input type="password" name="password_confirm" id="password_confirm" class="form-control">
+                            </div>
+
+                            <button type="submit" class="btn btn-coffee w-100">Сохранить изменения</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delivery Addresses -->
+            <div class="col-md-6 mb-4">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Адреса доставки</span>
+                        <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+                            + Добавить
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        {% if addresses %}
+                        {% for addr in addresses %}
+                        <div class="card mb-2 border-start border-4 border-secondary">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <strong>{{ addr.label|default:"Дом" }}</strong>
+                                        <p class="mb-1 mt-2 small">{{ addr.address }}</p>
+                                        {% if addr.apartment %}
+                                        <small class="text-muted">Кв. {{ addr.apartment }}</small>
+                                        {% endif %}
+                                    </div>
+                                    <div>
+                                        <button class="btn btn-sm text-primary me-1" title="Редактировать">✏️</button>
+                                        <button class="btn btn-sm text-danger" title="Удалить">🗑️</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="text-center py-4">
+                            <p class="text-muted">У вас пока нет сохранённых адресов</p>
+                            <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+                                Добавить адрес
+                            </button>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Phone -->
+                <div class="card mt-4">
+                    <div class="card-header">Телефон</div>
+                    <div class="card-body">
+                        <p class="mb-3">{{ user.phone|default:"Не указан" }}</p>
+                        <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#editPhoneModal">
+                            Изменить
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Add Address -->
+<div class="modal fade" id="addAddressModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Новый адрес</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="mb-3">
+                        <label class="form-label">Метка</label>
+                        <input type="text" class="form-control" placeholder="Дом, Офис, Дача">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Адрес</label>
+                        <textarea class="form-control" rows="3" placeholder="Город, улица, дом"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Квартира (необязательно)</label>
+                        <input type="text" class="form-control" placeholder="кв.">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-coffee">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal: Edit Phone -->
+<div class="modal fade" id="editPhoneModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Изменить телефон</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form>
+                    <div class="mb-3">
+                        <label class="form-label">Телефон</label>
+                        <input type="tel" class="form-control" placeholder="+7 (___) ___-__-__">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-coffee">Сохранить</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

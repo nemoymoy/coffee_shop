@@ -1,0 +1,357 @@
+/**
+ * Coffee Shop — кофейная тема.
+ * Цветовая палитра, типографика, адаптивная сетка.
+ */
+
+/* ======================= CSS Variables ======================= */
+:root {
+    --coffee-dark:       #3e2723;
+    --coffee-medium:     #5d4037;
+    --coffee-light:      #a1887f;
+    --coffee-lighter:    #d7ccc8;
+    --coffee-bg:         #faf8f5;
+    --coffee-bg-alt:     #f1ede8;
+    --coffee-accent:     #e65100;
+    --coffee-accent-hover:#bf360c;
+    --coffee-success:    #2e7d32;
+    --coffee-warning:    #f9a825;
+    --coffee-danger:     #c62828;
+
+    --font-primary: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    --shadow-card:   0 2px 12px rgba(62, 39, 35, 0.08);
+    --shadow-hover:  0 6px 24px rgba(62, 39, 35, 0.14);
+    --radius-sm:     6px;
+    --radius-md:     10px;
+    --radius-lg:     16px;
+    --transition:    all 0.25s ease;
+}
+
+/* ======================= Body ======================= */
+body {
+    font-family: var(--font-primary);
+    background-color: var(--coffee-bg);
+    color: var(--coffee-dark);
+    line-height: 1.6;
+}
+
+/* ======================= Navbar ======================= */
+.navbar {
+    background: linear-gradient(135deg, var(--coffee-dark) 0%, var(--coffee-medium) 100%) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.navbar-brand {
+    font-weight: 700;
+    font-size: 1.35rem;
+    letter-spacing: 0.5px;
+}
+
+.nav-link {
+    transition: var(--transition);
+    position: relative;
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    width: 0;
+    height: 2px;
+    background: var(--coffee-lighter);
+    transition: var(--transition);
+    transform: translateX(-50%);
+}
+
+.nav-link:hover::after {
+    width: 80%;
+}
+
+.cart-badge {
+    background: var(--coffee-accent);
+    color: #fff;
+    border-radius: 50%;
+    padding: 2px 7px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    vertical-align: top;
+    margin-left: 4px;
+}
+
+/* ======================= Footer ======================= */
+.footer {
+    background: var(--coffee-dark);
+    color: var(--coffee-lighter);
+    padding: 2.5rem 0;
+    margin-top: 4rem;
+}
+
+.footer a {
+    color: var(--coffee-light);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.footer a:hover {
+    color: #fff;
+}
+
+/* ======================= Buttons ======================= */
+.btn-coffee {
+    background: linear-gradient(135deg, var(--coffee-medium) 0%, var(--coffee-dark) 100%);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius-sm);
+    padding: 0.6rem 1.5rem;
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.btn-coffee:hover, .btn-coffee:focus {
+    background: linear-gradient(135deg, var(--coffee-dark) 0%, #2c1a16 100%);
+    color: #fff;
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-1px);
+}
+
+.btn-coffee:active {
+    transform: translateY(0);
+}
+
+.btn-coffee-outline {
+    background: transparent;
+    border: 2px solid var(--coffee-dark);
+    color: var(--coffee-dark);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem 1.3rem;
+    font-weight: 600;
+    transition: var(--transition);
+}
+
+.btn-coffee-outline:hover, .btn-coffee-outline:focus {
+    background: var(--coffee-dark);
+    color: #fff;
+}
+
+/* ======================= Cards ======================= */
+.card {
+    border: none;
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    transition: var(--transition);
+    overflow: hidden;
+}
+
+.card:hover {
+    box-shadow: var(--shadow-hover);
+    transform: translateY(-2px);
+}
+
+.card-header {
+    background: linear-gradient(135deg, var(--coffee-dark) 0%, var(--coffee-medium) 100%);
+    color: #fff;
+    font-weight: 600;
+    border: none;
+    border-radius: var(--radius-md) var(--radius-md) 0 0 !important;
+}
+
+/* ======================= Product Cards ======================= */
+.product-card {
+    position: relative;
+}
+
+.product-card .card-img-wrapper {
+    position: relative;
+    overflow: hidden;
+    height: 220px;
+    background: var(--coffee-bg-alt);
+}
+
+.product-card .card-img-wrapper img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.product-card:hover .card-img-wrapper img {
+    transform: scale(1.05);
+}
+
+.product-card .stock-badge {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-weight: 600;
+}
+
+.product-card .stock-in {
+    background: #c8e6c9;
+    color: var(--coffee-success);
+}
+
+.product-card .stock-out {
+    background: #ffcdd2;
+    color: var(--coffee-danger);
+}
+
+.product-card .card-title {
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--coffee-dark);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.product-card .price {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--coffee-accent);
+}
+
+/* ======================= SCA Badge ======================= */
+.sca-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: linear-gradient(135deg, #66bb6a 0%, #2e7d32 100%);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.sca-badge::before {
+    content: '★';
+    font-size: 0.9rem;
+}
+
+.sca-badge.high {
+    background: linear-gradient(135deg, #ffca28 0%, #f57f17 100%);
+}
+
+.sca-badge.excellent {
+    background: linear-gradient(135deg, #ef5350 0%, #b71c1c 100%);
+}
+
+/* ======================= Section Titles ======================= */
+.section-title {
+    font-weight: 800;
+    color: var(--coffee-dark);
+    margin-bottom: 1.5rem;
+    position: relative;
+    padding-bottom: 0.75rem;
+}
+
+.section-title::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 60px;
+    height: 3px;
+    background: linear-gradient(90deg, var(--coffee-accent), transparent);
+    border-radius: 2px;
+}
+
+/* ======================= Filters ======================= */
+.filter-card {
+    background: var(--coffee-bg-alt);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+}
+
+.filter-card .filter-title {
+    font-weight: 700;
+    color: var(--coffee-dark);
+    margin-bottom: 1rem;
+}
+
+.filter-card label {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: var(--coffee-medium);
+}
+
+/* ======================= Breadcrumbs ======================= */
+.breadcrumb {
+    background: transparent;
+    padding: 0;
+    font-size: 0.9rem;
+}
+
+.breadcrumb-item a {
+    color: var(--coffee-light);
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.breadcrumb-item a:hover {
+    color: var(--coffee-dark);
+}
+
+.breadcrumb-item.active {
+    color: var(--coffee-dark);
+}
+
+/* ======================= Hero / Banner ======================= */
+.hero-banner {
+    background: linear-gradient(135deg, var(--coffee-dark) 0%, var(--coffee-medium) 50%, var(--coffee-accent) 100%);
+    color: #fff;
+    border-radius: var(--radius-lg);
+    padding: 3rem 2rem;
+    text-align: center;
+    margin-bottom: 2.5rem;
+}
+
+.hero-banner h1 {
+    font-weight: 800;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.hero-banner p {
+    font-size: 1.15rem;
+    opacity: 0.9;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+/* ======================= Responsive ======================= */
+@media (max-width: 768px) {
+    .hero-banner {
+        padding: 2rem 1.5rem;
+    }
+
+    .hero-banner h1 {
+        font-size: 1.75rem;
+    }
+
+    .hero-banner p {
+        font-size: 1rem;
+    }
+
+    .product-card .card-img-wrapper {
+        height: 180px;
+    }
+
+    .section-title::after {
+        width: 40px;
+    }
+}
+
+@media (max-width: 576px) {
+    .hero-banner h1 {
+        font-size: 1.5rem;
+    }
+
+    .product-card .card-img-wrapper {
+        height: 160px;
+    }
+}

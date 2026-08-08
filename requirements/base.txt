@@ -1,0 +1,50 @@
+# Django
+Django==4.2.11
+django-environ==0.11.2
+
+# API
+djangorestframework==3.14.0
+django-cors-headers==4.3.1
+
+# Database
+psycopg2-binary==2.9.9
+sqlparse==0.5.0
+
+# Image
+Pillow==10.2.0
+
+# Celery
+celery==5.3.6
+redis==5.0.1
+django-celery-beat==2.5.0
+django-celery-results==2.5.1
+
+# WSGI
+gunicorn==21.2.0
+
+# Forms
+django-crispy-forms==2.1
+crispy-bootstrap5==2024.2
+
+# Payment
+yookassa-sdk==2.2.0
+requests==2.31.0
+
+# Email
+sendgrid==6.10.0
+
+# Validation
+django-ratelimit==4.1.0
+
+# Charts
+django-filter==23.3
+
+# Testing
+pytest==7.4.4
+pytest-django==4.8.0
+pytest-cov==4.1.0
+responses==0.24.1
+factory-boy==3.3.0
+
+# JSON Logging
+python-json-logger==2.0.7

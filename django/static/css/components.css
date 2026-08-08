@@ -1,0 +1,425 @@
+/**
+ * Coffee Shop — кастомные компоненты.
+ * Карточки, бейджи статусов, шаги оформления, таблицы, модальные окна.
+ */
+
+/* ======================= Status Badges ======================= */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.status-badge.new {
+    background: #e3f2fd;
+    color: #1565c0;
+}
+
+.status-badge.new::before {
+    content: '🆕';
+    font-size: 0.75rem;
+}
+
+.status-badge.in_progress {
+    background: #fff3e0;
+    color: #e65100;
+}
+
+.status-badge.in_progress::before {
+    content: '⏳';
+    font-size: 0.75rem;
+}
+
+.status-badge.ready {
+    background: #e8f5e9;
+    color: var(--coffee-success);
+}
+
+.status-badge.ready::before {
+    content: '✅';
+    font-size: 0.75rem;
+}
+
+.status-badge.delivered {
+    background: #e0f2f1;
+    color: #00695c;
+}
+
+.status-badge.delivered::before {
+    content: '📦';
+    font-size: 0.75rem;
+}
+
+.status-badge.cancelled {
+    background: #fce4ec;
+    color: var(--coffee-danger);
+}
+
+.status-badge.cancelled::before {
+    content: '❌';
+    font-size: 0.75rem;
+}
+
+/* ======================= Checkout Steps ======================= */
+.checkout-steps {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 2rem;
+    counter-reset: step;
+}
+
+.checkout-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex: 1;
+    position: relative;
+    padding: 0 10px;
+}
+
+.checkout-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 18px;
+    right: -50%;
+    width: 100%;
+    height: 2px;
+    background: var(--coffee-lighter);
+    z-index: 0;
+}
+
+.checkout-step.completed:not(:last-child)::after {
+    background: var(--coffee-success);
+}
+
+.step-circle {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--coffee-lighter);
+    color: var(--coffee-light);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+    position: relative;
+    z-index: 1;
+    transition: var(--transition);
+}
+
+.checkout-step.active .step-circle {
+    background: var(--coffee-dark);
+    color: #fff;
+    box-shadow: 0 0 0 4px rgba(62, 39, 35, 0.15);
+}
+
+.checkout-step.completed .step-circle {
+    background: var(--coffee-success);
+    color: #fff;
+}
+
+.step-label {
+    margin-top: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--coffee-light);
+    text-align: center;
+}
+
+.checkout-step.active .step-label {
+    color: var(--coffee-dark);
+}
+
+.checkout-step.completed .step-label {
+    color: var(--coffee-success);
+}
+
+@media (max-width: 576px) {
+    .checkout-steps {
+        gap: 0;
+    }
+    .checkout-step {
+        padding: 0 5px;
+    }
+    .step-label {
+        font-size: 0.7rem;
+    }
+}
+
+/* ======================= Coffee Selector UI ======================= */
+.coffee-option-group {
+    background: var(--coffee-bg-alt);
+    border-radius: var(--radius-md);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.coffee-option-group .option-title {
+    font-weight: 700;
+    color: var(--coffee-dark);
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+}
+
+.coffee-option-group .option-title .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--coffee-dark);
+    color: #fff;
+    font-size: 0.75rem;
+    margin-right: 8px;
+}
+
+.coffee-form-buttons .btn-check:checked + .btn {
+    background: var(--coffee-dark) !important;
+    color: #fff !important;
+    border-color: var(--coffee-dark) !important;
+}
+
+.coffee-price-display {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--coffee-accent);
+}
+
+.coffee-weight-info {
+    font-size: 0.85rem;
+    color: var(--coffee-light);
+    margin-top: 4px;
+}
+
+/* ======================= Cart Table ======================= */
+.cart-item-card {
+    transition: var(--transition);
+    border-left: 3px solid var(--coffee-lighter);
+}
+
+.cart-item-card:hover {
+    border-left-color: var(--coffee-dark);
+}
+
+.cart-item-name {
+    font-weight: 700;
+    color: var(--coffee-dark);
+}
+
+.cart-item-params {
+    font-size: 0.85rem;
+    color: var(--coffee-light);
+}
+
+.cart-item-price {
+    font-weight: 700;
+    color: var(--coffee-accent);
+    white-space: nowrap;
+}
+
+/* ======================= Order Card (dashboard) ======================= */
+.order-card {
+    border: 1px solid var(--coffee-lighter);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    margin-bottom: 1rem;
+    transition: var(--transition);
+}
+
+.order-card:hover {
+    box-shadow: var(--shadow-hover);
+}
+
+.order-card-header {
+    background: var(--coffee-bg-alt);
+    padding: 1rem 1.25rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.order-id {
+    font-weight: 700;
+    color: var(--coffee-dark);
+}
+
+.order-card-body {
+    padding: 1rem 1.25rem;
+}
+
+.order-item-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--coffee-bg-alt);
+    font-size: 0.9rem;
+}
+
+.order-item-row:last-child {
+    border-bottom: none;
+}
+
+/* ======================= Product Grid ======================= */
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1.5rem;
+}
+
+.product-grid .product-card .card-body {
+    padding: 1rem;
+}
+
+/* ======================= Filters Sidebar ======================= */
+.filters-sidebar {
+    position: sticky;
+    top: 80px;
+}
+
+.filter-group {
+    margin-bottom: 1.5rem;
+}
+
+.filter-group-title {
+    font-weight: 700;
+    color: var(--coffee-dark);
+    margin-bottom: 0.75rem;
+    font-size: 0.95rem;
+}
+
+.filter-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+}
+
+.filter-checkbox input[type="checkbox"] {
+    accent-color: var(--coffee-dark);
+    width: 16px;
+    height: 16px;
+}
+
+.filter-checkbox label {
+    font-size: 0.9rem;
+    color: var(--coffee-medium);
+    cursor: pointer;
+}
+
+.filter-count {
+    background: var(--coffee-bg-alt);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 0.75rem;
+    color: var(--coffee-light);
+    margin-left: auto;
+}
+
+/* ======================= Empty State ======================= */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+}
+
+.empty-state .empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h4 {
+    color: var(--coffee-dark);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    color: var(--coffee-light);
+    margin-bottom: 1.5rem;
+}
+
+/* ======================= Loading Spinner Overlay ======================= */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(250, 248, 245, 0.8);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+}
+
+.loading-overlay.active {
+    display: flex;
+}
+
+.loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid var(--coffee-lighter);
+    border-top-color: var(--coffee-dark);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ======================= Pagination ======================= */
+.pagination .page-link {
+    color: var(--coffee-dark);
+    border-color: var(--coffee-lighter);
+    border-radius: var(--radius-sm) !important;
+    margin: 0 2px;
+    transition: var(--transition);
+}
+
+.pagination .page-link:hover {
+    background: var(--coffee-bg-alt);
+    color: var(--coffee-dark);
+}
+
+.pagination .page-item.active .page-link {
+    background: var(--coffee-dark);
+    border-color: var(--coffee-dark);
+    color: #fff;
+}
+
+/* ======================= Toast Container ======================= */
+#toastContainer .toast {
+    margin-bottom: 8px;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-card);
+    min-width: 250px;
+    max-width: 380px;
+}
+
+/* ======================= Price Highlight ======================= */
+.price-highlight {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--coffee-accent);
+}
+
+.price-old {
+    text-decoration: line-through;
+    color: var(--coffee-light);
+    font-size: 1rem;
+    font-weight: 400;
+    margin-left: 8px;
+}

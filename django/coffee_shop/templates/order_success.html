@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+
+{% block title %}Заказ оформлен — Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="text-center py-5">
+    <div class="mb-4">
+        <svg width="80" height="80" viewBox="0 0 24 24" fill="#4caf50">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+        </svg>
+    </div>
+    
+    <h2>Спасибо за заказ!</h2>
+    <p class="lead">Ваш заказ #{{ order.pk }} успешно оформлен.</p>
+    
+    <div class="card mx-auto" style="max-width: 500px;">
+        <div class="card-body">
+            <h5>Детали заказа</h5>
+            <p><strong>Статус:</strong> {{ order.get_status_display }}</p>
+            <p><strong>Итого:</strong> {{ order.total_amount }} ₽</p>
+            <p><strong>Способ оплаты:</strong> {{ order.get_payment_method_display }}</p>
+            <p><strong>Способ получения:</strong> {{ order.get_delivery_method_display }}</p>
+            {% if order.delivery_address %}
+            <p><strong>Адрес:</strong> {{ order.delivery_address }}</p>
+            {% endif %}
+            {% if order.comment %}
+            <p><strong>Комментарий:</strong> {{ order.comment }}</p>
+            {% endif %}
+        </div>
+    </div>
+    
+    <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee btn-lg mt-4">Вернуться в каталог</a>
+</div>
+{% endblock %}

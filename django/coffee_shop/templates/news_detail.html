@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ news.title }} — Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row">
+        <div class="col-lg-8 mx-auto">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'catalog:catalog' %}">Главная</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'news:news_list' %}">Новости</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">{{ news.title }}</li>
+                </ol>
+            </nav>
+
+            <article class="card">
+                {% if news.image %}
+                <div class="card-img-wrapper" style="height: 400px; overflow: hidden;">
+                    <img src="{{ news.image.url }}" class="w-100 h-100" style="object-fit: cover;" alt="{{ news.title }}">
+                </div>
+                {% endif %}
+                <div class="card-body">
+                    <h1 class="card-title mb-3">{{ news.title }}</h1>
+                    <div class="text-muted mb-4">
+                        <span>{{ news.published_at|date:"d F Y" }}</span>
+                    </div>
+                    <div class="card-text">
+                        {{ news.content|linebreaks }}
+                    </div>
+                </div>
+            </article>
+
+            <div class="mt-4">
+                <a href="{% url 'news:news_list' %}" class="btn btn-coffee-outline">← Вернуться к новостям</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

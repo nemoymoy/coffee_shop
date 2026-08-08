@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Акции и спецпредложения — Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <h2 class="section-title">Акции и спецпредложения</h2>
+
+    {% if promotions %}
+    <div class="row">
+        {% for promo in promotions %}
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                {% if promo.image %}
+                <div class="card-img-wrapper" style="height: 200px; overflow: hidden;">
+                    <img src="{{ promo.image.url }}" class="w-100 h-100" style="object-fit: cover;" alt="{{ promo.title }}">
+                </div>
+                {% endif %}
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="badge bg-danger">Акция</span>
+                        <small class="text-muted">{{ promo.start_date|date:"d.m" }} — {{ promo.end_date|date:"d.m.Y" }}</small>
+                    </div>
+                    <h5 class="card-title">{{ promo.title }}</h5>
+                    <p class="card-text text-muted">{{ promo.description|truncatewords:30 }}</p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-icon">🎉</div>
+        <h4>Сейчас нет активных акций</h4>
+        <p>Следите за обновлениями — скоро появятся интересные предложения!</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

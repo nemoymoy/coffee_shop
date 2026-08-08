@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Новости и акции — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<h2 class="section-title">Новости</h2>
+
+{% if news %}
+<div class="row">
+    {% for item in news %}
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            {% if item.image %}
+            <div class="card-img-wrapper" style="height: 200px; overflow: hidden; border-radius: var(--radius-md) var(--radius-md) 0 0;">
+                <img src="{{ item.image.url }}" class="w-100 h-100" style="object-fit: cover;" alt="{{ item.title }}">
+            </div>
+            {% endif %}
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="badge bg-secondary">Новость</span>
+                    <small class="text-muted">{{ item.published_at|date:"d.m.Y" }}</small>
+                </div>
+
+                <h5 class="card-title">{{ item.title }}</h5>
+                <p class="card-text text-muted">{{ item.content|truncatewords:30 }}</p>
+
+                <a href="{% url 'news:news_detail' item.slug %}" class="btn btn-coffee-outline btn-sm">
+                    Читать далее →
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-icon">📰</div>
+    <h4>Пока нет новостей</h4>
+    <p>Скоро здесь появится что-нибудь интересное</p>
+    <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee">Перейти в каталог</a>
+</div>
+{% endif %}
+{% endblock %}

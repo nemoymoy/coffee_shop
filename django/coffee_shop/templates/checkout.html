@@ -1,0 +1,121 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Оформление заказа — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<h2 class="section-title">Оформление заказа</h2>
+
+<!-- Steps -->
+<div class="checkout-steps mb-4">
+    <div class="checkout-step active">
+        <div class="step-circle">1</div>
+        <div class="step-label">Корзина</div>
+    </div>
+    <div class="checkout-step completed">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Оформление</div>
+    </div>
+    <div class="checkout-step">
+        <div class="step-circle">3</div>
+        <div class="step-label">Готово</div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <form method="post" class="checkout-form" id="checkoutForm">
+            {% csrf_token %}
+
+            <h5 class="mb-3">Контактные данные</h5>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Имя *</label>
+                    <input type="text" name="first_name" id="id_first_name" class="form-control" placeholder="Иван" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Фамилия *</label>
+                    <input type="text" name="last_name" id="id_last_name" class="form-control" placeholder="Иванов" required>
+                </div>
+            </div>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Телефон *</label>
+                    <input type="tel" name="phone" id="id_phone" class="form-control" placeholder="+7 (999) 123-45-67" required>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Email *</label>
+                    <input type="email" name="email" id="id_email" class="form-control" placeholder="ivan@example.com" required>
+                </div>
+            </div>
+
+            <hr class="my-4">
+
+            <h5 class="mb-3">Способ получения</h5>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="delivery_method" id="pickup" value="pickup" checked>
+                    <label class="form-check-label" for="pickup">📦 Самовывоз</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="delivery_method" id="delivery" value="delivery">
+                    <label class="form-check-label" for="delivery">🚚 Доставка</label>
+                </div>
+            </div>
+
+            <div class="mb-3" id="addressBlock" style="display: none;">
+                <label class="form-label">Адрес доставки *</label>
+                <textarea name="delivery_address" id="id_delivery_address" class="form-control" rows="3" placeholder="Город, улица, дом, квартира"></textarea>
+            </div>
+
+            <hr class="my-4">
+
+            <h5 class="mb-3">Способ оплаты</h5>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="payment_method" id="online" value="online" checked>
+                    <label class="form-check-label" for="online">💳 Онлайн</label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio" name="payment_method" id="cash" value="cash">
+                    <label class="form-check-label" for="cash">💵 При получении</label>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Комментарий к заказу</label>
+                <textarea name="comment" class="form-control" rows="3" placeholder="Необязательно"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-coffee btn-lg w-100" id="checkoutSubmitBtn">
+                Подтвердить заказ
+            </button>
+        </form>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="mb-3">Ваш заказ</h5>
+                {% for item in cart_items %}
+                <div class="d-flex justify-content-between mb-2" style="font-size: 0.9rem;">
+                    <div>
+                        <strong>{{ item.product_id }}</strong>
+                        {% if item.weight %}
+                        <br><small class="text-muted">{{ item.weight }} г</small>
+                        {% endif %}
+                    </div>
+                    <span>{{ item.price|floatformat:2 }} ₽</span>
+                </div>
+                {% endfor %}
+                <hr>
+                <h5 class="mb-0">Итого: <span id="checkoutTotal" data-total="{{ total|default:'0' }}">{{ total|default:"0"|floatformat:2 }}</span> ₽</h5>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

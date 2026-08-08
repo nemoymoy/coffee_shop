@@ -1,0 +1,135 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Личный кабинет — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar -->
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-body text-center">
+                <div class="mb-3">
+                    <div class="rounded-circle bg-secondary text-white d-inline-flex align-items-center justify-content-center"
+                         style="width: 80px; height: 80px; font-size: 2rem;">
+                        👤
+                    </div>
+                </div>
+                <h5 class="mb-1">{{ user.get_full_name|default:user.username }}</h5>
+                <p class="text-muted small mb-3">{{ user.email }}</p>
+                <a href="{% url 'profile' %}" class="btn btn-coffee-outline btn-sm w-100">Редактировать профиль</a>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="list-group list-group-flush">
+                <a href="{% url 'dashboard' %}" class="list-group-item list-group-item-action active">
+                    📋 Мои заказы
+                </a>
+                <a href="{% url 'profile' %}" class="list-group-item list-group-item-action">
+                    ⚙️ Настройки
+                </a>
+                {% if user.is_superuser %}
+                <a href="{% url 'admin:index' %}" class="list-group-item list-group-item-action">
+                    🔧 Админ-панель
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="col-md-9">
+        <h2 class="section-title">Мои заказы</h2>
+
+        {% if orders %}
+        {% for order in orders %}
+        <div class="order-card">
+            <div class="order-card-header">
+                <div>
+                    <span class="order-id">Заказ #{{ order.pk }}</span>
+                    <span class="text-muted ms-2 small">{{ order.created_at|date:"d.m.Y H:i" }}</span>
+                </div>
+                <span class="status-badge {{ order.status }}">
+                    {{ order.get_status_display }}
+                </span>
+            </div>
+            <div class="order-card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        {% for item in order.items.all|slice:":3" %}
+                        <div class="d-flex align-items-center mb-2">
+                            {% if item.product.image %}
+                            <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}"
+                                 style="width: 40px; height: 40px; object-fit: cover; border-radius: 6px;">
+                            {% endif %}
+                            <div class="ms-2 small">
+                                <strong>{{ item.product.name }}</strong>
+                                {% if item.coffee_weight_grams %}
+                                <br><span class="text-muted">{{ item.coffee_weight_grams }} г</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% if order.items.count > 3 %}
+                        <small class="text-muted">+ ещё {{ order.items.count|add:"-3" }} товар(ов)</small>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6 text-md-end">
+                        <div class="mb-1">
+                            <span class="text-muted">Итого:</span>
+                            <strong class="ms-2">{{ order.total_amount|floatformat:2 }} ₽</strong>
+                        </div>
+                        <div class="mb-1">
+                            <span class="text-muted">Оплата:</span>
+                            {{ order.get_payment_method_display }}
+                        </div>
+                        <div class="mb-1">
+                            <span class="text-muted">Доставка:</span>
+                            {{ order.get_delivery_method_display }}
+                        </div>
+                        <a href="{% url 'orders:order_detail' order.pk %}" class="btn btn-coffee-outline btn-sm mt-2">
+                            Подробнее
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        <!-- Pagination -->
+        {% if orders.has_other_pages %}
+        <nav aria-label="Navigation заказов">
+            <ul class="pagination justify-content-center">
+                {% if orders.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.previous_page_number }}">← Назад</a>
+                </li>
+                {% endif %}
+                <li class="page-item active">
+                    <span class="page-link">{{ orders.number }} / {{ orders.paginator.num_pages }}</span>
+                </li>
+                {% if orders.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ orders.next_page_number }}">Далее →</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-icon">📦</div>
+            <h4>У вас пока нет заказов</h4>
+            <p>Сделайте первый заказ в нашем каталоге</p>
+            <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee">Перейти в каталог</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

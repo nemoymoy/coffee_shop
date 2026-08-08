@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ product.name }} — Coffee Shop{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/components.css' %}">
+{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{% url 'catalog:catalog' %}">Каталог</a></li>
+        {% if product.category %}
+        <li class="breadcrumb-item"><a href="{% url 'catalog:catalog' %}?category={{ product.category.slug }}">{{ product.category.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">{{ product.name }}</li>
+    </ol>
+</nav>
+
+<div class="row">
+    <!-- Product Image -->
+    <div class="col-md-6">
+        {% if product.image %}
+        <div class="card">
+            <img src="{{ product.image.url }}" class="img-fluid rounded" alt="{{ product.name }}" style="max-height: 500px; width: 100%; object-fit: contain;">
+        </div>
+        {% else %}
+        <div class="card d-flex align-items-center justify-content-center" style="min-height: 400px; background: var(--coffee-bg-alt);">
+            <span style="font-size: 5rem;">☕</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Product Info -->
+    <div class="col-md-6">
+        <h2 class="mb-2">{{ product.name }}</h2>
+
+        {% if product.product_type == 'coffee' %}
+        <!-- Coffee Details Card -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <h6 class="mb-3">О кофе</h6>
+                <div class="row">
+                    {% if product.coffee_type %}
+                    <div class="col-6 mb-2">
+                        <small class="text-muted">Сорт</small>
+                        <div><strong>{{ product.coffee_type }}</strong></div>
+                    </div>
+                    {% endif %}
+                    {% if product.roast_level %}
+                    <div class="col-6 mb-2">
+                        <small class="text-muted">Обжарка</small>
+                        <div><strong>{{ product.get_roast_level_display }}</strong></div>
+                    </div>
+                    {% endif %}
+                    {% if product.origin_region %}
+                    <div class="col-12 mb-2">
+                        <small class="text-muted">Регион</small>
+                        <div><strong>{{ product.origin_region }}</strong></div>
+                    </div>
+                    {% endif %}
+                    {% if product.processing_method %}
+                    <div class="col-6 mb-2">
+                        <small class="text-muted">Обработка</small>
+                        <div><strong>{{ product.get_processing_method_display }}</strong></div>
+                    </div>
+                    {% endif %}
+                    {% if product.sca_score %}
+                    <div class="col-6 mb-2">
+                        <small class="text-muted">Рейтинг SCA</small>
+                        <div>
+                            <span class="sca-badge {% if product.sca_score >= 90 %}excellent{% elif product.sca_score >= 85 %}high{% endif %}">
+                                {{ product.sca_score }}
+                            </span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if product.tasting_notes %}
+                <hr class="my-2">
+                <p class="mb-0 small"><strong>Вкус:</strong> {{ product.tasting_notes }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Coffee Selector -->
+        <div class="card">
+            <div class="card-body">
+                <div class="coffee-selector"
+                     data-is-coffee="1"
+                     data-price-per-50g="{{ product.price_per_50g }}"
+                     data-out-of-stock="{{ product.stock|yesno:'false,true' }}"
+                     data-weights='{{ available_weights|safe }}'>
+
+                    <div class="coffee-option-group">
+                        <div class="option-title">
+                            <span class="step-num">1</span> Вес
+                        </div>
+                        <select name="weight" class="form-select coffee-weight">
+                            {% for w in available_weights %}
+                            <option value="{{ w }}">{{ w }} г</option>
+                            {% empty %}
+                            <option disabled>Нет в наличии</option>
+                            {% endfor %}
+                        </select>
+                        {% if product.stock > 0 %}
+                        <small class="text-muted mt-1 d-block">Остаток: {{ product.stock }} г</small>
+                        {% else %}
+                        <small class="text-danger mt-1 d-block">Товар закончился</small>
+                        {% endif %}
+                    </div>
+
+                    <div class="coffee-option-group">
+                        <div class="option-title">
+                            <span class="step-num">2</span> Форма
+                        </div>
+                        <div class="btn-group w-100 coffee-form-buttons" role="group">
+                            <input type="radio" class="btn-check coffee-form-input" name="coffee_form" id="form_beans" value="beans" checked>
+                            <label class="btn btn-outline-primary" for="form_beans">В зёрнах</label>
+
+                            {% if product.allow_grinding %}
+                            <input type="radio" class="btn-check coffee-form-input" name="coffee_form" id="form_ground" value="ground">
+                            <label class="btn btn-outline-primary" for="form_ground">Молотый</label>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="coffee-option-group coffee-brewing-block" style="display: none;">
+                        <div class="option-title">
+                            <span class="step-num">3</span> Способ заваривания
+                        </div>
+                        <select name="brewing_method" class="form-select coffee-brewing-method">
+                            {% if product.available_brewing_methods %}
+                                {% for method in product.available_brewing_methods %}
+                                <option value="{{ method }}">{{ method }}</option>
+                                {% endfor %}
+                            {% else %}
+                                {% for value, label in product.get_brewing_methods_display %}
+                                <option value="{{ value }}">{{ label }}</option>
+                                {% endfor %}
+                            {% endif %}
+                        </select>
+                    </div>
+
+                    <!-- Price & Add to Cart -->
+                    <hr class="my-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <small class="text-muted">Итого:</small>
+                            <div class="coffee-price-display">—</div>
+                        </div>
+                        <button type="button" class="btn btn-coffee btn-lg coffee-submit-btn" disabled>
+                            В корзину
+                        </button>
+                    </div>
+                    <small class="coffee-weight-info text-muted mt-2 d-block"></small>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- Non-coffee product -->
+        <p class="text-muted">{{ product.description }}</p>
+        <div class="d-flex align-items-center gap-3 mb-3">
+            <span class="price-highlight">{{ product.base_price|floatformat:2 }} ₽</span>
+        </div>
+        {% if product.stock > 0 %}
+        <button class="btn btn-coffee btn-lg js-add-to-cart"
+                data-form="nonCoffeeForm">
+            В корзину
+        </button>
+        <form id="nonCoffeeForm" style="display: none;">
+            <input type="hidden" name="product_id" value="{{ product.pk }}">
+        </form>
+        {% else %}
+        <p class="text-danger">Нет в наличии</p>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+
+<!-- Related Products -->
+{% if related_products %}
+<h3 class="mt-5 mb-3 section-title">Похожие товары</h3>
+<div class="product-grid">
+    {% for related in related_products %}
+    <div class="card product-card">
+        <div class="card-img-wrapper">
+            {% if related.image %}
+            <img src="{{ related.image.url }}" alt="{{ related.name }}">
+            {% else %}
+            <div class="d-flex align-items-center justify-content-center h-100 bg-light">☕</div>
+            {% endif %}
+            {% if related.stock <= 0 %}
+            <span class="stock-badge stock-out">Нет в наличии</span>
+            {% else %}
+            <span class="stock-badge stock-in">В наличии</span>
+            {% endif %}
+        </div>
+        <div class="card-body d-flex flex-column">
+            <h6 class="card-title">{{ related.name }}</h6>
+            {% if related.sca_score %}
+            <span class="sca-badge {% if related.sca_score >= 90 %}excellent{% elif related.sca_score >= 85 %}high{% endif %} mb-2" style="font-size: 0.75rem; padding: 2px 8px;">
+                {{ related.sca_score }}
+            </span>
+            {% endif %}
+            <p class="card-text small text-muted flex-grow-1">{{ related.description|truncatewords:15 }}</p>
+            <div class="d-flex justify-content-between align-items-center mt-auto">
+                <span class="price">
+                    {% if related.product_type == 'coffee' %}
+                    от {{ related.price_per_50g }} ₽/50г
+                    {% else %}
+                    {{ related.base_price|floatformat:2 }} ₽
+                    {% endif %}
+                </span>
+                <a href="{% url 'catalog:product_detail' related.slug %}" class="btn btn-sm btn-coffee-outline">
+                    Подробнее
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
