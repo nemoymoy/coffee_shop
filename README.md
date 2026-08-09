@@ -24,6 +24,7 @@
 - [Безопасность](#-безопасность)
 - [Бэкапы и восстановление](#-бэкапы-и-восстановление)
 - [Мониторинг](#-мониторинг)
+- [Деплой на Ubuntu сервер](#-деплой-на-ubuntu-сервер)
 
 ---
 
@@ -246,6 +247,7 @@ coffee_shop/
 - Docker 20.10+ и Docker Compose v2
 - Доменное имя, указывающее на сервер (например, `coffee-shop.example.com`)
 - SSL-сертификат (Let's Encrypt)
+- Открытые порты: 80 (HTTP), 443 (HTTPS), 22 (SSH)
 
 ---
 
@@ -284,6 +286,210 @@ docker compose exec web python manage.py collectstatic --noinput
 - **Главная страница**: http://localhost:8000
 - **Админ-панель**: http://localhost:8000/admin/
 - **API Healthcheck**: http://localhost:8000/health/
+
+---
+
+### 🖥️ Деплой на Ubuntu сервер (Production)
+
+Полная инструкция по развёртыванию на удалённом Ubuntu-сервере.
+
+#### Шаг 1: Подготовка сервера
+
+```bash
+# Обновить систему
+sudo apt update && sudo apt upgrade -y
+
+# Установить Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Установить Docker Compose plugin
+sudo apt install docker-compose-plugin -y
+
+# Добавить пользователя в группу docker
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Проверить установку
+docker --version
+docker compose version
+```
+
+#### Шаг 2: Настроить брандмауэр
+
+```bash
+# Разрешить необходимые порты
+sudo ufw allow 22/tcp   # SSH
+sudo ufw allow 80/tcp   # HTTP
+sudo ufw allow 443/tcp  # HTTPS
+sudo ufw enable
+```
+
+#### Шаг 3: Клонировать проект
+
+```bash
+# Подключиться к серверу
+ssh user@your_server_ip
+
+# Клонировать репозиторий
+cd ~
+git clone https://github.com/your-username/coffee_shop.git
+cd coffee_shop
+```
+
+#### Шаг 4: Настроить переменные окружения
+
+```bash
+# Скопировать шаблон
+cp .env.example .env
+
+# Отредактировать файл
+nano .env
+```
+
+**Ключевые переменные для production:**
+
+```bash
+# Django
+SECRET_KEY=your-super-secret-key-at-least-50-chars-long
+DEBUG=False
+DOMAIN=yourdomain.com
+ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+
+# Database
+DATABASE_URL=postgresql://coffee_shop:strong-password@db:5432/coffee_shop
+POSTGRES_DB=coffee_shop
+POSTGRES_USER=coffee_shop
+POSTGRES_PASSWORD=strong-password
+
+# YooKassa
+YOOKASSA_MERCHANT_ID=your-shop-id
+YOOKASSA_API_KEY=your-secret-key
+YOOKASSA_WEBHOOK_SECRET=your-webhook-secret
+YOOKASSA_RETURN_URL=https://yourdomain.com/pay/callback/
+YOOKASSA_TEST_MODE=false
+
+# Email
+SENDGRID_PASSWORD=your-sendgrid-api-key
+EMAIL_FROM=noreply@yourdomain.com
+```
+
+#### Шаг 5: Настроить Nginx
+
+Отредактируйте `nginx/sites-available/coffee.conf`:
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com;  # ← измените на свой домен
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://web:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /static/ {
+        alias /usr/share/nginx/html/static/;
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
+    location /media/ {
+        alias /usr/share/nginx/html/media/;
+        expires 7d;
+    }
+}
+```
+
+#### Шаг 6: Запустить проект
+
+```bash
+# Собрать и запустить все сервисы
+docker compose up -d --build
+
+# Проверить статус
+docker compose ps
+
+# Проверить логи
+docker compose logs -f web
+```
+
+#### Шаг 7: Применить миграции и собрать статику
+
+```bash
+# Миграции
+docker compose exec web python manage.py migrate
+
+# Создание суперпользователя
+docker compose exec web python manage.py createsuperuser
+
+# Сборка статики
+docker compose exec web python manage.py collectstatic --noinput --clear
+```
+
+#### Шаг 8: Настроить SSL (Let's Encrypt)
+
+```bash
+# Получить сертификаты
+docker compose exec certbot certbot certonly \
+    --webroot \
+    --webroot-path=/var/www/certbot \
+    --email your-email@example.com \
+    --agree-tos \
+    -d yourdomain.com \
+    -d www.yourdomain.com
+
+# Перезапустить Docker Compose для применения SSL
+docker compose up -d
+```
+
+> Сертификаты будут автоматически обновляться через контейнер certbot.
+
+#### Шаг 9: Проверить работу
+
+```bash
+# Проверить health
+curl http://yourdomain.com/health/
+
+# Открыть сайт
+open http://yourdomain.com
+
+# Админ-панель
+open http://yourdomain.com/admin/
+```
+
+#### Полезные команды
+
+```bash
+# Просмотр логов
+docker compose logs -f web          # логи Django
+docker compose logs -f nginx        # логи Nginx
+docker compose logs -f celery-worker # фоновые задачи
+
+# Остановка сервисов
+docker compose down
+
+# Перезапуск
+docker compose restart
+
+# Проверка контейнеров
+docker compose ps
+```
+
+#### ⚠️ Важные моменты
+
+1. **Секреты в `.env`** — никогда не публикуйте этот файл
+2. **DEBUG=False** — обязательно для production
+3. **Домен** — проект ожидает, что к нему идут обращения по доменному имени (для SSL и CORS)
+4. **Фоновые задачи** — Celery запускается автоматически через `docker compose`
+5. **Статика и медиа** — хранятся в Docker-томах `static_data` и `media_data`
 
 ---
 
