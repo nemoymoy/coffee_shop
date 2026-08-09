@@ -289,7 +289,7 @@ docker compose exec web python manage.py collectstatic --noinput
 
 ---
 
-### 🖥️ Деплой на Ubuntu сервер (Production)
+## 🖥️ Деплой на Ubuntu сервер (Production)
 
 Полная инструкция по развёртыванию на удалённом Ubuntu-сервере.
 
