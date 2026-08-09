@@ -55,9 +55,13 @@ class Promotion(models.Model):
     end_date = models.DateTimeField(verbose_name='Окончание')
     is_active = models.BooleanField(default=True, verbose_name='Активна')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создана')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлена')
 
     class Meta:
         ordering = ['-start_date']
+        indexes = [
+            models.Index(fields=['is_active', 'start_date', 'end_date']),
+        ]
 
     def __str__(self):
         return self.title

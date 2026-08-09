@@ -58,6 +58,8 @@
 - **Оплата** через ЮКасса (онлайн) или наличными при получении
 - **Личный кабинет** с историей заказов и статусами
 - **Отзывы** на товары
+- **Новости** — публикации новостей кофейни с пагинацией и поиском
+- **Акции** — список активных спецпредложений с датами начала и окончания
 
 ### 🎨 Админ-панель
 - Управление товарами, категориями, заказами, промокодами, отзывами
@@ -76,6 +78,7 @@
 - **Фоновые задачи** через Celery + Redis
 - **Rate limiting** на критичные эндпоинты
 - **Structured JSON logging**
+- **News API** — REST API для новостей и акций с поиском, фильтрацией и сортировкой
 
 ---
 
@@ -143,6 +146,17 @@ coffee_shop/
 │   │   │   │   ├── urls.py        # URL каталога
 │   │   │   │   └── admin.py       # Админ-категории и товары
 │   │   │   │
+│   │   │   ├── news/              # Новости и акции
+│   │   │   │   ├── models/        # Модели: News, Promotion
+│   │   │   │   ├── services/      # Сервисы: NewsService, PromotionService
+│   │   │   │   ├── forms/         # Формы: NewsForm, PromotionForm
+│   │   │   │   ├── serializers.py # DRF сериализаторы: News, Promotion
+│   │   │   │   ├── api/           # REST API endpoints
+│   │   │   │   │   ├── views.py   # ViewSet: News, Promotion
+│   │   │   │   │   └── urls.py    # /api/news/ маршруты
+│   │   │   │   ├── views.py       # View: новости, акции
+│   │   │   │   ├── urls.py        # URL новостей
+│   │   │   │   └── admin.py       # Админ-новости и акции
 │   │   │   ├── orders/            # Заказы
 │   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode
 │   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, OAuth, Promo
@@ -347,6 +361,19 @@ YANDEX_METRIKA_WEBVIEWER=0
 | `/api/catalog/reviews/` | GET, POST | Список / создание отзывов |
 | `/api/catalog/reviews/{id}/approve/` | POST | Одобрить отзыв |
 
+### REST API (`/api/news/`)
+| Эндпоинт | Метод | Описание |
+|----------|-------|----------|
+| `/api/news/news/` | GET | Список опубликованных новостей |
+| `/api/news/news/{id}/` | GET | Детали новости |
+| `/api/news/promotions/` | GET | Список активных акций |
+| `/api/news/promotions/{id}/` | GET | Детали акции |
+
+**Фильтрация и поиск:**
+- `?search=keyword` — поиск по заголовку и содержанию
+- `?ordering=-published_at` — сортировка (published_at, created_at)
+- `?is_published=true` — фильтрация по статусу
+
 ### Корзина и заказы
 | Эндпоинт | Описание |
 |----------|----------|
@@ -384,6 +411,17 @@ YANDEX_METRIKA_WEBVIEWER=0
 | GET | `/api/catalog/products/{id}/reviews/` | Отзывы товара |
 | POST | `/api/catalog/reviews/` | Создать отзыв (авторизация) |
 | POST | `/api/catalog/reviews/{id}/approve/` | Одобрить отзыв |
+
+### REST API (`/api/news/`)
+| Метод | Эндпоинт | Описание |
+|-------|----------|----------|
+| GET | `/api/news/news/` | Список опубликованных новостей |
+| GET | `/api/news/news/{id}/` | Детали новости |
+| GET | `/api/news/promotions/` | Список активных акций |
+| GET | `/api/news/promotions/{id}/` | Детали акции |
+| GET | `/api/news/news/?search=keyword` | Поиск по заголовку/содержанию |
+| GET | `/api/news/news/?ordering=-published_at` | Сортировка |
+| GET | `/api/news/promotions/?is_active=true` | Фильтрация по активности |
 
 ---
 
@@ -451,7 +489,14 @@ tests/
 │   ├── test_catalog_api.py              # Каталог API (Product, Category, Review)
 │   ├── test_serializers.py              # DRF сериализаторы
 │   ├── test_yandex_delivery_api.py
-│   └── test_payment_gateway.py
+│   ├── test_payment_gateway.py
+│   └── news/                              # Тесты news API
+│       ├── test_api.py                  # News API, Promotion API
+├── news/                                # Тесты news app
+│   ├── test_models.py                   # News, Promotion модели
+│   ├── test_services.py                 # NewsService, PromotionService
+│   ├── test_views.py                    # news_list, news_detail, promotions_list
+│   └── test_forms.py                    # NewsForm, PromotionForm
 └── forms/                               # Тесты форм
     ├── test_order_forms.py
     ├── test_coffee_form.py              # CoffeeForm: вес, помол, brewing_method
@@ -469,6 +514,8 @@ tests/
 - Конкурентные заказы
 - DRF сериализация (OrderDetail, OrderList, PromoCode)
 - REST API: сериализация, фильтрация, создание отзывов
+- **news**: published news filtering, future news hiding, promotion date validation, news search
+- **news API**: CRUD, search, ordering, list vs detail fields
 
 ---
 
@@ -510,6 +557,14 @@ tests/
 #### Управление отзывами (catalog)
 - ✅ Модерация отзывов (approve/unapprove)
 - ✅ Фильтры по рейтингу
+
+#### Управление новостями и акциями (news)
+- ✅ CRUD для новостей и акций
+- ✅ Фильтры по опубликованности и активности
+- ✅ Поиск по заголовку и содержанию
+- ✅ Автоматическая генерация slug из заголовка
+- ✅ Поля created_at / updated_at для отслеживания изменений
+- ✅ Акции с датами начала/окончания и флагом текущей акции (is_current)
 
 ---
 

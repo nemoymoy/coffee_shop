@@ -1,16 +1,15 @@
 """Views for news app."""
 from django.shortcuts import render, get_object_or_404
 from django.utils import timezone
-from .models import News, Promotion
+
+from .models import News
+from .services import NewsService, PromotionService
 
 
 def news_list(request):
     """Список новостей."""
-    news = News.objects.filter(
-        is_published=True,
-        published_at__lte=timezone.now()
-    ).order_by('-published_at')
-    
+    news = NewsService.get_published_news()
+
     context = {
         'news': news,
     }
@@ -20,7 +19,7 @@ def news_list(request):
 def news_detail(request, slug):
     """Детальная страница новости."""
     news = get_object_or_404(News, slug=slug, is_published=True)
-    
+
     context = {
         'news': news,
     }
@@ -29,11 +28,8 @@ def news_detail(request, slug):
 
 def promotions_list(request):
     """Список акций."""
-    promotions = Promotion.objects.filter(
-        is_active=True,
-        end_date__gte=timezone.now()
-    ).order_by('-start_date')
-    
+    promotions = PromotionService.get_active_promotions()
+
     context = {
         'promotions': promotions,
     }

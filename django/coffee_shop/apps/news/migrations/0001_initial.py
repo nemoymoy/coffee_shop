@@ -41,11 +41,27 @@ class Migration(migrations.Migration):
                 ('end_date', models.DateTimeField(verbose_name='Окончание')),
                 ('is_active', models.BooleanField(default=True, verbose_name='Активна')),
                 ('created_at', models.DateTimeField(auto_now_add=True, verbose_name='Создана')),
+                ('updated_at', models.DateTimeField(auto_now=True, verbose_name='Обновлена')),
             ],
             options={
                 'ordering': ['-start_date'],
                 'verbose_name': 'Акция',
                 'verbose_name_plural': 'Акции',
             },
+        ),
+        migrations.Index(
+            fields=['is_active', 'start_date', 'end_date'],
+            model_name='promotion',
+            name='news_pro_is_acti_8f3c8e_indices',
+        ),
+        migrations.Index(
+            fields=['slug'],
+            model_name='news',
+            name='news_news_slug_5e4f7a2a_indices',
+        ),
+        migrations.Index(
+            fields=['is_published', 'published_at'],
+            model_name='news',
+            name='news_news_is_pub_e8f2a1b4_indices',
         ),
     ]
