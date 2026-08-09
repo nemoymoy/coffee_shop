@@ -16,7 +16,7 @@
 - [Структура проекта](#-структура-проекта)
 - [Требования](#-требования)
 - [Установка и запуск](#-установка-и-запуск)
-- [Деплой на Ubuntu сервер](#deployment-guide)
+- [Deployment guide](#deployment-guide)
 - [Переменные окружения](#-переменные-окружения)
 - [API эндпоинты](#-api-эндпоинты)
 - [Тестирование](#-тестирование)
@@ -289,7 +289,7 @@ docker compose exec web python manage.py collectstatic --noinput
 
 ---
 
-## 🖥️ Деплой на Ubuntu сервер {#deployment-guide}
+## Deployment guide {#deployment-guide}
 
 Полная инструкция по развёртыванию на удалённом Ubuntu-сервере.
 
