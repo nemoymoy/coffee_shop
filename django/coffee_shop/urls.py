@@ -15,6 +15,8 @@ urlpatterns = [
     path('checkout/', include('coffee_shop.apps.orders.urls', namespace='checkout')),
     # Catalog API
     path('api/catalog/', include('coffee_shop.apps.catalog.api.urls', namespace='catalog_api')),
+    # News API
+    path('api/news/', include('coffee_shop.apps.news.api.urls', namespace='news_api')),
     path('about/', views.about, name='about'),
     path('news/', include('coffee_shop.apps.news.urls', namespace='news')),
     path('news/list/', views.news_view, name='news'),
