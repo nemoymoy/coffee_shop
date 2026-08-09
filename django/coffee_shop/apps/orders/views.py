@@ -3,12 +3,15 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db import transaction
 from django.http import JsonResponse
-from django.apps import apps
-from django.utils import timezone
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
 
 from coffee_shop.apps.catalog.models import Product
 from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
 from coffee_shop.apps.orders.services.stock_service import StockService
+from coffee_shop.apps.orders.services.promo_service import PromoService
+from coffee_shop.apps.orders.forms.order_form import OrderForm
+from coffee_shop.apps.orders.models import Order, OrderItem
 
 
 def cart_view(request):
@@ -93,31 +96,43 @@ def checkout_view(request):
         messages.error(request, 'Корзина пуста')
         return redirect('catalog:catalog')
     
-    Order = apps.get_model('orders', 'Order')
-    OrderItem = apps.get_model('orders', 'OrderItem')
-    
     if request.method == 'POST':
-        first_name = request.POST.get('first_name')
-        last_name = request.POST.get('last_name')
-        phone = request.POST.get('phone')
-        email = request.POST.get('email')
-        comment = request.POST.get('comment')
-        delivery_method = request.POST.get('delivery_method')
-        payment_method = request.POST.get('payment_method')
-        delivery_address = request.POST.get('delivery_address')
+        form = OrderForm(request.POST)
+        if not form.is_valid():
+            for field, errors in form.errors.items():
+                for error in errors:
+                    messages.error(request, f'{field}: {error}')
+            return render(request, 'checkout.html', {
+                'cart_items': list(cart.values()),
+                'form': form,
+            })
         
-        # Создаём заказ
+        cleaned = form.cleaned_data
+        promo_code_str = cleaned.get('promo_code', '')
+        
+        # Валидация промокода
+        applied_promo = None
+        if promo_code_str:
+            is_valid, promo, error = PromoService.validate_promo_code(promo_code_str)
+            if not is_valid:
+                messages.error(request, error)
+                return render(request, 'checkout.html', {
+                    'cart_items': list(cart.values()),
+                    'form': form,
+                })
+            applied_promo = promo
+        
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user if request.user.is_authenticated else None,
-                first_name=first_name,
-                last_name=last_name,
-                phone=phone,
-                email=email,
-                comment=comment,
-                delivery_method=delivery_method,
-                payment_method=payment_method,
-                delivery_address=delivery_address,
+                first_name=cleaned['first_name'],
+                last_name=cleaned['last_name'],
+                phone=cleaned['phone'],
+                email=cleaned['email'],
+                comment=cleaned.get('comment', ''),
+                delivery_method=cleaned['delivery_method'],
+                payment_method=cleaned['payment_method'],
+                delivery_address=cleaned.get('delivery_address', ''),
             )
             
             total = 0
@@ -151,6 +166,12 @@ def checkout_view(request):
                 except Product.DoesNotExist:
                     continue
             
+            # Применяем скидку промокода
+            if applied_promo:
+                from decimal import Decimal
+                total = PromoService.apply_discount(Decimal(str(total)), applied_promo)
+                PromoService.record_promo_usage(applied_promo)
+            
             order.total_amount = total
             order.save()
         
@@ -165,25 +186,43 @@ def checkout_view(request):
     
     context = {
         'cart_items': list(cart.values()),
+        'form': OrderForm(),
     }
     return render(request, 'checkout.html', context)
 
 
+def promo_check(request):
+    """Проверка промокода (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    code = request.POST.get('code', '').strip()
+    if not code:
+        return JsonResponse({'error': 'Промокод не указан'}, status=400)
+    
+    is_valid, promo, error = PromoService.validate_promo_code(code)
+    if not is_valid:
+        return JsonResponse({'error': error}, status=400)
+    
+    info = PromoService.calculate_promo_info(promo)
+    return JsonResponse({'success': True, 'promo': info})
+
+
 def order_success(request, order_id):
     """Страница успешного заказа."""
-    Order = apps.get_model('orders', 'Order')
     order = get_object_or_404(Order, pk=order_id)
     context = {'order': order}
     return render(request, 'order_success.html', context)
 
 
-
+@csrf_exempt
+@require_POST
 def payment_webhook(request):
     """Webhook endpoint for YooKassa payment notifications."""
     import json
     from django.http import JsonResponse
-    from django.views.decorators.csrf import csrf_exempt
-    from django.views.decorators.http import require_POST
+
+    from .services.yookassa_service import YooKassaService
 
     try:
         data = json.loads(request.body)
@@ -192,7 +231,6 @@ def payment_webhook(request):
 
     signature = request.META.get('HTTP_X_YOOMONEY_SIGNATURE', '')
 
-    from .services.yookassa_service import YooKassaService
     yookassa = YooKassaService()
 
     if not yookassa.verify_webhook(data, signature):
@@ -201,8 +239,6 @@ def payment_webhook(request):
     result = yookassa.process_webhook(data)
 
     if result.get('status') == 'paid':
-        from .models import Order
-        from django.db import transaction
         try:
             order_id = result.get('order_id')
             payment_id = result.get('payment_id')

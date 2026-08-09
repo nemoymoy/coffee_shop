@@ -7,6 +7,7 @@ class Order(models.Model):
 
     STATUS_CHOICES = [
         ('new', 'Новый'),
+        ('awaiting_payment', 'Ожидает оплаты'),
         ('in_progress', 'В обработке'),
         ('ready', 'Готов'),
         ('delivered', 'Доставлен'),
@@ -108,6 +109,12 @@ class Order(models.Model):
         verbose_name='Стоимость доставки'
     )
 
+    reserved_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Зарезервировано'
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создан')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Обновлён')
 
@@ -121,3 +128,7 @@ class Order(models.Model):
 
     def __str__(self):
         return f'Заказ #{self.pk} — {self.last_name} {self.first_name}'
+
+    @property
+    def full_name(self):
+        return f'{self.last_name} {self.first_name}'

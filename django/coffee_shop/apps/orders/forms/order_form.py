@@ -1,10 +1,20 @@
 """Order form."""
+from django import forms
 from .checkout_form import CheckoutForm
 
 
 class OrderForm(CheckoutForm):
-    """Расширенная форма заказа с полями доставки."""
+    """Расширенная форма заказа с полями доставки и промокодом."""
 
+    promo_code = forms.CharField(
+        max_length=50,
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Промокод (необязательно)'
+        }),
+        label='Промокод'
+    )
     delivery_method = forms.ChoiceField(
         choices=[
             ('pickup', 'Самовывоз'),
