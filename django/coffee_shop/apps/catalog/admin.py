@@ -106,18 +106,13 @@ class ProductAdmin(admin.ModelAdmin):
     unmake_available.short_description = 'Hidden'
 
     def recalculate_stock(self, request, queryset):
-        """Recalculate stock from related OrderItems."""
-        from django.db.models import Sum
-        for product in queryset:
-            sold = product.items.aggregate(
-                total=Sum('quantity')
-            )['total'] or 0
-            # This is a simplification - real logic would consider all orders
-            self.message_user(
-                request,
-                f'Stock for {product.name} recalculated (sold: {sold})'
-            )
-    recalculate_stock.short_description = 'Recalculate Stock'
+        """Recalculate stock from sold quantities (requires orders app integration)."""
+        self.message_user(
+            request,
+            '⚠ Recalculate stock requires integration with orders.app. '
+            'Currently only a placeholder action.'
+        )
+    recalculate_stock.short_description = 'Recalculate Stock (TODO: implement with orders)'
 
 
 @admin.register(Product)

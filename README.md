@@ -1,9 +1,10 @@
 # Coffee Shop — Кофейня с доставкой и онлайн-заказами
 
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
-[![Django 4.2](https://img.shields.io/badge/Django-4.2-092E20.svg)](https://djangoproject.com)
+[![Django 4.2 / 6.1](https://img.shields.io/badge/Django-4.2--6.1-092E20.svg)](https://djangoproject.com)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791.svg)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-Alpine-DC382D.svg)](https://redis.io)
+[![DRF](https://img.shields.io/badge/DRF-3.18+-092E20.svg)](https://www.django-rest-framework.org)
 
 ---
 
@@ -65,6 +66,7 @@
 ### 🛠 Технические возможности
 - **Адаптивный дизайн** (Bootstrap 5)
 - **AJAX-корзина** без перезагрузки страницы
+- **REST API** для каталога (Products, Categories, Reviews)
 - **Интеграция с Яндекс Доставкой** (расчёт стоимости, создание заказов)
 - **Платежи через ЮКасса** с webhook-обработкой
 - **Email-уведомления** (SendGrid)
@@ -84,7 +86,7 @@
 | **БД** | PostgreSQL | 15 Alpine |
 | **Кэш/Брокер** | Redis | Alpine |
 | **Фоновые задачи** | Celery | 5.3+ |
-| **API** | Django REST Framework | — |
+| **API** | Django REST Framework | 3.18+ |
 | **Платежи** | ЮКасса (YooKassa) | API v2 |
 | **Доставка** | Яндекс Доставка | OAuth 2.0 |
 | **Email** | SendGrid | SMTP |
@@ -130,6 +132,10 @@ coffee_shop/
 │   │   │   │   ├── models/        # Модели: Category, Product, Review
 │   │   │   │   ├── services/      # Сервисы: Cart, Coffee, Pricing
 │   │   │   │   ├── forms/         # Формы: CoffeeForm, ProductForm
+│   │   │   │   ├── serializers.py # DRF сериализаторы: Category, Product, Review
+│   │   │   │   ├── api/           # REST API endpoints
+│   │   │   │   │   ├── views.py   # ViewSet: Product, Category, Review
+│   │   │   │   │   └── urls.py    # /api/catalog/ маршруты
 │   │   │   │   ├── views.py       # View: каталог, товары
 │   │   │   │   ├── urls.py        # URL каталога
 │   │   │   │   └── admin.py       # Админ-категории и товары
@@ -143,9 +149,12 @@ coffee_shop/
 │   │   │   │   └── admin.py       # Админ-заказы и промокоды
 │   │   │   │
 │   │   │   ├── users/             # Пользователи
-│   │   │   │   ├── views.py       # View: профиль, логин
-│   │   │   │   ├── services.py    # Сервисы пользователей
-│   │   │   │   └── admin.py       # Админ-пользователи
+│   │   │   │   ├── forms/         # Формы: UserUpdateForm, UserRegistrationForm
+│   │   │   │   ├── services/      # Сервисы: UserService
+│   │   │   │   ├── views.py       # View: логин, регистрация
+│   │   │   │   ├── urls.py        # URL: /accounts/*
+│   │   │   │   ├── serializers.py # DRF сериализаторы
+│   │   │   │   └── admin.py       # Админ: UserAdmin переопределён
 │   │   │   │
 │   │   │   └── news/              # Новости и акции
 │   │   │       ├── models/        # Модели: News, Promotion
@@ -321,6 +330,19 @@ YANDEX_METRIKA_WEBVIEWER=0
 | `/news/<slug>/` | Детальная страница новости |
 | `/news/promotions/` | Список акций |
 
+### REST API (`/api/catalog/`)
+| Эндпоинт | Метод | Описание |
+|----------|-------|----------|
+| `/api/catalog/categories/` | GET | Список категорий |
+| `/api/catalog/categories/{id}/` | GET | Детали категории |
+| `/api/catalog/categories/{id}/products/` | GET | Товары категории |
+| `/api/catalog/products/` | GET | Список товаров |
+| `/api/catalog/products/{id}/` | GET | Детали товара |
+| `/api/catalog/products/{id}/reviews/` | GET | Отзывы товара |
+| `/api/catalog/products/featured/` | GET | Рекомендуемые товары (SCA ≥ 85) |
+| `/api/catalog/reviews/` | GET, POST | Список / создание отзывов |
+| `/api/catalog/reviews/{id}/approve/` | POST | Одобрить отзыв |
+
 ### Корзина и заказы
 | Эндпоинт | Описание |
 |----------|----------|
@@ -334,8 +356,9 @@ YANDEX_METRIKA_WEBVIEWER=0
 |----------|----------|
 | `/accounts/login/` | Авторизация |
 | `/accounts/logout/` | Выход |
-| `/dashboard/` | Личный кабинет |
-| `/profile/` | Редактирование профиля |
+| `/accounts/register/` | Регистрация нового пользователя |
+| `/accounts/dashboard/` | Личный кабинет (история заказов) |
+| `/accounts/profile/` | Редактирование профиля + смена пароля |
 
 ### API и интеграции
 | Эндпоинт | Описание |
@@ -348,10 +371,13 @@ YANDEX_METRIKA_WEBVIEWER=0
 ### REST API
 | Метод | Эндпоинт | Описание |
 |-------|----------|----------|
-| GET | `/api/v1/products/` | Список товаров |
-| GET | `/api/v1/products/<id>/` | Детали товара |
-| POST | `/api/v1/cart/add/` | Добавить в корзину |
-| POST | `/api/v1/orders/create/` | Создать заказ |
+| GET | `/api/catalog/categories/` | Список категорий |
+| GET | `/api/catalog/products/` | Список товаров (DRF ViewSet) |
+| GET | `/api/catalog/products/{id}/` | Детали товара |
+| GET | `/api/catalog/products/featured/` | Рекомендуемые товары (SCA ≥ 85) |
+| GET | `/api/catalog/products/{id}/reviews/` | Отзывы товара |
+| POST | `/api/catalog/reviews/` | Создать отзыв (авторизация) |
+| POST | `/api/catalog/reviews/{id}/approve/` | Одобрить отзыв |
 
 ---
 
@@ -372,7 +398,24 @@ pytest --cov=. --cov-report=html
 pytest tests/models/
 pytest tests/services/
 pytest tests/views/
+pytest tests/forms/
 ```
+
+### Тесты для users app
+```bash
+# Все тесты users app
+pytest tests/views/test_users.py
+pytest tests/forms/test_users.py
+pytest tests/services/test_users.py
+
+# С покрытием
+pytest tests/views/test_users.py --cov=coffee_shop.apps.users --cov-report=term-missing
+```
+
+### Покрытие тестами
+- **views**: login, register, logout, dashboard, profile, смена пароля
+- **forms**: UserUpdateForm, UserRegistrationForm (валидация, конфликты)
+- **services**: UserService.create_user, get_user_profile, update_user_profile
 
 ### Структура тестов
 ```
@@ -396,12 +439,18 @@ tests/
 │   └── test_stock_service.py
 ├── views/                               # Тесты view
 │   ├── test_catalog.py
-│   └── test_checkout.py
+│   ├── test_checkout.py
+│   └── test_users.py                      # Тесты: login, register, profile, dashboard
 ├── api/                                 # Тесты API
+│   ├── test_catalog_api.py              # Каталог API (Product, Category, Review)
+│   ├── test_serializers.py              # DRF сериализаторы
 │   ├── test_yandex_delivery_api.py
 │   └── test_payment_gateway.py
 └── forms/                               # Тесты форм
-    └── test_order_forms.py
+    ├── test_order_forms.py
+    ├── test_coffee_form.py              # CoffeeForm: вес, помол, brewing_method
+    ├── test_product_form.py             # ProductForm: фильтры каталога
+    └── test_users.py                      # Тесты: UserUpdateForm, UserRegistrationForm
 ```
 
 ### Ключевые сценарии тестирования
@@ -412,6 +461,7 @@ tests/
 - Моки Яндекс Доставки
 - Промокоды (срок действия, лимиты)
 - Конкурентные заказы
+- REST API: сериализация, фильтрация, создание отзывов
 
 ---
 
@@ -439,8 +489,10 @@ tests/
 - ✅ Управление промокодами
 
 #### Управление пользователями (users)
-- ✅ Редактирование профилей
-- ✅ Управление правами доступа
+- ✅ Редактирование профилей (first_name, last_name, email, username)
+- ✅ Управление правами доступа (staff, superuser, is_active)
+- ✅ Фильтры по дате регистрации, группе, роли
+- ✅ Смена пароля через админ-панель
 
 #### Управление категориями (catalog)
 - ✅ Вложенные категории

@@ -8,7 +8,7 @@ from .services.coffee_service import CoffeeService
 def catalog(request):
     """Каталог товаров с фильтрами."""
     categories = Category.objects.filter(is_active=True)
-    products = Product.objects.filter(is_active=True, is_available=True)
+    products = Product.objects.filter(is_available=True)
 
     # Фильтры
     category_id = request.GET.get('category')
@@ -59,18 +59,4 @@ def product_detail(request, slug):
     return render(request, 'product_detail.html', context)
 
 
-def home(request):
-    """Главная страница."""
-    products = Product.objects.filter(is_available=True)[:8]
-    categories = Category.objects.filter(is_active=True)
-    
-    context = {
-        'products': products,
-        'categories': categories,
-    }
-    return render(request, 'home.html', context)
 
-
-def about(request):
-    """О кофейне."""
-    return render(request, 'about.html')

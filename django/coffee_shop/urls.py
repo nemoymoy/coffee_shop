@@ -5,8 +5,6 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
-from django.http import HttpResponse
-from django.contrib.auth import views as auth_views
 from . import views
 
 urlpatterns = [
@@ -15,17 +13,13 @@ urlpatterns = [
     path('', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
     path('cart/', include('coffee_shop.apps.orders.urls', namespace='cart')),
     path('checkout/', include('coffee_shop.apps.orders.urls', namespace='checkout')),
+    # Catalog API
+    path('api/catalog/', include('coffee_shop.apps.catalog.api.urls', namespace='catalog_api')),
     path('about/', views.about, name='about'),
     path('news/', include('coffee_shop.apps.news.urls', namespace='news')),
-    # Auth
-    path('accounts/login/', auth_views.LoginView.as_view(
-        template_name='users/login.html'), name='login'),
-    path('accounts/logout/', auth_views.LogoutView.as_view(
-        next_page='catalog:home'), name='logout'),
-    # User dashboard/profile
-    path('dashboard/', views.dashboard_view, name='dashboard'),
-    path('profile/', views.profile_view, name='profile'),
-    path('news/', views.news_view, name='news'),
+    path('news/list/', views.news_view, name='news'),
+    # Users
+    path('accounts/', include('coffee_shop.apps.users.urls', namespace='users')),
 ]
 
 if settings.DEBUG:

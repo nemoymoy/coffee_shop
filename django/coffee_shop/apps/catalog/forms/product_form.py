@@ -2,7 +2,7 @@
 from django import forms
 
 
-class ProductFilterForm(forms.Form):
+class ProductForm(forms.Form):
     """Фильтры каталога товаров."""
 
     category = forms.CharField(required=False, widget=forms.HiddenInput())
@@ -16,8 +16,8 @@ class ProductFilterForm(forms.Form):
         product_types = kwargs.pop('product_types', [])
         categories = kwargs.pop('categories', [])
         super().__init__(*args, **kwargs)
-        if product_types:
-            self.fields['roast_level'].choices = product_types[0].ROAST_CHOICES if hasattr(product_types[0], 'ROAST_CHOICES') else []
+        from ..models import Product
+        self.fields['roast_level'].choices = Product.ROAST_CHOICES
         self.fields['processing_method'].choices = [
             ('natural', 'Натуральная'),
             ('washed', 'Мытая'),
