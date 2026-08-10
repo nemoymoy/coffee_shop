@@ -61,6 +61,7 @@ class YooKassaService:
             return {
                 "success": True,
                 "payment_id": f"mock-{order_id}",
+                "payment_url": f"http://localhost:8000/pay/mock/{order_id}/",
                 "confirmation_url": f"http://localhost:8000/pay/mock/{order_id}/",
                 "amount": str(amount),
                 "mock": True,

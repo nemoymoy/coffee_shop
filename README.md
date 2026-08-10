@@ -75,7 +75,7 @@
 - **AJAX-корзина** без перезагрузки страницы
 - **REST API** для каталога (Products, Categories, Reviews)
 - **Интеграция с Яндекс Доставкой** (расчёт стоимости, создание заказов)
-- **Платежи через ЮКасса** с webhook-обработкой
+- **Платежи через ЮКасса** — прямое REST API v2 (библиотека `requests`), webhook-обработка
 - **Email-уведомления** (RuSender)
 - **Фоновые задачи** через Celery + Redis
 - **Rate limiting** на критичные эндпоинты
@@ -87,21 +87,21 @@
 
 ## 🛠 Технологический стек
 
-| Компонент | Технология | Версия |
-|-----------|-----------|--------|
-| **Backend** | Django | 4.2 LTS |
-| **Язык** | Python | 3.12 |
-| **Frontend** | Bootstrap 5 | 5.3.2 |
+| Компонент | Технология | Версия    |
+|-----------|-----------|-----------|
+| **Backend** | Django | 4.2 LTS   |
+| **Язык** | Python | 3.12      |
+| **Frontend** | Bootstrap 5 | 5.3.2     |
 | **БД** | PostgreSQL | 15 Alpine |
-| **Кэш/Брокер** | Redis | Alpine |
-| **Фоновые задачи** | Celery | 5.3+ |
-| **API** | Django REST Framework | 3.18+ |
-| **Платежи** | ЮКасса (YooKassa) | API v2 |
+| **Кэш/Брокер** | Redis | Alpine    |
+| **Фоновые задачи** | Celery | 5.3+      |
+| **API** | Django REST Framework | 3.18+     |
+| **Платежи** | ЮКасса (YooKassa) | REST API v2 (requests)    |
 | **Доставка** | Яндекс Доставка | OAuth 2.0 |
-| **Email** | RuSender | SMTP |
-| **Web-сервер** | Nginx | Alpine |
-| **SSL** | Let's Encrypt (Certbot) | — |
-| **Контейнеризация** | Docker Compose | 3.8 |
+| **Email** | RuSender | SMTP      |
+| **Web-сервер** | Nginx | Alpine    |
+| **SSL** | Let's Encrypt (Certbot) | —         |
+| **Контейнеризация** | Docker Compose | 3.8       |
 
 ---
 
@@ -300,6 +300,9 @@ docker compose exec web python manage.py collectstatic --noinput
 ```bash
 # Обновить систему
 sudo apt update && sudo apt upgrade -y
+
+# Установить curl
+sudo apt install curl -y
 
 # Установить Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
@@ -855,7 +858,7 @@ CELERY_BEAT_SCHEDULE = {
 | X-Content-Type-Options | ✅ | nosniff |
 | Rate limiting | ✅ | Redis-based на критичные эндпоинты |
 | Секреты в .env | ✅ | Через Docker secrets |
-| Webhook HMAC-SHA256 | ✅ | ЮКасса webhook верификация через `YOOKASSA_WEBHOOK_SECRET` |
+| Webhook HMAC-SHA256 | ✅ | ЮКасса webhook верификация через `YOOKASSA_WEBHOOK_SECRET` (прямой расчёт подписи) |
 
 ### Rate limiting
 

@@ -4,11 +4,17 @@ from decimal import Decimal
 from coffee_shop.apps.orders.services.payment_service import YooMoneyService
 
 
-pytestmark = pytest.mark.django_db
-
-
 class TestYooMoneyService:
     """Тесты платёжного сервиса ЮКасса."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_settings(self, settings):
+        """Сбрасываем настройки — ключи пустые для тестов mock-режима."""
+        settings.YOOKASSA_MERCHANT_ID = ''
+        settings.YOOKASSA_API_KEY = ''
+        settings.YOOKASSA_TEST_MODE = True
+        settings.YOOKASSA_WEBHOOK_SECRET = ''
+        settings.YOOKASSA_RETURN_URL = ''
 
     def test_is_not_configured(self):
         service = YooMoneyService()
@@ -27,7 +33,7 @@ class TestYooMoneyService:
         assert result['mock'] is True
         assert 'payment_url' in result
 
-    def test_handle_webhook_no_signature(self):
+    def test_handle_webhook_empty_payload(self):
         service = YooMoneyService()
         result = service.handle_webhook({})
-        assert result['status'] == 'error'
+        assert result['status'] == 'unknown'

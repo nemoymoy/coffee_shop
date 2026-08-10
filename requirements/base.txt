@@ -27,7 +27,6 @@ django-crispy-forms==2.1
 crispy-bootstrap5==2024.2
 
 # Payment
-yookassa-sdk==2.2.0
 requests==2.31.0
 
 # Email (SMTP)
