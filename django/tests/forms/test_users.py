@@ -119,3 +119,31 @@ class TestUserRegistrationForm:
         assert user.first_name == 'Иван'
         assert user.last_name == 'Петров'
         assert user.check_password('strongpass123')
+
+    def test_form_requires_consent(self):
+        """Регистрация без согласия на обработку ПД должна быть невалидна."""
+        form = UserRegistrationForm(data={
+            'username': 'newuser',
+            'email': 'new@example.com',
+            'first_name': 'Иван',
+            'last_name': 'Петров',
+            'password1': 'strongpass123',
+            'password2': 'strongpass123',
+        })
+        assert not form.is_valid()
+        assert 'personal_data_consent' in form.errors
+        assert 'Необходимо дать согласие на обработку персональных данных' in form.errors['personal_data_consent']
+
+    def test_form_valid_with_consent(self):
+        """Регистрация с согласием должна быть валидна."""
+        form = UserRegistrationForm(data={
+            'username': 'newuser',
+            'email': 'new@example.com',
+            'first_name': 'Иван',
+            'last_name': 'Петров',
+            'password1': 'strongpass123',
+            'password2': 'strongpass123',
+            'personal_data_consent': True,
+        })
+        assert form.is_valid()
+        assert 'personal_data_consent' not in form.errors

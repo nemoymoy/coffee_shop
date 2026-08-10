@@ -22,6 +22,13 @@ class UserRegistrationForm(UserCreationForm):
         widget=forms.TextInput(attrs={'class': 'form-control'}),
     )
 
+    personal_data_consent = forms.BooleanField(
+        required=True,
+        error_messages={
+            'required': 'Необходимо дать согласие на обработку персональных данных.'
+        },
+    )
+
     class Meta:
         model = User
         fields = ['username', 'email', 'first_name', 'last_name', 'password1', 'password2']

@@ -11,6 +11,11 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(
         next_page='catalog:catalog'), name='logout'),
     path('register/', views.register_view, name='register'),
+    path(
+        'personal-data-consent/',
+        views.personal_data_consent_text_view,
+        name='personal_data_consent_text',
+    ),
     path('dashboard/', dashboard_view, name='dashboard'),
     path('profile/', profile_view, name='profile'),
 ]

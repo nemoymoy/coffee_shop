@@ -49,19 +49,25 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'Акции',
             },
         ),
-        migrations.Index(
-            fields=['is_active', 'start_date', 'end_date'],
+        migrations.AddIndex(
             model_name='promotion',
-            name='news_pro_is_acti_8f3c8e_indices',
+            index=models.Index(
+                fields=['is_active', 'start_date', 'end_date'],
+                name='news_pro_is_acti_8f3c8e_indices',
+            ),
         ),
-        migrations.Index(
-            fields=['slug'],
+        migrations.AddIndex(
             model_name='news',
-            name='news_news_slug_5e4f7a2a_indices',
+            index=models.Index(
+                fields=['slug'],
+                name='news_news_slug_5e4f7a2a_indices',
+            ),
         ),
-        migrations.Index(
-            fields=['is_published', 'published_at'],
+        migrations.AddIndex(
             model_name='news',
-            name='news_news_is_pub_e8f2a1b4_indices',
+            index=models.Index(
+                fields=['is_published', 'published_at'],
+                name='news_news_is_pub_e8f2a1b4_indices',
+            ),
         ),
     ]

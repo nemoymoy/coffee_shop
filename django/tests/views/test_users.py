@@ -64,11 +64,50 @@ class TestRegisterView:
                 'last_name': 'Петров',
                 'password1': 'strongpass123',
                 'password2': 'strongpass123',
+                'personal_data_consent': True,
             },
             follow=True,
         )
         assert User.objects.filter(username='newuser').exists()
         assert response.status_code == 200
+
+    def test_register_without_consent_fails(self, client):
+        """Регистрация без согласия должна завершиться ошибкой."""
+        response = client.post(
+            reverse('users:register'),
+            {
+                'username': 'newuser',
+                'email': 'new@example.com',
+                'first_name': 'Иван',
+                'last_name': 'Петров',
+                'password1': 'strongpass123',
+                'password2': 'strongpass123',
+            },
+        )
+        assert response.status_code == 200
+        assert 'Необходимо дать согласие на обработку персональных данных'.encode('utf-8') in response.content
+        assert not User.objects.filter(username='newuser').exists()
+
+    def test_register_creates_consent_record(self, client):
+        """Успешная регистрация должна создать запись согласия."""
+        response = client.post(
+            reverse('users:register'),
+            {
+                'username': 'newuser',
+                'email': 'new@example.com',
+                'first_name': 'Иван',
+                'last_name': 'Петров',
+                'password1': 'strongpass123',
+                'password2': 'strongpass123',
+                'personal_data_consent': True,
+            },
+        )
+        user = User.objects.get(username='newuser')
+        from coffee_shop.apps.users.models import PersonalDataConsent
+        assert PersonalDataConsent.objects.filter(user=user).exists()
+        consent = PersonalDataConsent.objects.get(user=user)
+        assert consent.version == '1.0'
+        assert consent.ip_address is not None
 
     def test_register_duplicate_username(self, client):
         User.objects.create_user(
@@ -261,3 +300,22 @@ class TestProfileView:
         )
         # Verify old password still works
         assert client.login(username='testuser', password='oldpass123')
+
+
+class TestPersonalDataConsentTextView:
+    """Тесты представления текста согласия на обработку ПД."""
+
+    def test_consent_text_page_loads(self, client):
+        response = client.get(reverse('users:personal_data_consent_text'))
+        assert response.status_code == 200
+        assert 'персональных данных'.encode('utf-8').lower() in response.content.lower()
+
+    def test_consent_text_contains_pd_list(self, client):
+        response = client.get(reverse('users:personal_data_consent_text'))
+        assert b'username' in response.content
+        assert b'email' in response.content
+        assert 'IP-адрес'.encode('utf-8') in response.content
+
+    def test_consent_text_has_link_to_email(self, client):
+        response = client.get(reverse('users:personal_data_consent_text'))
+        assert b'privacy@coffee-shop.ru' in response.content
