@@ -187,11 +187,11 @@ if DEBUG:
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 else:
     EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-    EMAIL_HOST = 'smtp.sendgrid.net'
-    EMAIL_PORT = 587
-    EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = os.environ.get('SENDGRID_USERNAME', 'apikey')
-    EMAIL_HOST_PASSWORD = os.environ.get('SENDGRID_PASSWORD', '')
+    EMAIL_HOST = 'smtp.rusender.ru'
+    EMAIL_PORT = 465
+    EMAIL_USE_SSL = True
+    EMAIL_HOST_USER = os.environ.get('RUSENDER_USERNAME', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('RUSENDER_PASSWORD', '')
 EMAIL_FROM = os.environ.get('EMAIL_FROM', 'noreply@' + DOMAIN)
 
 # YooKassa (ЮКасса)

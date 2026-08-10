@@ -75,7 +75,7 @@
 - **REST API** для каталога (Products, Categories, Reviews)
 - **Интеграция с Яндекс Доставкой** (расчёт стоимости, создание заказов)
 - **Платежи через ЮКасса** с webhook-обработкой
-- **Email-уведомления** (SendGrid)
+- **Email-уведомления** (RuSender)
 - **Фоновые задачи** через Celery + Redis
 - **Rate limiting** на критичные эндпоинты
 - **Structured JSON logging**
@@ -96,7 +96,7 @@
 | **API** | Django REST Framework | 3.18+ |
 | **Платежи** | ЮКасса (YooKassa) | API v2 |
 | **Доставка** | Яндекс Доставка | OAuth 2.0 |
-| **Email** | SendGrid | SMTP |
+| **Email** | RuSender | SMTP |
 | **Web-сервер** | Nginx | Alpine |
 | **SSL** | Let's Encrypt (Certbot) | — |
 | **Контейнеризация** | Docker Compose | 3.8 |
@@ -370,7 +370,7 @@ YOOKASSA_RETURN_URL=https://yourdomain.com/pay/callback/
 YOOKASSA_TEST_MODE=false
 
 # Email
-SENDGRID_PASSWORD=your-sendgrid-api-key
+RUSENDER_PASSWORD=your-rusender-password
 EMAIL_FROM=noreply@yourdomain.com
 ```
 
@@ -514,9 +514,9 @@ POSTGRES_PASSWORD=your-secure-password
 # Redis
 REDIS_URL=redis://redis:6379/0
 
-# Email (SendGrid)
-SENDGRID_USERNAME=apikey
-SENDGRID_PASSWORD=your-sendgrid-api-key
+# Email (RuSender)
+RUSENDER_USERNAME=your-rusender-email
+RUSENDER_PASSWORD=your-rusender-password
 EMAIL_FROM=noreply@yourdomain.com
 
 # YooKassa (ЮКасса)
