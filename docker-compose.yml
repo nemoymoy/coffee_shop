@@ -7,7 +7,7 @@ services:
       dockerfile: django/Dockerfile
 
     volumes:
-      - .:/app
+      - ./django:/app
       - static_data:/app/staticfiles
       - media_data:/app/media
     environment:
@@ -85,7 +85,7 @@ services:
       dockerfile: django/Dockerfile
     command: celery -A coffee_shop worker -l info
     volumes:
-      - .:/app
+      - ./django:/app
       - media_data:/app/media
     environment:
       - DJANGO_SETTINGS_MODULE=coffee_shop.settings.dev
