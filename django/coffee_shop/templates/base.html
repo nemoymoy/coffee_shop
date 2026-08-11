@@ -78,13 +78,13 @@
                     </li>
                     {% if user.is_authenticated %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'dashboard' %}">
+                        <a class="nav-link" href="{% url 'users:dashboard' %}">
                             👤 {{ user.get_short_name|default:user.username }}
                         </a>
                     </li>
                     {% else %}
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'login' %}">Войти</a>
+                        <a class="nav-link" href="{% url 'users:login' %}">Войти</a>
                     </li>
                     {% endif %}
                 </ul>
@@ -122,7 +122,7 @@
                     <ul class="list-unstyled">
                         <li><a href="{% url 'catalog:catalog' %}">Каталог</a></li>
                         <li><a href="{% url 'about' %}">О кофейне</a></li>
-                        <li><a href="{% url 'news' %}">Новости</a></li>
+                        <li><a href="{% url 'news:news_list' %}">Новости</a></li>
                     </ul>
                 </div>
                 <div class="col-md-4 mb-3">
