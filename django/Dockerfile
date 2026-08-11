@@ -21,4 +21,4 @@ RUN mkdir -p /app/staticfiles /app/media /app/logs
 
 EXPOSE 8000
 
-ENTRYPOINT ["sh", "entrypoint.sh"]
+ENTRYPOINT ["sh", "django/entrypoint.sh"]

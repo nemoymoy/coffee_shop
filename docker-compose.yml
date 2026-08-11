@@ -5,7 +5,7 @@ services:
     build:
       context: .
       dockerfile: django/Dockerfile
-    command: sh django/entrypoint.sh
+
     volumes:
       - .:/app
       - static_data:/app/staticfiles
