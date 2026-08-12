@@ -182,9 +182,14 @@ var CoffeeSelector = (function () {
                     submitBtn.innerHTML = originalText;
                 })
                 .catch(function (error) {
-                    CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
+                    if (error && error.redirect) {
+                        CoffeeShop.showToast('Войдите, чтобы добавить товар в корзину', 'warning');
+                        window.location.href = error.redirect;
+                    } else {
+                        CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');
+                        submitBtn.disabled = false;
+                        submitBtn.innerHTML = originalText;
+                    }
                 });
         }
 

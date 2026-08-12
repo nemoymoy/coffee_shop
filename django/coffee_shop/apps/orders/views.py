@@ -57,7 +57,13 @@ def cart_remove(request):
     """Удаление товара из корзины (AJAX)."""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
-    
+
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            'error': 'login_required',
+            'redirect': '/accounts/login/'
+        }, status=403)
+
     key = request.POST.get('key')
     if not key:
         return JsonResponse({'error': 'Key is required'}, status=400)
@@ -77,7 +83,13 @@ def cart_add(request):
     """Добавление товара в корзину (AJAX)."""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
-    
+
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            'error': 'login_required',
+            'redirect': '/accounts/login/'
+        }, status=403)
+
     product_id = request.POST.get('product_id')
     weight = request.POST.get('weight')
     coffee_form = request.POST.get('coffee_form')
