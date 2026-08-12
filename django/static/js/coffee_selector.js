@@ -167,10 +167,8 @@ var CoffeeSelector = (function () {
                 .then(function (response) {
                     CoffeeShop.showToast('Товар добавлен в корзину', 'success');
                     updateCartBadge(response.cart_count);
-                    // Перезагрузка страницы для обновления остатка
-                    setTimeout(function () {
-                        location.reload();
-                    }, 1000);
+                    // Обновляем отображение выбранного веса
+                    showWeightInfo(state.weight);
                 })
                 .catch(function (error) {
                     CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');

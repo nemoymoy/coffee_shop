@@ -20,12 +20,25 @@ def cart_view(request):
     cart_with_products = {}
     total = 0
 
+    brewing_labels = dict(Product.BREWING_CHOICES)
+
     for key, value in cart_data.items():
         try:
             product = Product.objects.get(pk=value['product_id'])
             price = value.get('price', 0)
             total += price
             item = dict(value)
+            # Маппинг полей сессии в поля шаблона
+            if 'weight' in item:
+                item['coffee_weight_grams'] = item['weight']
+            if 'coffee_form' not in item:
+                item['coffee_form'] = value.get('coffee_form', 'beans')
+            brewing_method = value.get('brewing_method', '')
+            item['brewing_method'] = brewing_method
+            if brewing_method and brewing_method in brewing_labels:
+                item['brewing_method_label'] = brewing_labels[brewing_method]
+            else:
+                item['brewing_method_label'] = ''
             item['product'] = product
             item['price'] = price
             cart_with_products[key] = item
