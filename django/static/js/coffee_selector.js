@@ -74,8 +74,16 @@ var CoffeeSelector = (function () {
 
         /* ---- Brewing method ---- */
         if (brewingSelect) {
+            // Добавляем placeholder-опцию
+            var placeholderOpt = document.createElement('option');
+            placeholderOpt.value = '';
+            placeholderOpt.textContent = 'Выберите способ заваривания';
+            placeholderOpt.disabled = true;
+            placeholderOpt.selected = true;
+            brewingSelect.insertBefore(placeholderOpt, brewingSelect.firstChild);
+
             brewingSelect.addEventListener('change', function () {
-                state.brewingMethod = this.value;
+                state.brewingMethod = this.value || null;
                 showWeightInfo(state.weight);
             });
         }
@@ -169,6 +177,9 @@ var CoffeeSelector = (function () {
                     updateCartBadge(response.cart_count);
                     // Обновляем отображение выбранного веса
                     showWeightInfo(state.weight);
+                    // Восстанавливаем кнопку
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
                 })
                 .catch(function (error) {
                     CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');
