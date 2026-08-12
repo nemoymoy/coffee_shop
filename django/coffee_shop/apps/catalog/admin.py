@@ -1,7 +1,65 @@
+from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from .models import Category, Product, Review
+
+
+BREWING_METHODS = [
+    ('turka', 'Турка (джезва)'),
+    ('espresso', 'Эспрессо-машина'),
+    ('siphon', 'Сифон (габет)'),
+    ('pourover', 'Пуровер (воронка)'),
+    ('aeropress', 'Аэропресс'),
+    ('chemex', 'Кемекс'),
+    ('french_press', 'Френч-пресс'),
+    ('capping', 'Помол на каппинг'),
+    ('filter_machine', 'Фильтр-машина'),
+]
+
+
+class BrewingMethodsWidget(forms.Widget):
+    """Виджет с чекбоксами для способов заваривания."""
+
+    def __init__(self, attrs=None):
+        super().__init__(attrs)
+        self.methods = dict(BREWING_METHODS)
+
+    def value_from_datadict(self, data, files, name):
+        result = []
+        for key, value in self.methods.items():
+            if data.get(f'{name}_{key}'):
+                result.append(key)
+        return result
+
+    def value_omitted_from_data(self, data, files, name):
+        return not any(
+            data.get(f'{name}_{key}') is not None
+            for key in self.methods.keys()
+        )
+
+    def render(self, name, value, attrs=None, renderer=None):
+        import json
+        if isinstance(value, str):
+            try:
+                value = json.loads(value) or []
+            except (json.JSONDecodeError, ValueError):
+                value = []
+        elif value is None:
+            value = []
+
+        html = []
+        html.append('<div class="brewing-methods-widget" style="border: 1px solid #ddd; padding: 10px; border-radius: 4px;">')
+        html.append(f'<p style="margin: 0 0 8px 0; font-size: 0.9em; color: #666;">Выберите способы заваривания:</p>')
+        for key, label in self.methods.items():
+            checked = 'checked' if key in value else ''
+            html.append(f'<label style="display: block; margin: 4px 0; cursor: pointer;">')
+            html.append(f'<input type="checkbox" name="{name}_{key}" value="{key}" {checked} style="margin-right: 8px;">')
+            html.append(f'{label}')
+            html.append('</label>')
+        html.append('</div>')
+        return format_html(''.join(html))
+
 
 
 @admin.register(Category)
