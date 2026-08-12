@@ -89,6 +89,7 @@
             <div class="card-body">
                 <div class="coffee-selector"
                      data-is-coffee="1"
+                     data-product-id="{{ product.pk }}"
                      data-price-per-50g="{{ product.price_per_50g }}"
                      data-out-of-stock="{{ product.stock|yesno:'false,true' }}"
                      data-weights='{{ available_weights|safe }}'>

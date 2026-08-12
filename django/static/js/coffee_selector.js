@@ -21,6 +21,7 @@ var CoffeeSelector = (function () {
         var submitBtn = container.querySelector('.coffee-submit-btn');
         var weightInfo = container.querySelector('.coffee-weight-info');
         var availWeightsData = container.getAttribute('data-weights');
+        var productId = container.getAttribute('data-product-id');
 
         if (!weightSelect) return;
 
@@ -66,7 +67,9 @@ var CoffeeSelector = (function () {
                     if (brewingBlock) brewingBlock.style.display = 'block';
                 } else {
                     if (brewingBlock) brewingBlock.style.display = 'none';
+                    state.brewingMethod = null;
                 }
+                showWeightInfo(state.weight);
             });
         });
 
@@ -147,6 +150,7 @@ var CoffeeSelector = (function () {
         function sendToCart() {
             var ADD_URL = '/cart/add/';
             var data = {
+                'product_id': productId,
                 'weight': state.weight,
                 'coffee_form': state.form,
             };
