@@ -20,7 +20,19 @@ var CoffeeShop = window.CoffeeShop || {};
             },
             body: encodeFormData(data)
         }).then(function (resp) {
-            return resp.json().then(function (json) {
+            return resp.text().then(function (text) {
+                var json;
+                try {
+                    json = JSON.parse(text);
+                } catch (e) {
+                    if (!resp.ok) {
+                        return Promise.reject({
+                            error: 'Серверная ошибка',
+                            redirect: '/accounts/login/'
+                        });
+                    }
+                    return JSON.parse('{}');
+                }
                 if (!resp.ok) {
                     return Promise.reject(json);
                 }
