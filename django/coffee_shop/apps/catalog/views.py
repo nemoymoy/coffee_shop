@@ -18,7 +18,7 @@ def catalog(request):
     sca_min = request.GET.get('sca_min')
 
     if category_id:
-        products = products.filter(category_id=category_id)
+        products = products.filter(category__slug=category_id)
     if min_price:
         products = products.filter(price_per_50g__gte=min_price)
     if max_price:
