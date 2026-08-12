@@ -55,6 +55,7 @@ def product_detail(request, slug):
         'product': product,
         'available_weights': available_weights,
         'related_products': related,
+        'brewing_methods': Product.BREWING_CHOICES,
     }
     return render(request, 'product_detail.html', context)
 

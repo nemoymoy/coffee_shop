@@ -5,17 +5,7 @@ from django.utils.translation import gettext_lazy as _
 from .models import Category, Product, Review
 
 
-BREWING_METHODS = [
-    ('turka', 'Турка (джезва)'),
-    ('espresso', 'Эспрессо-машина'),
-    ('siphon', 'Сифон (габет)'),
-    ('pourover', 'Пуровер (воронка)'),
-    ('aeropress', 'Аэропресс'),
-    ('chemex', 'Кемекс'),
-    ('french_press', 'Френч-пресс'),
-    ('capping', 'Помол на каппинг'),
-    ('filter_machine', 'Фильтр-машина'),
-]
+BREWING_METHODS = Product.BREWING_CHOICES
 
 
 class BrewingMethodsWidget(forms.Widget):

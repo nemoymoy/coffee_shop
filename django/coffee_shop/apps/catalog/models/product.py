@@ -30,6 +30,18 @@ class Product(models.Model):
         ('other', 'Другая'),
     ]
 
+    BREWING_CHOICES = [
+        ('turka', 'Турка (джезва)'),
+        ('espresso', 'Эспрессо-машина'),
+        ('siphon', 'Сифон (габет)'),
+        ('pourover', 'Пуровер (воронка)'),
+        ('aeropress', 'Аэропресс'),
+        ('chemex', 'Кемекс'),
+        ('french_press', 'Френч-пресс'),
+        ('capping', 'Помол на каппинг'),
+        ('filter_machine', 'Фильтр-машина'),
+    ]
+
     name = models.CharField(max_length=200, verbose_name='Название')
     slug = models.SlugField(max_length=200, unique=True, verbose_name='URL-адрес')
     description = models.TextField(blank=True, verbose_name='Описание')

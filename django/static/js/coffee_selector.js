@@ -17,9 +17,9 @@ var CoffeeSelector = (function () {
         var formRadios = container.querySelectorAll('.coffee-form-input');
         var brewingBlock = container.querySelector('.coffee-brewing-block');
         var brewingSelect = container.querySelector('.coffee-brewing-method');
-        var priceDisplay = container.querySelector('.coffee-price');
+        var priceDisplay = container.querySelector('.coffee-price-display');
         var submitBtn = container.querySelector('.coffee-submit-btn');
-        var weightUnit = container.querySelector('.coffee-weight-unit');
+        var weightInfo = container.querySelector('.coffee-weight-info');
         var availWeightsData = container.getAttribute('data-weights');
 
         if (!weightSelect) return;
@@ -105,30 +105,84 @@ var CoffeeSelector = (function () {
         }
 
         function showWeightInfo(weight) {
-            if (weightUnit) {
+            if (weightInfo) {
                 var label = state.form === 'ground' ? 'молотый' : 'в зёрнах';
                 var info = weight + ' г, ' + label;
                 if (state.brewingMethod) {
-                    info += ' · ' + brewingSelect.options[brewingSelect.selectedIndex].textContent;
+                    info += ' · ' + getBrewingMethodLabel(state.brewingMethod);
                 }
-                weightUnit.textContent = info;
+                weightInfo.textContent = info;
             }
         }
 
-        /* ---- Submit validation ---- */
+        function getBrewingMethodLabel(value) {
+            if (!brewingSelect) return value;
+            for (var i = 0; i < brewingSelect.options.length; i++) {
+                if (brewingSelect.options[i].value === value) {
+                    return brewingSelect.options[i].textContent;
+                }
+            }
+            return value;
+        }
+
+        /* ---- Submit via AJAX ---- */
         if (submitBtn) {
-            submitBtn.addEventListener('click', function (e) {
+            submitBtn.addEventListener('click', function () {
                 if (!state.isCoffee) return;
 
+                // Валидация: молотый → способ заваривания обязателен
                 if (state.form === 'ground' && !state.brewingMethod) {
-                    e.preventDefault();
-                    e.stopPropagation();
                     CoffeeShop.showToast('Выберите способ заваривания', 'warning');
                     if (brewingBlock) brewingBlock.style.display = 'block';
                     if (brewingSelect) brewingSelect.focus();
-                    return false;
+                    return;
                 }
+
+                // Отправка через AJAX
+                sendToCart();
             });
+        }
+
+        /* ---- Отправка в корзину ---- */
+        function sendToCart() {
+            var ADD_URL = '/cart/add/';
+            var data = {
+                'weight': state.weight,
+                'coffee_form': state.form,
+            };
+            if (state.brewingMethod) {
+                data.brewing_method = state.brewingMethod;
+            }
+
+            var originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Добавляется...';
+
+            CoffeeShop.postJson(ADD_URL, data)
+                .then(function (response) {
+                    CoffeeShop.showToast('Товар добавлен в корзину', 'success');
+                    updateCartBadge(response.cart_count);
+                    // Перезагрузка страницы для обновления остатка
+                    setTimeout(function () {
+                        location.reload();
+                    }, 800);
+                })
+                .catch(function (error) {
+                    CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                });
+        }
+
+        function updateCartBadge(count) {
+            var badge = document.getElementById('cartBadge');
+            if (!badge) return;
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
         }
     }
 

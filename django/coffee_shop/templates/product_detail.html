@@ -132,11 +132,13 @@
                         </div>
                         <select name="brewing_method" class="form-select coffee-brewing-method">
                             {% if product.available_brewing_methods %}
-                                {% for method in product.available_brewing_methods %}
-                                <option value="{{ method }}">{{ method }}</option>
+                                {% for value, label in brewing_methods %}
+                                    {% if value in product.available_brewing_methods %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                    {% endif %}
                                 {% endfor %}
                             {% else %}
-                                {% for value, label in product.get_brewing_methods_display %}
+                                {% for value, label in brewing_methods %}
                                 <option value="{{ value }}">{{ label }}</option>
                                 {% endfor %}
                             {% endif %}
