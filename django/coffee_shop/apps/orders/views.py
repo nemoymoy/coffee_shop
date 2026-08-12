@@ -40,10 +40,14 @@ def cart_view(request):
     return render(request, 'cart.html', context)
 
 
-def cart_remove(request, key):
+def cart_remove(request):
     """Удаление товара из корзины (AJAX)."""
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
+    
+    key = request.POST.get('key')
+    if not key:
+        return JsonResponse({'error': 'Key is required'}, status=400)
     
     cart = request.session.get('cart', {})
     if key in cart:
