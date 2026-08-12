@@ -10,7 +10,8 @@ from . import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', views.health_check, name='health'),
-    path('', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
+    path('', views.home, name='home'),
+    path('catalog/', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
     path('cart/', include('coffee_shop.apps.orders.urls', namespace='cart')),
     path('checkout/', include('coffee_shop.apps.orders.urls', namespace='checkout')),
     # Catalog API
