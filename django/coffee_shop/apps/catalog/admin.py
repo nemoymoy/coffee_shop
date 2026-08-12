@@ -72,6 +72,9 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 class ProductAdmin(admin.ModelAdmin):
+    widgets = {
+        'available_brewing_methods': BrewingMethodsWidget(),
+    }
     list_display = [
         'name', 'category', 'product_type', 'price_display', 'stock',
         'sca_score', 'is_available', 'created_at'
