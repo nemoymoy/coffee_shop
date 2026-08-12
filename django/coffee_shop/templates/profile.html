@@ -38,7 +38,7 @@
                 <div class="card">
                     <div class="card-header">Личные данные</div>
                     <div class="card-body">
-                        <form method="post" action="{% url 'profile' %}">
+                        <form method="post" action="{% url 'users:profile' %}">
                             {% csrf_token %}
                             {% if user_form.non_field_errors %}
                             <div class="alert alert-danger">
