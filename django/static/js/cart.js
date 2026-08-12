@@ -6,8 +6,7 @@
 var Cart = (function () {
 
     var ADD_URL = '/cart/add/';
-    var REMOVE_URL = '/cart/remove/{key}/';
-    var CLEAR_URL = '/cart/clear/';
+    var REMOVE_URL = '/cart/remove/';
 
     /* ==================== Инициализация ==================== */
 
@@ -78,9 +77,7 @@ var Cart = (function () {
             return;
         }
 
-        var url = REMOVE_URL.replace('{key}', encodeURIComponent(key));
-
-        CoffeeShop.postJson(url, {})
+        CoffeeShop.postJson(REMOVE_URL, {key: key})
             .then(function (response) {
                 if (card) {
                     card.style.transition = 'opacity 0.3s';

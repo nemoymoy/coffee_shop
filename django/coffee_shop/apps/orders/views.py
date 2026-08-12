@@ -16,31 +16,44 @@ from coffee_shop.apps.orders.models import Order, OrderItem
 
 def cart_view(request):
     """Отображение корзины."""
-    cart = request.session.get('cart', {})
-    cart_items = []
+    cart_data = request.session.get('cart', {})
+    cart_with_products = {}
     total = 0
-    
-    for key, value in cart.items():
+
+    for key, value in cart_data.items():
         try:
             product = Product.objects.get(pk=value['product_id'])
             price = value.get('price', 0)
             total += price
-            cart_items.append({
-                'product': product,
-                'quantity': value.get('quantity', 1),
-                'price': price,
-                'coffee_weight_grams': value.get('weight'),
-                'coffee_form': value.get('coffee_form'),
-                'brewing_method': value.get('brewing_method'),
-            })
+            item = dict(value)
+            item['product'] = product
+            item['price'] = price
+            cart_with_products[key] = item
         except Product.DoesNotExist:
             pass
-    
+
     context = {
-        'cart_items': cart_items,
+        'cart': cart_with_products,
+        'cart_items': list(cart_with_products.values()),
         'total': total,
     }
     return render(request, 'cart.html', context)
+
+
+def cart_remove(request, key):
+    """Удаление товара из корзины (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+    
+    cart = request.session.get('cart', {})
+    if key in cart:
+        del cart[key]
+        request.session['cart'] = cart
+    
+    return JsonResponse({
+        'success': True,
+        'cart_count': len(cart),
+    })
 
 
 def cart_add(request):

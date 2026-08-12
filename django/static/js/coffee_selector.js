@@ -67,7 +67,6 @@ var CoffeeSelector = (function () {
                     if (brewingBlock) brewingBlock.style.display = 'block';
                 } else {
                     if (brewingBlock) brewingBlock.style.display = 'none';
-                    state.brewingMethod = null;
                 }
                 showWeightInfo(state.weight);
             });
@@ -77,6 +76,7 @@ var CoffeeSelector = (function () {
         if (brewingSelect) {
             brewingSelect.addEventListener('change', function () {
                 state.brewingMethod = this.value;
+                showWeightInfo(state.weight);
             });
         }
 
@@ -91,6 +91,7 @@ var CoffeeSelector = (function () {
         if (weightSelect.value) {
             state.weight = parseInt(weightSelect.value);
             recalcPrice();
+            showWeightInfo(state.weight);
         }
         if (brewingBlock) brewingBlock.style.display = 'none';
 
@@ -169,7 +170,7 @@ var CoffeeSelector = (function () {
                     // Перезагрузка страницы для обновления остатка
                     setTimeout(function () {
                         location.reload();
-                    }, 800);
+                    }, 1000);
                 })
                 .catch(function (error) {
                     CoffeeShop.showToast(error || 'Ошибка при добавлении в корзину', 'danger');

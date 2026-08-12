@@ -51,11 +51,16 @@ def product_detail(request, slug):
         is_available=True
     ).exclude(slug=slug)[:4]
 
+    # Количество товаров в корзине
+    cart = request.session.get('cart', {})
+    cart_count = len(cart)
+
     context = {
         'product': product,
         'available_weights': available_weights,
         'related_products': related,
         'brewing_methods': Product.BREWING_CHOICES,
+        'cart_count': cart_count,
     }
     return render(request, 'product_detail.html', context)
 

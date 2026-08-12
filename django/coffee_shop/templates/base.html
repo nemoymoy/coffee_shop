@@ -144,5 +144,19 @@
     <script src="{% static 'js/coffee_selector.js' %}"></script>
     <script src="{% static 'js/checkout.js' %}"></script>
     {% block extra_js %}{% endblock %}
+    
+    {% if cart_count is not None %}
+    <script>
+        (function() {
+            var badge = document.getElementById('cartBadge');
+            if (!badge) return;
+            var count = {{ cart_count }};
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+            }
+        })();
+    </script>
+    {% endif %}
 </body>
 </html>
