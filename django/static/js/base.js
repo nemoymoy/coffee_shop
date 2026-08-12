@@ -22,7 +22,7 @@ var CoffeeShop = window.CoffeeShop || {};
         }).then(function (resp) {
             return resp.json().then(function (json) {
                 if (!resp.ok) {
-                    return Promise.reject(json.error || 'Ошибка сервера');
+                    return Promise.reject(json);
                 }
                 return json;
             });
@@ -36,7 +36,7 @@ var CoffeeShop = window.CoffeeShop || {};
         return fetch(url).then(function (resp) {
             return resp.json().then(function (json) {
                 if (!resp.ok) {
-                    return Promise.reject(json.error || 'Ошибка сервера');
+                    return Promise.reject(json);
                 }
                 return json;
             });

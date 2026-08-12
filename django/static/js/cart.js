@@ -56,14 +56,10 @@ var Cart = (function () {
             })
             .catch(function (error) {
                 if (error && error.redirect) {
+                    CoffeeShop.showToast('Войдите, чтобы добавить товар в корзину', 'warning');
                     window.location.href = error.redirect;
                 } else {
-                    var msg = error || 'Ошибка при добавлении';
-                    if (error === 'login_required') {
-                        msg = 'Войдите, чтобы добавить товар в корзину';
-                    }
-                    CoffeeShop.showToast(msg, 'danger');
-                    window.location.href = error.redirect || '/accounts/login/';
+                    CoffeeShop.showToast(error || 'Ошибка при добавлении', 'danger');
                 }
             })
             .finally(function () {
@@ -108,9 +104,7 @@ var Cart = (function () {
             })
             .catch(function (error) {
                 if (error && error.redirect) {
-                    if (error.error === 'login_required') {
-                        CoffeeShop.showToast('Войдите, чтобы удалить товар из корзины', 'warning');
-                    }
+                    CoffeeShop.showToast('Войдите, чтобы удалить товар из корзины', 'warning');
                     window.location.href = error.redirect;
                 } else {
                     CoffeeShop.showToast(error || 'Ошибка при удалении', 'danger');
