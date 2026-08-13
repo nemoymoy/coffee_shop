@@ -28,6 +28,28 @@ class BrewingMethodsWidget(forms.Widget):
             for key in self.methods.keys()
         )
 
+    def decompress(self, value):
+        """Convert database value (list) to list suitable for widget."""
+        if isinstance(value, list):
+            return value
+        elif isinstance(value, str):
+            import json
+            try:
+                return json.loads(value) or []
+            except (json.JSONDecodeError, ValueError):
+                return []
+        return []
+
+    def compress(self, data_dict):
+        """Convert widget data back to list for model field."""
+        if data_dict:
+            results = []
+            for key in self.methods.keys():
+                if data_dict.get(key):
+                    results.append(key)
+            return results
+        return []
+
     def render(self, name, value, attrs=None, renderer=None):
         import json
         if isinstance(value, str):
