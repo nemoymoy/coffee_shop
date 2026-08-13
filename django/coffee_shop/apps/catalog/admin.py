@@ -72,6 +72,21 @@ class ProductAdminForm(forms.ModelForm):
             'available_brewing_methods': BrewingMethodsWidget,
         }
 
+    def clean(self):
+        cleaned_data = super().clean()
+        product_type = cleaned_data.get('product_type')
+        price_per_50g = cleaned_data.get('price_per_50g')
+
+        if product_type == Product.PRODUCT_TYPE_COFFEE and not price_per_50g:
+            raise ValidationError({
+                'price_per_50g': 'Обязательное поле для кофе'
+            })
+
+        if product_type == Product.PRODUCT_TYPE_OTHER:
+            cleaned_data['price_per_50g'] = None
+
+        return cleaned_data
+
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
