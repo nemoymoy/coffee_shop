@@ -115,9 +115,10 @@ class TestProductAPI:
             assert p.get('sca_score') is None or p['sca_score'] >= 85
 
     def test_filter_by_category(self, client, category, product):
-        response = client.get('/api/catalog/products/?category=1')
+        response = client.get(f'/api/catalog/products/?category={category.slug}')
         assert response.status_code == status.HTTP_200_OK
-        for item in response.data:
+        assert len(response.data['results']) >= 1
+        for item in response.data['results']:
             assert item['category'] == category.id
 
     def test_filter_by_roast(self, client, category):

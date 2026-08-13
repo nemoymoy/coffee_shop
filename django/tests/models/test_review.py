@@ -41,13 +41,14 @@ class TestReview:
 
     def test_review_str(self, user, product):
         user.first_name = 'Иван'
+        user.last_name = 'Иванов'
         user.save()
         review = Review.objects.create(
             user=user,
             product=product,
             rating=4,
         )
-        expected = f'Иван {user.last_name or ""} → {product.name}'
+        expected = f'Иван Иванов → {product.name}'
         assert expected in str(review)
 
     def test_product_reviews(self, user, product):

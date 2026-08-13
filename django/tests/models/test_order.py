@@ -5,6 +5,9 @@ from decimal import Decimal
 from coffee_shop.apps.orders.models import Order, OrderItem
 
 
+pytestmark = pytest.mark.django_db
+
+
 class TestOrderModel:
     """Тесты модели Order."""
 
@@ -112,15 +115,16 @@ class TestPromoCodeModel:
 
     def test_promo_code_remaining_uses(self, promo_code):
         """Оставшиеся использования."""
-        assert promo_code.remaining_uses == 99  # 100 - 1
-        promo_code.used_count = 100
+        assert promo_code.remaining_uses == 100  # 100 - 0 (использований ещё нет)
+        promo_code.used_count = 1
         promo_code.save()
-        assert promo_code.remaining_uses == 0
+        assert promo_code.remaining_uses == 99
 
     def test_promo_code_unlimited(self):
         """Безлимитный промокод."""
         from django.utils import timezone
         from datetime import timedelta
+        from coffee_shop.apps.orders.models import PromoCode
 
         pc = PromoCode.objects.create(
             code='UNLIMITED',

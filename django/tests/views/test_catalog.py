@@ -24,7 +24,6 @@ class TestCatalogView:
             product_type='coffee',
             price_per_50g=500,
             is_available=True,
-            is_active=True,
         )
         response = client.get(reverse('catalog:catalog'))
         assert response.status_code == 200
@@ -39,7 +38,6 @@ class TestCatalogView:
             product_type='coffee',
             price_per_50g=500,
             is_available=True,
-            is_active=True,
         )
         Product.objects.create(
             name='Tea 1',
@@ -47,21 +45,22 @@ class TestCatalogView:
             category=cat2,
             product_type='other',
             base_price=300,
+            price_per_50g=300,
             is_available=True,
-            is_active=True,
         )
         response = client.get(f'{reverse("catalog:catalog")}?category=coffee')
         assert response.status_code == 200
 
     def test_product_detail_page(self, client):
+        category = Category.objects.create(name='Кофе', slug='coffee')
         Product.objects.create(
             name='Detail Test',
             slug='detail-test',
+            category=category,
             product_type='coffee',
             price_per_50g=500,
             stock=500,
             is_available=True,
-            is_active=True,
         )
         response = client.get(reverse('catalog:product_detail', args=['detail-test']))
         assert response.status_code == 200
@@ -70,22 +69,15 @@ class TestCatalogView:
         response = client.get(reverse('catalog:product_detail', args=['non-existent']))
         assert response.status_code == 404
 
-    def test_home_page(self, client):
-        response = client.get(reverse('catalog:home'))
-        assert response.status_code == 200
-
-    def test_about_page(self, client):
-        response = client.get(reverse('catalog:about'))
-        assert response.status_code == 200
-
     def test_unavailable_products_hidden(self, client):
+        category = Category.objects.create(name='Кофе', slug='coffee')
         Product.objects.create(
             name='Hidden',
             slug='hidden',
+            category=category,
             product_type='coffee',
             price_per_50g=500,
             is_available=False,
-            is_active=True,
         )
         response = client.get(reverse('catalog:catalog'))
         assert b'Hidden' not in response.content

@@ -14,6 +14,7 @@ from coffee_shop.apps.orders.models import Order, OrderItem, PromoCode
 
 # ====== Category Fixtures ======
 
+@pytest.mark.django_db
 @pytest.fixture
 def category():
     """Базовая категория."""
@@ -24,6 +25,7 @@ def category():
     )
 
 
+@pytest.mark.django_db
 @pytest.fixture
 def category_desserts():
     """Категория десертов."""
@@ -36,6 +38,7 @@ def category_desserts():
 
 # ====== Product Fixtures ======
 
+@pytest.mark.django_db
 @pytest.fixture
 def coffee_beans(category):
     """Товар: кофе в зёрнах."""
@@ -59,6 +62,7 @@ def coffee_beans(category):
     )
 
 
+@pytest.mark.django_db
 @pytest.fixture
 def coffee_ground(category):
     """Товар: кофе молотый."""
@@ -82,6 +86,7 @@ def coffee_ground(category):
     )
 
 
+@pytest.mark.django_db
 @pytest.fixture
 def cake(category_desserts):
     """Товар: не кофе (десерт)."""
@@ -92,6 +97,7 @@ def cake(category_desserts):
         category=category_desserts,
         product_type='other',
         base_price=Decimal('350.00'),
+        price_per_50g=Decimal('350.00'),
         stock=20,
         is_available=True
     )
@@ -99,6 +105,7 @@ def cake(category_desserts):
 
 # ====== Order Fixtures ======
 
+@pytest.mark.django_db
 @pytest.fixture
 def user():
     """Тестовый пользователь."""
@@ -111,6 +118,7 @@ def user():
     )
 
 
+@pytest.mark.django_db
 @pytest.fixture
 def order(coffee_beans, user):
     """Тестовый заказ."""
@@ -128,6 +136,7 @@ def order(coffee_beans, user):
     return o
 
 
+@pytest.mark.django_db
 @pytest.fixture
 def order_item(order, coffee_beans):
     """Тестовая позиция заказа."""
@@ -144,6 +153,7 @@ def order_item(order, coffee_beans):
 
 # ====== PromoCode Fixtures ======
 
+@pytest.mark.django_db
 @pytest.fixture
 def promo_code():
     """Тестовый промокод."""

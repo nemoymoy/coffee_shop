@@ -48,6 +48,7 @@ class TestCartService:
             slug='other',
             product_type='other',
             base_price=Decimal('300'),
+            price_per_50g=Decimal('300'),
         )
         data = CartService.get_cart_item_data(product, 0, None, None)
         assert data['unit_price'] == Decimal('300')

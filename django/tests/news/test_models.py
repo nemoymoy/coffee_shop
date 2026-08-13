@@ -102,14 +102,18 @@ class TestNewsModel:
         assert news_list[1].title == 'Old news'
 
     def test_published_at_null(self):
-        """published_at может быть null."""
-        news = News.objects.create(
+        """published_at устанавливается автоматически при save() если не задан."""
+        news = News(
             title='No date',
             slug='no-date',
             content='Content',
-            published_at=None,
+            is_published=True,
         )
+        # До save() published_at может быть None
         assert news.published_at is None
+        # После save() устанавливается автоматически
+        news.save()
+        assert news.published_at is not None
 
 
 @pytest.fixture

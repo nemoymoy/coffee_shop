@@ -24,7 +24,7 @@ def news_item():
         slug='serializer-test',
         content='Test content for serializer',
         is_published=True,
-        published_at=now,
+        published_at=now - timedelta(hours=1),
     )
 
 
@@ -59,10 +59,12 @@ class TestNewsAPI:
     def test_api_news_list_fields(self, api_client, news_item):
         """List возвращает минимальные поля."""
         response = api_client.get('/api/news/news/')
-        assert 'id' in response.data[0]
-        assert 'title' in response.data[0]
-        assert 'slug' in response.data[0]
-        assert 'content' not in response.data[0]  # List без контента
+        assert response.status_code == 200
+        results = response.data.get('results', response.data)
+        assert 'id' in results[0]
+        assert 'title' in results[0]
+        assert 'slug' in results[0]
+        assert 'content' not in results[0]  # List без контента
 
     def test_api_news_detail_fields(self, api_client, news_item):
         """Detail возвращает все поля."""
@@ -78,24 +80,28 @@ class TestNewsAPI:
         assert len(response.data) >= 1
 
     def test_api_news_ordering(self, api_client):
+        # Удаляем предыдущие тестовые новости
+        News.objects.filter(slug__in=['old-news', 'new-news']).delete()
         now = timezone.now()
-        News.objects.create(
+        old_news = News.objects.create(
             title='Old News',
             slug='old-news',
             content='Old',
             is_published=True,
             published_at=now - timedelta(days=1),
         )
-        News.objects.create(
+        new_news = News.objects.create(
             title='New News',
             slug='new-news',
             content='New',
             is_published=True,
-            published_at=now,
+            published_at=now - timedelta(hours=1),
         )
         response = api_client.get('/api/news/news/?ordering=-published_at')
         assert response.status_code == 200
-        assert response.data[0]['title'] == 'New News'
+        results = response.data.get('results', response.data)
+        titles = [item['title'] for item in results]
+        assert titles.index('New News') < titles.index('Old News')
 
 
 class TestPromotionAPI:

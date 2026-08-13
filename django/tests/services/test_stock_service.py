@@ -5,6 +5,9 @@ from decimal import Decimal
 from coffee_shop.apps.catalog.services import CartService
 
 
+pytestmark = pytest.mark.django_db
+
+
 class TestCartService:
     """Тесты корзины и контроля остатков."""
 

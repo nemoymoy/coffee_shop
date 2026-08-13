@@ -5,6 +5,9 @@ from coffee_shop.apps.catalog.services import CoffeeService
 from coffee_shop.apps.orders.models import OrderItem
 
 
+pytestmark = pytest.mark.django_db
+
+
 class TestCoffeeService:
     """Тесты валидации параметров кофе."""
 
@@ -35,7 +38,7 @@ class TestCoffeeService:
         """Превышение остатка."""
         is_valid, error = CoffeeService.validate_weight(600, 500)
         assert is_valid is False
-        assert '600 г' in error
+        assert 'Доступно не более 500 г' in error
 
     def test_validate_weight_equal_stock(self):
         """Вес равен остатку."""
@@ -83,6 +86,7 @@ class TestCoffeeService:
 
     def test_get_available_weights_empty_stock(self):
         """Нет доступных весов при stock=0."""
+        from decimal import Decimal
         from coffee_shop.apps.catalog.models import Product
         product = Product(stock=0, price_per_50g=Decimal('100'))
         weights = CoffeeService.get_available_weights(product)

@@ -31,7 +31,7 @@ class TestPersonalDataConsentModel:
         assert consent.content_hash == 'abc123'
         assert consent.ip_address == '192.168.1.1'
         assert consent.user_agent == 'Mozilla/5.0'
-        assert consent.consentted_at is not None
+        assert consent.consented_at is not None
 
     def test_consent_str(self):
         user = User.objects.create_user(
@@ -86,22 +86,27 @@ class TestPersonalDataConsentModel:
         assert consent.user_agent == ''
 
     def test_consent_ordering(self):
-        user = User.objects.create_user(
-            username='testuser',
+        user1 = User.objects.create_user(
+            username='testuser1',
             password='testpass123',
         )
         consent_old = PersonalDataConsent.objects.create(
-            user=user,
+            user=user1,
             version='1.0',
             content_hash='abc123',
         )
-        consent_old.consentted_at = datetime(2025, 1, 1)
+        consent_old.consented_at = datetime(2025, 1, 1)
         consent_old.save(update_fields=['consented_at'])
+        
+        user2 = User.objects.create_user(
+            username='testuser2',
+            password='testpass123',
+        )
         consent_new = PersonalDataConsent.objects.create(
-            user=user,
+            user=user2,
             version='2.0',
             content_hash='def456',
         )
-        consents = PersonalDataConsent.objects.filter(user=user)
+        consents = PersonalDataConsent.objects.all()
         assert consents.first() == consent_new
         assert consents.last() == consent_old

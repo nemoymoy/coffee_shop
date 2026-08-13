@@ -5,6 +5,9 @@ import pytest
 from coffee_shop.apps.catalog.models import Product, Category
 
 
+pytestmark = pytest.mark.django_db
+
+
 @pytest.fixture
 def category():
     return Category.objects.create(name='Кофе', slug='coffee', is_active=True)
@@ -45,6 +48,7 @@ class TestProductModel:
             category=category,
             product_type='other',
             base_price=350.00,
+            price_per_50g=100.00,
             stock=20
         )
 
@@ -57,6 +61,7 @@ class TestProductModel:
             name='Тест',
             slug='test',
             category=category,
+            price_per_50g=100.00,
             stock=0
         )
         assert product.is_in_stock is False
@@ -71,6 +76,7 @@ class TestProductModel:
             name='Тест',
             slug='test2',
             category=category,
+            price_per_50g=100.00,
             stock=500
         )
         assert product.max_weight_grams == 500
@@ -106,6 +112,7 @@ class TestProductModel:
             name='Тест',
             slug='test-sca',
             category=category,
+            price_per_50g=100.00,
             sca_score=85
         )
         product.full_clean()  # Не должно выбросить

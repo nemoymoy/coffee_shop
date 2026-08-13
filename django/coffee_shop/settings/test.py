@@ -8,8 +8,8 @@ DATABASES = {
         'ENGINE': 'django.db.backends.postgresql',
         'NAME': 'coffee_shop_test',
         'USER': 'coffee_shop',
-        'PASSWORD': 'test',
-        'HOST': 'localhost',
+        'PASSWORD': 'change-me-dev',
+        'HOST': 'db',
         'PORT': '5432',
     }
 }

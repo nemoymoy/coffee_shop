@@ -51,6 +51,7 @@ class TestUserRegistrationForm:
             'last_name': 'Петров',
             'password1': 'strongpass123',
             'password2': 'strongpass123',
+            'personal_data_consent': True,
         })
         assert form.is_valid()
 
@@ -111,6 +112,7 @@ class TestUserRegistrationForm:
             'last_name': 'Петров',
             'password1': 'strongpass123',
             'password2': 'strongpass123',
+            'personal_data_consent': True,
         })
         form.is_valid()
         user = form.save()
@@ -132,7 +134,8 @@ class TestUserRegistrationForm:
         })
         assert not form.is_valid()
         assert 'personal_data_consent' in form.errors
-        assert 'Необходимо дать согласие на обработку персональных данных' in form.errors['personal_data_consent']
+        consent_error = ' '.join(form.errors['personal_data_consent'])
+        assert 'Необходимо дать согласие на обработку персональных данных' in consent_error
 
     def test_form_valid_with_consent(self):
         """Регистрация с согласием должна быть валидна."""
