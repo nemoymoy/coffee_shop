@@ -43,6 +43,7 @@ class CoffeeForm(forms.Form):
 
     def __init__(self, product, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.product = product
         available_weights = CoffeeService.get_available_weights(product)
         if available_weights:
             self.WEIGHT_CHOICES = [(w, f'{w} г') for w in available_weights]
@@ -58,6 +59,10 @@ class CoffeeForm(forms.Form):
             raise forms.ValidationError('Укажите вес')
         if weight % 50 != 0:
             raise forms.ValidationError('Вес должен быть кратен 50 г')
+        if hasattr(self, 'product') and self.product is not None and weight > self.product.stock:
+            raise forms.ValidationError(
+                f'Доступно не более {self.product.stock} г'
+            )
         return weight
 
     def clean(self):

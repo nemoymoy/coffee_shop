@@ -1,5 +1,6 @@
 """Serializers for catalog app."""
 from rest_framework import serializers
+from django.db.models import Avg
 
 from coffee_shop.apps.catalog.models import Category, Product, Review
 
@@ -49,7 +50,7 @@ class ProductSerializer(serializers.ModelSerializer):
     def get_average_rating(self, obj):
         approved_reviews = obj.reviews.filter(is_approved=True)
         if approved_reviews.exists():
-            return round(approved_reviews.aggregate(serializers.Avg('rating'))['rating__avg'], 1)
+            return round(approved_reviews.aggregate(Avg('rating'))['rating__avg'], 1)
         return None
 
     def get_review_count(self, obj):

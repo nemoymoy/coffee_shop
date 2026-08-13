@@ -175,6 +175,7 @@ def checkout_view(request):
                 delivery_method=cleaned['delivery_method'],
                 payment_method=cleaned['payment_method'],
                 delivery_address=cleaned.get('delivery_address', ''),
+                total_amount=0,
             )
             
             total = 0
@@ -255,6 +256,13 @@ def order_success(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
     context = {'order': order}
     return render(request, 'order_success.html', context)
+
+
+def order_detail(request, pk):
+    """Детальная страница заказа."""
+    order = get_object_or_404(Order, pk=pk)
+    context = {'order': order}
+    return render(request, 'order_detail.html', context)
 
 
 @csrf_exempt
