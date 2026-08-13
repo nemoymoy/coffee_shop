@@ -44,3 +44,7 @@ Thumbs.db
 backups/
 *.sql.gz
 *.tar.gz
+
+#ssh
+key_for_ubuntu
+key_for_ubuntu.pub
