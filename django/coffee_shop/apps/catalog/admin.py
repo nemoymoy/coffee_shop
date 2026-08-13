@@ -3,6 +3,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from .models import Category, Product, Review
+import json
 
 
 BREWING_METHODS = Product.BREWING_CHOICES
@@ -17,10 +18,10 @@ class BrewingMethodsWidget(forms.Widget):
 
     def value_from_datadict(self, data, files, name):
         result = []
-        for key, value in self.methods.items():
+        for key in self.methods.keys():
             if data.get(f'{name}_{key}'):
                 result.append(key)
-        return result
+        return json.dumps(result)
 
     def value_omitted_from_data(self, data, files, name):
         return not any(
@@ -33,25 +34,13 @@ class BrewingMethodsWidget(forms.Widget):
         if isinstance(value, list):
             return value
         elif isinstance(value, str):
-            import json
             try:
                 return json.loads(value) or []
             except (json.JSONDecodeError, ValueError):
                 return []
         return []
 
-    def compress(self, data_dict):
-        """Convert widget data back to list for model field."""
-        if data_dict:
-            results = []
-            for key in self.methods.keys():
-                if data_dict.get(key):
-                    results.append(key)
-            return results
-        return []
-
     def render(self, name, value, attrs=None, renderer=None):
-        import json
         if isinstance(value, str):
             try:
                 value = json.loads(value) or []
