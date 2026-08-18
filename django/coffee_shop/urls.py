@@ -13,7 +13,7 @@ urlpatterns = [
     path('', views.home, name='home'),
     path('catalog/', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
     path('cart/', include('coffee_shop.apps.orders.urls', namespace='cart')),
-    path('checkout/', include('coffee_shop.apps.orders.urls', namespace='checkout')),
+    path('', include('coffee_shop.apps.orders.urls', namespace='checkout')),
     # Catalog API
     path('api/catalog/', include('coffee_shop.apps.catalog.api.urls', namespace='catalog_api')),
     # News API
@@ -23,6 +23,8 @@ urlpatterns = [
     path('news/list/', views.news_view, name='news'),
     # Users
     path('accounts/', include('coffee_shop.apps.users.urls', namespace='users')),
+    # Social Auth (Yandex OAuth)
+    path('accounts/oauth/', include('social_django.urls')),  # type: ignore[call-arg]
 ]
 
 if settings.DEBUG:

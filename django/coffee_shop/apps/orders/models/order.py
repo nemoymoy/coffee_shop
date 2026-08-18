@@ -84,6 +84,12 @@ class Order(models.Model):
     )
 
     # Yandex Delivery integration
+    yandex_access_token = models.CharField(
+        max_length=500,
+        blank=True,
+        null=True,
+        verbose_name='OAuth токен Яндекс Доставки'
+    )
     yandex_order_id = models.CharField(
         max_length=100,
         blank=True,

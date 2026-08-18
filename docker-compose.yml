@@ -16,6 +16,9 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
       - DATABASE_URL=${DATABASE_URL:-postgresql://coffee_shop:change-me-dev@db:5432/coffee_shop_dev}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - YANDEX_OAUTH_CLIENT_ID=${YANDEX_OAUTH_CLIENT_ID:-}
+      - YANDEX_OAUTH_CLIENT_SECRET=${YANDEX_OAUTH_CLIENT_SECRET:-}
+      - YANDEX_OAUTH_REDIRECT_URI=${YANDEX_OAUTH_REDIRECT_URI:-http://localhost:8000/accounts/oauth/complete/yandex/}
     ports:
       - "8000:8000"
     depends_on:
@@ -96,6 +99,8 @@ services:
       - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
       - DATABASE_URL=${DATABASE_URL:-postgresql://coffee_shop:change-me-dev@db:5432/coffee_shop_dev}
       - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - YANDEX_OAUTH_CLIENT_ID=${YANDEX_OAUTH_CLIENT_ID:-}
+      - YANDEX_OAUTH_CLIENT_SECRET=${YANDEX_OAUTH_CLIENT_SECRET:-}
     depends_on:
       db:
         condition: service_healthy

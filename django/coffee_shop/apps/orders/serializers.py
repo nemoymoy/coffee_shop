@@ -103,6 +103,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_date',
             'delivery_time',
             'delivery_cost',
+            'yandex_access_token',
             'yandex_order_id',
             'tracking_number',
             'delivery_status',

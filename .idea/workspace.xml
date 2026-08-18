@@ -4,16 +4,37 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="c8505586-bae0-42e4-b5a6-074e2d717058" name="Changes" comment="fix README.md">
-      <change beforePath="$PROJECT_DIR$/.idea/coffee_shop.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/coffee_shop.iml" afterDir="false" />
+    <list default="true" id="c8505586-bae0-42e4-b5a6-074e2d717058" name="Changes" comment="update .gitignore">
+      <change afterPath="$PROJECT_DIR$/.gigacode/plans/1786944335365-sunny-garden.plan.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/.gigacode/plans/1786991203537-brave-otter.plan.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/coffee_shop/apps/users/backends.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/coffee_shop/apps/users/pipeline.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/api/test_delivery_api.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/api/test_delivery_debug.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/api/test_delivery_debug2.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/services/test_sync_delivery_task.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/views/test_checkout_delivery.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/api/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/api/views.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/forms/coffee_form.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/forms/coffee_form.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/serializers.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/catalog/serializers.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/admin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/models/order.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/models/order.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/serializers.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/serializers.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/urls.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/urls.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/users/apps.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/users/apps.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/users/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/users/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/settings/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/settings/base.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/templates/checkout.html" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/templates/checkout.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/templates/order_success.html" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/templates/order_success.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/templates/users/login.html" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/templates/users/login.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/templates/users/register.html" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/templates/users/register.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/urls.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/urls.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/views.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/static/js/checkout.js" beforeDir="false" afterPath="$PROJECT_DIR$/django/static/js/checkout.js" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/nginx/sites-available/coffee.conf" beforeDir="false" afterPath="$PROJECT_DIR$/nginx/sites-available/coffee.conf" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/requirements/base.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements/base.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -38,7 +59,7 @@
 }</component>
   <component name="GithubPullRequestsUISettings"><![CDATA[{
   "selectedUrlAndAccountId": {
-    "url": "https://github.com/nemoymoy/coffee_shop.git",
+    "url": "git@github.com:nemoymoy/coffee_shop.git",
     "accountId": "d5fe0c8f-b69d-453e-a142-beffbd18a394"
   }
 }]]></component>
@@ -50,17 +71,17 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "SHELLCHECK.PATH": "C:\\Users\\nemo_\\AppData\\Roaming\\JetBrains\\PyCharm2025.2\\plugins\\Shell Script\\shellcheck.exe",
-    "git-widget-placeholder": "master",
-    "last_opened_file_path": "/home/nemo/Загрузки/gigacode-jetbrains-26.7.7-242.zip",
-    "settings.editor.selected.configurable": "org.jetbrains.plugins.github.ui.GithubSettingsConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;SHELLCHECK.PATH&quot;: &quot;C:\\Users\\nemo_\\AppData\\Roaming\\JetBrains\\PyCharm2025.2\\plugins\\Shell Script\\shellcheck.exe&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;last_opened_file_path&quot;: &quot;/home/nemo/Загрузки/gigacode-jetbrains-26.7.7-242.zip&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;org.jetbrains.plugins.github.ui.GithubSettingsConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="MoveFile.RECENT_KEYS">
       <recent name="C:\Users\nemo_\OneDrive\Документы\одинг\coffee_shop\django" />
@@ -97,23 +118,30 @@
       <option name="project" value="LOCAL" />
       <updated>1786219461441</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="fix by Ubuntu">
+      <option name="closed" value="true" />
+      <created>1786654208029</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1786654208030</updated>
+    </task>
+    <task id="LOCAL-00004" summary="update .gitignore">
+      <option name="closed" value="true" />
+      <created>1786654316122</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1786654316122</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="Initial commit" />
     <MESSAGE value="fix README.md" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix README.md" />
-  </component>
-  <component name="XDebuggerManager">
-    <breakpoint-manager>
-      <breakpoints>
-        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
-          <url>file://$PROJECT_DIR$/django/coffee_shop/apps/orders/views.py</url>
-          <line>1</line>
-          <option name="timeStamp" value="1" />
-        </line-breakpoint>
-      </breakpoints>
-    </breakpoint-manager>
+    <MESSAGE value="fix by Ubuntu" />
+    <MESSAGE value="update .gitignore" />
+    <option name="LAST_COMMIT_MESSAGE" value="update .gitignore" />
   </component>
 </project>

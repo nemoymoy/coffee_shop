@@ -71,16 +71,40 @@ def sync_yandex_delivery_status():
     """Периодическая синхронизация статусов Яндекс Доставки.
     Запускается каждые 5 минут.
     """
-    # TODO: Реализовать при интеграции с Яндекс Доставкой
+    from coffee_shop.apps.orders.services.delivery_service import (
+        YandexDeliveryService,
+    )
+
     from_orders = Order.objects.filter(
         delivery_method='delivery',
         status__in=['in_progress', 'ready'],
         yandex_order_id__isnull=False,
+        yandex_access_token__isnull=False,
     )
+
+    synced = 0
     for order in from_orders:
-        # mock: просто логируем
-        pass
-    return f'Проверено {from_orders.count()} заказов'
+        service = YandexDeliveryService(
+            access_token=order.yandex_access_token
+        )
+        result = service.get_delivery_status(order.tracking_number or '')
+
+        if not result.get('success'):
+            continue
+
+        delivery_status = result.get('status', '')
+        order.delivery_status = delivery_status
+
+        # Map Yandex statuses to Order statuses
+        if delivery_status in (
+            'delivered', 'delivered_to_address', 'delivered_to_point',
+        ):
+            order.status = 'delivered'
+
+        order.save(update_fields=['delivery_status', 'status'])
+        synced += 1
+
+    return f'Synced {synced} of {from_orders.count()} Yandex delivery orders'
 
 
 @shared_task

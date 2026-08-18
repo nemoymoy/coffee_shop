@@ -23,8 +23,8 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     list_filter = ['status', 'delivery_method', 'payment_method', 'created_at']
     search_fields = ['first_name', 'last_name', 'phone', 'email']
-    readonly_fields = ['created_at', 'updated_at', 'yandex_order_id',
-                       'tracking_number', 'delivery_status', 'delivery_cost']
+    readonly_fields = ['created_at', 'updated_at', 'yandex_access_token',
+                       'yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost']
     inlines = [OrderItemInline]
     actions = ['mark_awaiting_payment', 'mark_in_progress', 'mark_ready', 'mark_delivered', 'mark_cancelled', 'export_to_csv']
 

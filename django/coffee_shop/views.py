@@ -30,6 +30,7 @@ def json_response(data, status=200):
     return JsonResponse(data, status=status)
 
 
+
 def health_check(request):
     """Health check endpoint for Docker and monitoring."""
     return JsonResponse({

@@ -10,6 +10,7 @@ from coffee_shop.apps.catalog.models import Product
 from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
 from coffee_shop.apps.orders.services.stock_service import StockService
 from coffee_shop.apps.orders.services.promo_service import PromoService
+from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem
 
@@ -217,9 +218,48 @@ def checkout_view(request):
             
             order.total_amount = total
             order.save()
-        
-        # Резервируем stock
-        StockService.reserve_stock(order.pk)
+
+            # Создаём заказ в Яндекс Доставке
+            if cleaned['delivery_method'] == 'delivery':
+                access_token = request.session.get(
+                    'yandex_delivery_access_token'
+                )
+                if access_token:
+                    try:
+                        delivery_service = YandexDeliveryService(
+                            access_token=access_token
+                        )
+                        delivery_result = delivery_service.create_delivery_order(
+                            order_id=order.pk,
+                            address={
+                                'street': cleaned.get('delivery_address', ''),
+                            },
+                        )
+                        if delivery_result.get('success'):
+                            order.yandex_access_token = access_token
+                            order.yandex_order_id = delivery_result.get(
+                                'yandex_order_id', ''
+                            )
+                            order.tracking_number = delivery_result.get(
+                                'tracking_number', ''
+                            )
+                            order.delivery_status = 'pending'
+                            order.delivery_cost = delivery_result.get(
+                                'price', 0
+                            )
+                            order.status = 'in_progress'
+                            order.save(update_fields=[
+                                'yandex_access_token', 'yandex_order_id',
+                                'tracking_number', 'delivery_status',
+                                'delivery_cost', 'status',
+                            ])
+                    except Exception:
+                        # Fail silently — order still valid without Yandex delivery
+                        pass
+
+        # Резервируем stock (не для доставки — там своя логика)
+        if cleaned['delivery_method'] != 'delivery':
+            StockService.reserve_stock(order.pk)
         
         # Очищаем корзину
         if 'cart' in request.session:

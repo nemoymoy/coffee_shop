@@ -2,7 +2,7 @@
 import hashlib
 
 from django.shortcuts import render, redirect
-from django.contrib.auth import login, authenticate
+from django.contrib.auth import login, authenticate, authenticate as _authenticate
 from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.utils.decorators import decorator_from_middleware
@@ -28,7 +28,7 @@ def login_view(request):
         form = AuthenticationForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, f'Добро пожаловать, {user.first_name or user.username}!')
             next_url = request.GET.get('next', 'catalog:catalog')
             return redirect(next_url)
@@ -49,7 +49,7 @@ def register_view(request):
         form = UserRegistrationForm(data=request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, f'Добро пожаловать, {user.first_name or user.username}!')
 
             # Создаем запись согласия на обработку ПД

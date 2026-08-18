@@ -57,6 +57,9 @@ INSTALLED_APPS = [
     'coffee_shop.apps.orders',
     'coffee_shop.apps.users',
     'coffee_shop.apps.news',
+
+    # Social Auth
+    'social_django',
 ]
 
 MIDDLEWARE = [
@@ -266,3 +269,54 @@ LOGGING = {
 logs_dir = BASE_DIR / 'logs'
 if not logs_dir.exists():
     logs_dir.mkdir(parents=True)
+
+# ------------------------------------------------------------------
+# Yandex OAuth 2.0 (User Authentication)
+# ------------------------------------------------------------------
+YANDEX_OAUTH_CLIENT_ID = os.environ.get('YANDEX_OAUTH_CLIENT_ID', '')
+YANDEX_OAUTH_CLIENT_SECRET = os.environ.get('YANDEX_OAUTH_CLIENT_SECRET', '')
+YANDEX_OAUTH_AUTHORIZATION_URL = 'https://oauth.yandex.ru/authorize'
+YANDEX_OAUTH_TOKEN_URL = 'https://oauth.yandex.ru/token'
+YANDEX_OAUTH_PROFILE_URL = 'https://login.yandex.ru/info'
+YANDEX_OAUTH_REDIRECT_URI = os.environ.get('YANDEX_OAUTH_REDIRECT_URI', 'http://localhost:8000/accounts/oauth/complete/yandex/')
+
+# social-auth
+AUTHENTICATION_BACKENDS = [
+    'coffee_shop.apps.users.backends.YandexOAuth',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+LOGIN_URL = 'users:login'
+LOGIN_REDIRECT_URL = 'catalog:catalog'
+LOGOUT_URL = 'users:logout'
+
+SOCIAL_AUTH_URL_NAMESPACE = None
+SOCIAL_AUTH_LOGIN_REDIRECT_URL = 'catalog:catalog'
+SOCIAL_AUTH_LOGIN_ERROR_URL = 'users:login'
+SOCIAL_AUTH_LOGIN_URL = 'accounts/login/yandex/'
+
+SOCIAL_AUTH_YANDEX_KEY = YANDEX_OAUTH_CLIENT_ID
+SOCIAL_AUTH_YANDEX_SECRET = YANDEX_OAUTH_CLIENT_SECRET
+SOCIAL_AUTH_YANDEX_AUTHORIZATION_URL = YANDEX_OAUTH_AUTHORIZATION_URL
+SOCIAL_AUTH_YANDEX_ACCESS_TOKEN_URL = YANDEX_OAUTH_TOKEN_URL
+SOCIAL_AUTH_YANDEX_USER_PROFILE_URL = YANDEX_OAUTH_PROFILE_URL
+SOCIAL_AUTH_YANDEX_REDIRECT_URI = YANDEX_OAUTH_REDIRECT_URI
+
+SOCIAL_AUTH_PIPELINE = (
+    'social_core.pipeline.social_auth.social_details',
+    'social_core.pipeline.social_auth.social_uid',
+    'social_core.pipeline.social_auth.auth_allowed',
+    'social_core.pipeline.social_auth.social_user',
+    'social_core.pipeline.user.get_username',
+    'social_core.pipeline.user.create_user',
+    'social_core.pipeline.social_auth.associate_user',
+    'social_core.pipeline.social_auth.load_extra_data',
+    'social_core.pipeline.user.user_details',
+    'coffee_shop.apps.users.pipeline.auto_link_existing_user',
+    'coffee_shop.apps.users.pipeline.create_personal_data_consent',
+)
+
+# Add social_django context processors
+TEMPLATES[0]['OPTIONS']['context_processors'].append(
+    'social_django.context_processors.backends',
+)
