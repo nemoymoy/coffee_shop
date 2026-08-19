@@ -7,6 +7,12 @@ from pathlib import Path
 from datetime import timedelta
 from celery.schedules import crontab
 
+# Build paths inside the project like this: BASE_DIR / 'subdir'.
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+# Load .env file
+environ.Env.read_env(BASE_DIR / '.env')
+
 # Settings from environment or defaults
 DEBUG = os.environ.get('DEBUG', 'False').lower() in ('true', '1', 'yes')
 SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-in-production')
@@ -221,6 +227,15 @@ YANDEX_FROM_APT = os.environ.get('YANDEX_FROM_APT', '')
 # Yandex Metrika
 YANDEX_METRIKA_ID = os.environ.get('YANDEX_METRIKA_ID', '')
 YANDEX_METRIKA_WEBVIEWER = os.environ.get('YANDEX_METRIKA_WEBVIEWER', '').lower() in ('1', 'true', 'yes')
+
+# Yandex Maps API — JavaScript API (для загрузки ymaps3)
+YANDEX_JAVASCRIPT_API_KEY = os.environ.get('YANDEX_JAVASCRIPT_API_KEY', '')
+
+# Yandex Geocoder API — для геокодирования адресов
+YANDEX_GEOCODER_API_KEY = os.environ.get('YANDEX_GEOCODER_API_KEY', '')
+
+# Legacy alias for backward compatibility
+YANDEX_MAPS_API_KEY = YANDEX_JAVASCRIPT_API_KEY or YANDEX_GEOCODER_API_KEY or ''
 
 # Logging — JSON format for structured logging
 LOGGING = {

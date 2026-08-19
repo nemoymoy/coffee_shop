@@ -1,6 +1,7 @@
 """Yandex Delivery views — OAuth flow and delivery calculation."""
 import uuid
-
+import json
+import requests as http_requests
 from django.shortcuts import redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -8,6 +9,7 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
+from urllib.parse import urlencode
 
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.services.yandex_oauth import YandexOAuth
@@ -110,7 +112,8 @@ def calculate_delivery_view(request):
         "city": "moscow",
         "street": "ул. Примерная",
         "house": "1",
-        "apartment": "10"
+        "apartment": "10",
+        "delivery_type": "courier"
     }
 
     Returns JSON:
@@ -122,7 +125,6 @@ def calculate_delivery_view(request):
     }
     """
     try:
-        import json
         data = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
         return JsonResponse({
@@ -134,6 +136,7 @@ def calculate_delivery_view(request):
     street = data.get('street', '')
     house = data.get('house', '')
     apartment = data.get('apartment', '')
+    delivery_type = data.get('delivery_type', 'courier')
 
     address = {
         'city': city,
@@ -166,4 +169,164 @@ def calculate_delivery_view(request):
         return JsonResponse({
             'success': False,
             'error': result.get('error', 'Ошибка расчёта доставки'),
+        }, status=500)
+
+
+def pvz_locations_view(request):
+    """
+    Возвращает список ПВЗ и постоматов для отображения на карте.
+    
+    GET params:
+    - type: 'pvz' или 'postomat'
+    - city: город
+    
+    Returns JSON:
+    {
+        "success": true,
+        "points": [
+            {
+                "name": "ПВЗ Тверская",
+                "address": "Москва, ул. Тверская, 15",
+                "coordinates": [55.758, 37.608],
+                "type": "pvz"
+            }
+        ]
+    }
+    """
+    pvz_type = request.GET.get('type', 'pvz')
+    city = request.GET.get('city', 'moscow')
+    
+    # Демо-данные ПВЗ
+    pvz_points = [
+        {'name': 'ПВЗ Тверская', 'address': 'Москва, ул. Тверская, 15', 'coordinates': [55.758, 37.608], 'type': 'pvz'},
+        {'name': 'ПВЗ Арбат', 'address': 'Москва, ул. Арбат, 10', 'coordinates': [55.749, 37.588], 'type': 'pvz'},
+        {'name': 'ПВЗ Парк Культуры', 'address': 'Москва, ул. Большая Ордынка, 21', 'coordinates': [55.743, 37.585], 'type': 'pvz'},
+        {'name': 'ПВЗ Садовая', 'address': 'Москва, Садовая-Спасская ул., 19', 'coordinates': [55.761, 37.592], 'type': 'pvz'},
+        {'name': 'ПВЗ Деловой центр', 'address': 'Москва, Пресненская наб., 8', 'coordinates': [55.755, 37.535], 'type': 'pvz'},
+    ]
+    
+    postomat_points = [
+        {'name': 'Постомат Тверская', 'address': 'Москва, ул. Тверская, 23', 'coordinates': [55.759, 37.610], 'type': 'postomat'},
+        {'name': 'Постомат Лубянка', 'address': 'Москва, Лубянская пл., 3', 'coordinates': [55.753, 37.637], 'type': 'postomat'},
+        {'name': 'Постомат Киевская', 'address': 'Москва, Киевская пл., 1', 'coordinates': [55.745, 37.564], 'type': 'postomat'},
+    ]
+    
+    points = postomat_points if pvz_type == 'postomat' else pvz_points
+    
+    return JsonResponse({
+        'success': True,
+        'points': points
+    })
+
+
+@csrf_exempt
+@require_POST
+def geocode_address_view(request):
+    """
+    Геокодирование адресов через прокси к Яндекс API.
+    
+    POST JSON:
+    {
+        "query": "Самара ул Революционная 3 кв 5"
+    }
+    
+    Returns JSON:
+    {
+        "success": true,
+        "results": ["адрес1", "адрес2", ...],
+        "features": [...]
+    }
+    """
+    try:
+        data = json.loads(request.body)
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({
+            'success': False,
+            'error': 'Некорректные данные',
+        }, status=400)
+    
+    query = data.get('query', '').strip()
+    if not query:
+        return JsonResponse({
+            'success': False,
+            'error': 'Запрос пустой',
+        }, status=400)
+    
+    # Получаем API ключ Геокодера
+    api_key = getattr(settings, 'YANDEX_GEOCODER_API_KEY', '') or \
+              getattr(settings, 'YANDEX_MAPS_API_KEY', '')
+    
+    if not api_key:
+        return JsonResponse({
+            'success': False,
+            'error': 'API ключ не настроен',
+        }, status=500)
+    
+    # Proxy запрос к Яндекс Геокодеру
+    try:
+        url = 'https://geocode-maps.yandex.ru/1.x/'
+        params = {
+            'apikey': api_key,
+            'geocode': query,
+            'format': 'json',
+            'lang': 'ru_RU',
+            'results': '10',
+        }
+        
+        response = http_requests.get(url, params=params, timeout=5)
+        
+        if response.status_code != 200:
+            return JsonResponse({
+                'success': False,
+                'error': f'Ошибка Яндекс API: {response.status_code}',
+            }, status=502)
+        
+        geocoder_data = response.json()
+        
+        results = []
+        features = []
+        
+        # Правильный формат ответа Яндекс Geocoder 1.x
+        response_obj = geocoder_data.get('response', {})
+        geo_object_collection = response_obj.get('GeoObjectCollection', {})
+        feature_members = geo_object_collection.get('featureMember', [])
+        
+        for feature in feature_members:
+            geo_object = feature.get('GeoObject', {})
+            
+            # Текст адреса
+            meta = geo_object.get('metaDataProperty', {}).get('GeocoderMetaData', {})
+            text = meta.get('text', '')
+            
+            # Координаты
+            point = geo_object.get('Point')
+            coords = None
+            if point:
+                pos = point.get('pos', '')  # "longitude latitude"
+                if pos:
+                    coords = pos.split(' ')
+            
+            if text:
+                results.append(text)
+                features.append({
+                    'text': text,
+                    'coords': coords,
+                })
+        
+        return JsonResponse({
+            'success': True,
+            'results': results,
+            'features': features,
+        })
+    
+    except http_requests.exceptions.Timeout:
+        return JsonResponse({
+            'success': False,
+            'error': 'Таймаут запроса',
+        }, status=504)
+    
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e),
         }, status=500)

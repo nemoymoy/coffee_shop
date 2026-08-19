@@ -68,8 +68,23 @@
             </div>
 
             <div class="mb-3" id="addressBlock" style="display: none;">
-                <label class="form-label">Адрес доставки *</label>
-                <textarea name="delivery_address" id="id_delivery_address" class="form-control" rows="3" placeholder="Город, улица, дом, квартира"></textarea>
+                <!-- Кнопка для открытия виджета Яндекс Доставки -->
+                <button type="button" class="btn btn-coffee w-100 mb-2" id="openDeliveryModal">
+                    🚚 Выбрать способ доставки (Яндекс Доставка)
+                </button>
+
+                <!-- Summary блок (показывается после закрытия модалки) -->
+                <div id="deliverySummary" style="display:none;">
+                    <div class="alert alert-success">
+                        <strong>🚚 Способ доставки:</strong> <span id="summaryType"></span><br>
+                        <strong>📍 Адрес:</strong> <span id="summaryAddress"></span><br>
+                        <strong>💰 Стоимость:</strong> <span id="summaryCost"></span>
+                        <span id="summaryEta" class="text-muted ms-2"></span>
+                    </div>
+                </div>
+
+                <!-- Скрытое поле для адреса -->
+                <input type="hidden" name="delivery_address" id="id_delivery_address" value="">
             </div>
 
             <div class="mb-3" id="deliveryInfoBlock" style="display: none;">
@@ -131,4 +146,130 @@
         </div>
     </div>
 </div>
+
+<!-- Модальное окно Яндекс Доставки -->
+<div class="modal fade" id="deliveryModal" tabindex="-1" aria-labelledby="deliveryModalLabel" aria-hidden="true"
+     data-has-token="{% if request.session.yandex_delivery_access_token %}true{% else %}false{% endif %}">
+    <div class="modal-dialog modal-lg">
+        {% if YANDEX_JAVASCRIPT_API_KEY %}
+        <script>
+            window.YANDEX_JAVASCRIPT_API_KEY = "{{ YANDEX_JAVASCRIPT_API_KEY }}";
+        </script>
+        {% endif %}
+        {% if YANDEX_GEOCODER_API_KEY %}
+        <script>
+            window.YANDEX_GEOCODER_API_KEY = "{{ YANDEX_GEOCODER_API_KEY }}";
+        </script>
+        {% endif %}
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="deliveryModalLabel">🚚 Выбор доставки</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Предупреждение о подключении Яндекс Доставки -->
+                <div id="yandexDeliveryWarning" class="alert alert-warning" style="display:none;">
+                    <strong>⚠️ Яндекс Доставка не подключена</strong>
+                    <p class="mb-0 small">Для работы автоматического расчёта стоимости подключите аккаунт Яндекс Доставки.</p>
+                    <a href="/delivery/auth/" class="btn btn-sm btn-warning mt-2">🔗 Подключить Яндекс Доставку</a>
+                </div>
+
+                <!-- Шаг 1: Тип доставки -->
+                <div id="deliveryStep1" class="mb-4">
+                    <h6 class="fw-bold">Шаг 1. Способ доставки</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="yandex_delivery_type" id="typeCourier" value="courier">
+                        <label class="form-check-label" for="typeCourier">
+                            <strong>🚗 Курьер</strong>
+                            <br><small class="text-muted">Доставка до двери</small>
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="yandex_delivery_type" id="typePVZ" value="pvz">
+                        <label class="form-check-label" for="typePVZ">
+                            <strong>📦 Пункт выдачи (ПВЗ)</strong>
+                            <br><small class="text-muted">Самовывоз из пункта выдачи</small>
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="yandex_delivery_type" id="typePostomat" value="postomat">
+                        <label class="form-check-label" for="typePostomat">
+                            <strong>📮 Постомат</strong>
+                            <br><small class="text-muted">Выдача через автомат-постомат</small>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Шаг 2: Адрес -->
+                <div id="deliveryStep2" style="display:none;">
+                    <h6 class="fw-bold">Шаг 2. Адрес доставки</h6>
+                    
+                    <!-- Карта Яндекс -->
+                    <div id="yandexMapContainer" style="display:none;">
+                        <div id="yandexMap" style="width:100%;height:350px;border-radius:8px;"></div>
+                        <small class="text-muted d-block mt-2">🗺️ Нажмите на карту для выбора адреса поискайте адрес в строке ниже</small>
+                    </div>
+                    
+                    <!-- Поле ввода адреса с автокомплитом -->
+                    <div id="yandexAddressInputWrap" class="mt-2" style="display:none;">
+                        <input type="text" id="yandexAddressInput" class="form-control" placeholder="Начните вводить адрес...">
+                        <div id="yandexAutocompleteList" class="autocomplete-list mt-2" style="display:none;"></div>
+                        <small class="text-muted">Используйте автокомплит для выбора адреса</small>
+                    </div>
+                    
+                    <!-- Сообщение если API не подключён -->
+                    <div id="mapUnavailableWarning" class="alert alert-warning" style="display:none;">
+                        <strong>⚠️ Яндекс Карты API не подключены</strong>
+                        <p class="mb-0 small">Введите адрес вручную для расчёта доставки.</p>
+                    </div>
+                </div>
+
+                <!-- Шаг 3: Расчёт -->
+                <div id="deliveryStep3" style="display:none;">
+                    <h6 class="fw-bold">Шаг 3. Расчёт стоимости</h6>
+                    <div class="alert alert-info">
+                        <strong>💰 Стоимость:</strong> <span id="widgetCost">Расчёт...</span>
+                        <span id="widgetEta" class="ms-2"></span>
+                        <br>
+                        <small class="text-muted" id="widgetEtaLabel"> ETA: </small>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-coffee" id="confirmDeliveryBtn" disabled>Подтвердить</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    // Принудительная инициализация виджета с проверкой Bootstrap
+    function tryInitWidget() {
+        if (typeof bootstrap === 'undefined') {
+            console.log('Checkout: Bootstrap not ready, retrying in 50ms...');
+            setTimeout(tryInitWidget, 50);
+            return;
+        }
+        if (!window.YandexDeliveryWidget) {
+            console.log('Checkout: YandexDeliveryWidget not loaded, retrying in 50ms...');
+            setTimeout(tryInitWidget, 50);
+            return;
+        }
+        try {
+            console.log('Checkout: Initializing YandexDeliveryWidget...');
+            YandexDeliveryWidget.init();
+            console.log('Checkout: YandexDeliveryWidget initialized successfully');
+        } catch(e) {
+            console.error('Checkout: Failed to init widget:', e);
+        }
+    }
+    // Запускаем инициализацию
+    tryInitWidget();
+})();
+</script>
 {% endblock %}
