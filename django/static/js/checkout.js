@@ -60,6 +60,7 @@ var Checkout = (function () {
         var totalEl = document.getElementById('checkoutTotal');
 
         var deliveryCalculationTimeout = null;
+        var deliveryCalculationDebounced = null;
 
         /* ---- Phone formatting ---- */
         if (phoneInput) {
@@ -88,7 +89,7 @@ var Checkout = (function () {
 
         /* ---- Delivery price calculation ---- */
         function calculateDeliveryPrice() {
-            var deliveryAddressInput = document.getElementById('id_delivery_address');
+            var deliveryAddressInput = addressInput;
             var deliveryCostEl = document.getElementById('deliveryCost');
             var deliveryEtaEl = document.getElementById('deliveryEta');
 
@@ -192,8 +193,10 @@ var Checkout = (function () {
                 if (deliveryInfoBlock) {
                     deliveryInfoBlock.style.display = 'block';
                 }
-                // Trigger delivery price calculation
-                calculateDeliveryPrice();
+                // Trigger delivery price calculation (if address is already set)
+                if (addressInput && addressInput.value.trim()) {
+                    calculateDeliveryPrice();
+                }
             } else {
                 if (addressBlock) addressBlock.style.display = 'none';
                 if (addressInput) {
@@ -214,22 +217,32 @@ var Checkout = (function () {
         }
 
         if (deliveryInputs && deliveryInputs.length) {
-            var updateAddressBlockDebounced = debounce(updateAddressBlock, 150);
             deliveryInputs.forEach(function (radio) {
-                radio.addEventListener('change', updateAddressBlockDebounced);
+                radio.addEventListener('change', updateAddressBlock);
             });
             // Init
             updateAddressBlock();
         }
 
-        /* ---- Delivery address input tracking ---- */
-        if (addressInput) {
-            addressInput.addEventListener('input', debounce(function () {
-                var checked = form.querySelector('input[name="delivery_method"][value="delivery"]:checked');
-                if (checked) {
-                    calculateDeliveryPrice();
+        /* ---- Yandex Delivery Widget integration ---- */
+        // При выборе radio "Доставка" — автоматически открываем виджет
+        if (deliveryInputs && deliveryInputs.length && window.YandexDeliveryWidget) {
+            deliveryInputs.forEach(function (radio) {
+                if (radio.value === 'delivery' && radio.checked) {
+                    // Виджет уже открыт при загрузке, если выбрана доставка
+                    setTimeout(function() {
+                        YandexDeliveryWidget.openModal();
+                    }, 300);
                 }
-            }, 1000));
+                radio.addEventListener('change', function () {
+                    if (this.checked && this.value === 'delivery') {
+                        // Автоматически открываем виджет
+                        setTimeout(function() {
+                            YandexDeliveryWidget.openModal();
+                        }, 200);
+                    }
+                });
+            });
         }
 
         /* ---- Debounced required fields ---- */

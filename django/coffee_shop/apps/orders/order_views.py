@@ -165,6 +165,11 @@ def checkout_view(request):
                 })
             applied_promo = promo
         
+        # Сохраняем тип Яндекс Доставки из формы (если передан)
+        yandex_delivery_type_raw = request.POST.get('yandex_delivery_type', '')
+        if yandex_delivery_type_raw not in dict(Order.YANDEX_DELIVERY_TYPE_CHOICES):
+            yandex_delivery_type_raw = ''
+        
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user if request.user.is_authenticated else None,
@@ -176,6 +181,7 @@ def checkout_view(request):
                 delivery_method=cleaned['delivery_method'],
                 payment_method=cleaned['payment_method'],
                 delivery_address=cleaned.get('delivery_address', ''),
+                yandex_delivery_type=yandex_delivery_type_raw,
                 total_amount=0,
             )
             

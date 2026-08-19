@@ -13,6 +13,8 @@ urlpatterns = [
     # Checkout
     path('checkout/', views.checkout_view, name='checkout'),
     path('checkout/calculate-delivery/', delivery_views.calculate_delivery_view, name='calculate_delivery'),
+    path('checkout/pvz-locations/', delivery_views.pvz_locations_view, name='pvz_locations'),
+    path('checkout/geocode-address/', delivery_views.geocode_address_view, name='geocode_address'),
     # Order
     path('success/<int:order_id>/', views.order_success, name='order_success'),
     path('detail/<int:pk>/', views.order_detail, name='order_detail'),

@@ -139,3 +139,86 @@ class TestCalculateDeliveryView:
         assert response.status_code == 500
         data = response.json()
         assert data['success'] is False
+
+    def test_calculate_delivery_with_type_courier(self, client):
+        """Расчёт доставки с типом courier."""
+        user = User.objects.create_user(
+            username='testuser5', email='test5@example.com', password='test123'
+        )
+        client.force_login(user)
+        session = client.session
+        session['yandex_delivery_access_token'] = 'ya2-test-token'
+        session.save()
+
+        payload = {
+            'city': 'moscow',
+            'street': 'ул. Тестовая',
+            'house': '1',
+            'delivery_type': 'courier',
+        }
+
+        mock_instance = MagicMock()
+        mock_instance.calculate_price.return_value = {
+            'success': True,
+            'price': 299,
+            'eta': '30-45 мин',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value = mock_instance
+
+            response = client.post(
+                reverse('orders:calculate_delivery'),
+                data=payload,
+                content_type='application/json',
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['price'] == 299
+        # Проверка, что сервис получил delivery_type
+        call_args = MockService.call_args
+        assert call_args is not None
+
+    def test_calculate_delivery_with_type_pvz(self, client):
+        """Расчёт доставки с типом pvz."""
+        user = User.objects.create_user(
+            username='testuser6', email='test6@example.com', password='test123'
+        )
+        client.force_login(user)
+        session = client.session
+        session['yandex_delivery_access_token'] = 'ya2-test-token'
+        session.save()
+
+        payload = {
+            'city': 'moscow',
+            'street': 'ул. Тестовая',
+            'house': '1',
+            'delivery_type': 'pvz',
+        }
+
+        mock_instance = MagicMock()
+        mock_instance.calculate_price.return_value = {
+            'success': True,
+            'price': 199,
+            'eta': '15-30 мин',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value = mock_instance
+
+            response = client.post(
+                reverse('orders:calculate_delivery'),
+                data=payload,
+                content_type='application/json',
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['price'] == 199

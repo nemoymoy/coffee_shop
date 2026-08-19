@@ -24,6 +24,12 @@ class Order(models.Model):
         ('delivery', 'Доставка'),
     ]
 
+    YANDEX_DELIVERY_TYPE_CHOICES = [
+        ('courier', 'Курьер'),
+        ('pvz', 'Пункт выдачи (ПВЗ)'),
+        ('postomat', 'Постомат'),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -95,6 +101,12 @@ class Order(models.Model):
         blank=True,
         null=True,
         verbose_name='ID заказа в Яндекс Доставке'
+    )
+    yandex_delivery_type = models.CharField(
+        max_length=20,
+        choices=YANDEX_DELIVERY_TYPE_CHOICES,
+        blank=True,
+        verbose_name='Тип Яндекс Доставки'
     )
     tracking_number = models.CharField(
         max_length=100,

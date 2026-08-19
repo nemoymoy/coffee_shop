@@ -153,3 +153,157 @@ class TestCheckoutWithDelivery:
         assert Order.objects.count() == 1
         order = Order.objects.first()
         assert order.yandex_order_id is None
+
+
+class TestCheckoutWithDeliveryType:
+    """Тесты сохранения типа Яндекс Доставки."""
+
+    def _setup_session(self, client, coffee_beans, token=None):
+        """Устанавливает cart и token в сессию client."""
+        session = client.session
+        session['cart'] = {
+            f"{coffee_beans.id}:200:beans:espresso": {
+                'product_id': coffee_beans.id,
+                'weight': '200',
+                'coffee_form': 'beans',
+                'brewing_method': 'espresso',
+                'price': 600.0,
+                'quantity': 1,
+            }
+        }
+        if token:
+            session['yandex_delivery_access_token'] = token
+            session['yandex_delivery_refresh_token'] = 'refresh-test-token'
+        session.save()
+
+    def test_checkout_saves_yandex_delivery_type(self, client, coffee_beans):
+        """Checkout с типом доставки courier сохраняет yandex_delivery_type."""
+        self._setup_session(client, coffee_beans, token='ya2-test-token')
+
+        payload = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+79991234567',
+            'email': 'test@example.com',
+            'delivery_method': 'delivery',
+            'payment_method': 'online',
+            'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'yandex_delivery_type': 'courier',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value.create_delivery_order.return_value = {
+                'success': True,
+                'yandex_order_id': 'YDO-12345',
+                'tracking_number': 'YA-TRACK-001',
+                'price': 299,
+            }
+
+            client.post(
+                reverse('orders:checkout'),
+                data=payload,
+            )
+
+        order = Order.objects.first()
+        assert order.yandex_delivery_type == 'courier'
+
+    def test_checkout_saves_pvz_delivery_type(self, client, coffee_beans):
+        """Checkout с типом доставки pvz сохраняет yandex_delivery_type."""
+        self._setup_session(client, coffee_beans, token='ya2-test-token')
+
+        payload = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+79991234567',
+            'email': 'test@example.com',
+            'delivery_method': 'delivery',
+            'payment_method': 'online',
+            'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'yandex_delivery_type': 'pvz',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value.create_delivery_order.return_value = {
+                'success': True,
+                'yandex_order_id': 'YDO-12345',
+                'tracking_number': 'YA-TRACK-001',
+                'price': 299,
+            }
+
+            client.post(
+                reverse('orders:checkout'),
+                data=payload,
+            )
+
+        order = Order.objects.first()
+        assert order.yandex_delivery_type == 'pvz'
+
+    def test_checkout_saves_postomat_delivery_type(self, client, coffee_beans):
+        """Checkout с типом доставки postomat сохраняет yandex_delivery_type."""
+        self._setup_session(client, coffee_beans, token='ya2-test-token')
+
+        payload = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+79991234567',
+            'email': 'test@example.com',
+            'delivery_method': 'delivery',
+            'payment_method': 'online',
+            'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'yandex_delivery_type': 'postomat',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value.create_delivery_order.return_value = {
+                'success': True,
+                'yandex_order_id': 'YDO-12345',
+                'tracking_number': 'YA-TRACK-001',
+                'price': 299,
+            }
+
+            client.post(
+                reverse('orders:checkout'),
+                data=payload,
+            )
+
+        order = Order.objects.first()
+        assert order.yandex_delivery_type == 'postomat'
+
+    def test_checkout_invalid_delivery_type_becomes_empty(self, client, coffee_beans):
+        """Невалидный тип доставки очищается."""
+        self._setup_session(client, coffee_beans, token='ya2-test-token')
+
+        payload = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+79991234567',
+            'email': 'test@example.com',
+            'delivery_method': 'delivery',
+            'payment_method': 'online',
+            'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'yandex_delivery_type': 'invalid_type',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value.create_delivery_order.return_value = {
+                'success': True,
+                'yandex_order_id': 'YDO-12345',
+                'tracking_number': 'YA-TRACK-001',
+                'price': 299,
+            }
+
+            client.post(
+                reverse('orders:checkout'),
+                data=payload,
+            )
+
+        order = Order.objects.first()
+        assert order.yandex_delivery_type == ''
