@@ -401,9 +401,24 @@ var YandexDeliveryWidget = (function () {
 
                         if (coords && yamap && yamap.map) {
                             // Яндекс Maps использует [lat, lon]
-                            currentCenter = [parseFloat(coords[1]), parseFloat(coords[0])];
-                            yamap.map.setLocation({ center: currentCenter, zoom: 15 });
-                            placeSingleMarker(currentCenter, text);
+                            var lat = parseFloat(coords[1]);
+                            var lon = parseFloat(coords[0]);
+                            currentCenter = [lat, lon];
+                            
+                            // Устанавливаем новую позицию карты
+                            try {
+                                yamap.map.location.set({
+                                    center: [lat, lon],
+                                    zoom: 15,
+                                    // angle: 0,  // опционально: наклон камеры
+                                    // direction: 0  // опционально: ориентация камеры
+                                });
+                                console.log('✅ Map centered at:', currentCenter);
+                            } catch(e) {
+                                console.error('❌ Failed to set map location:', e);
+                            }
+                            
+                            placeSingleMarker([lat, lon], text);
                         }
 
                         calculateDelivery();
@@ -481,6 +496,8 @@ var YandexDeliveryWidget = (function () {
         });
         pointObjects = [];
         
+        console.log('📍 Creating single marker at:', coords);
+        
         var icon = '<div style="width:30px;height:30px;background:#FF6B6B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>';
         
         try {
@@ -489,16 +506,19 @@ var YandexDeliveryWidget = (function () {
                 coordinates: coords,
                 icon: icon,
                 onClick: function() {
+                    console.log('📍 Marker clicked:', text);
                     selectedAddress = text;
                     document.getElementById('yandexAddressInput').value = text;
                     calculateDelivery();
                 }
             });
             
+            console.log('✅ Marker created, adding to map...');
             yamap.map.addChild(marker);
             pointObjects.push(marker);
+            console.log('✅ Marker added successfully');
         } catch(e) {
-            console.warn('Failed to add single marker:', e);
+            console.error('❌ Failed to add single marker:', e);
         }
     }
 
@@ -579,10 +599,10 @@ var YandexDeliveryWidget = (function () {
             // Yandex Maps 3.0 API использует Promise-based инициализацию
             // Сначала создаем карту, затем добавляем слои
             
-            // Создаем карту
+            // Создаем карту с Самарой по умолчанию
             var map = new YMap(mapContainer, {
                 location: {
-                    center: currentCenter,
+                    center: [53.2001, 50.1500],  // Самара
                     zoom: 12
                 }
             });
@@ -615,6 +635,20 @@ var YandexDeliveryWidget = (function () {
                 } catch(e) {
                     console.warn('⚠️ Failed to create collection:', e);
                 }
+            }
+            
+            // Добавляем контролы (zoom)
+            try {
+                var YMapDefaultControls = ymaps3.YMapDefaultControls;
+                if (YMapDefaultControls) {
+                    var controls = new YMapDefaultControls(mapContainer);
+                    map.addChild(controls);
+                    console.log('✅ Controls added');
+                } else {
+                    console.log('⚠️ YMapDefaultControls not available');
+                }
+            } catch(e) {
+                console.warn('⚠️ Failed to add controls:', e);
             }
             
             yamap = {
@@ -672,6 +706,8 @@ var YandexDeliveryWidget = (function () {
             return;
         }
         
+        console.log('📍 Rendering', points.length, 'PVZ points');
+        
         // Очищаем старые маркеры через удаление дочерних элементов
         pointObjects.forEach(function(obj) {
             try {
@@ -681,9 +717,11 @@ var YandexDeliveryWidget = (function () {
         pointObjects = [];
         
         var YMapMarker = ymaps3.YMapMarker;
+        console.log('📍 YMapMarker available:', !!YMapMarker);
         
-        points.forEach(function(point) {
+        points.forEach(function(point, index) {
             var coordinates = point.coordinates || point.coords || currentCenter;
+            console.log('📍 Point', index, ':', point.name, 'Coords:', coordinates);
             var icon = createPvzIcon(point, selectedType);
             
             try {
@@ -692,6 +730,7 @@ var YandexDeliveryWidget = (function () {
                     coordinates: coordinates,
                     icon: icon,
                     onClick: function() {
+                        console.log('📍 PVZ marker clicked:', point.name);
                         selectedAddress = point.address || point.name;
                         document.getElementById('yandexAddressInput').value = selectedAddress;
                         selectedType = point.type || selectedType;
@@ -702,38 +741,45 @@ var YandexDeliveryWidget = (function () {
                     }
                 });
                 
+                console.log('✅ Marker', index, 'created, adding to map...');
                 // Добавляем маркер как дочерний элемент карты
                 yamap.map.addChild(marker);
                 
                 pointObjects.push(marker);
+                console.log('✅ Marker', index, 'added successfully');
             } catch(e) {
-                console.warn('Failed to add PVZ marker:', e);
+                console.error('❌ Failed to add PVZ marker:', e);
             }
         });
+        
+        console.log('✅ All', pointObjects.length, 'markers rendered');
     }
 
     function createPvzIcon(point, type) {
         var iconClass = type === 'pvz' ? '📦' : '📮';
         var bgColor = type === 'pvz' ? '#4CAF50' : '#2196F3';
         
-        return '<div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:' + 
+        var icon = '<div style="display:flex;align-items:center;justify-content:center;width:40px;height:40px;background:' + 
                bgColor + ';border-radius:50%;font-size:20px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.3);border:2px solid #fff;" ' +
                'title="' + (point.address || point.name) + '">' + iconClass + '</div>';
+        
+        console.log('🎨 Created icon HTML:', icon.substring(0, 50));
+        return icon;
     }
 
     function getMockPvzPoints(type) {
         var points = [];
+        // Самарские адреса для ПВЗ
         var pvzPoints = [
-            { name: 'ПВЗ Тверская', coordinates: [55.758, 37.608], address: 'Москва, ул. Тверская, 15' },
-            { name: 'ПВЗ Арбат', coordinates: [55.749, 37.588], address: 'Москва, ул. Арбат, 10' },
-            { name: 'ПВЗ Парк Культуры', coordinates: [55.743, 37.585], address: 'Москва, ул. Большая Ордынка, 21' },
-            { name: 'ПВЗ Садовая', coordinates: [55.761, 37.592], address: 'Москва, Садовая-Спасская ул., 19' },
-            { name: 'ПВЗ Деловой центр', coordinates: [55.755, 37.535], address: 'Москва, Пресненская наб., 8' }
+            { name: 'ПВЗ Самара Центральная', coordinates: [53.2001, 50.1500], address: 'Самара, ул. Молодогвардейская, 1' },
+            { name: 'ПВЗ Самра Юг', coordinates: [53.1550, 50.1470], address: 'Самара, ул. Академика Павлова, 5' },
+            { name: 'ПВЗ Самра Север', coordinates: [53.2350, 50.1680], address: 'Самара, ул. Ленинградской, 72' },
+            { name: 'ПВЗ Самра Юго-Запад', coordinates: [53.1830, 50.1190], address: 'Самара, ул. Стара-Загора, 77' }
         ];
+        // Самарские адреса для постоматов
         var postomatPoints = [
-            { name: 'Постомат Тверская', coordinates: [55.759, 37.610], address: 'Москва, ул. Тверская, 23' },
-            { name: 'Постомат Лубянка', coordinates: [55.753, 37.637], address: 'Москва, Лубянская пл., 3' },
-            { name: 'Постомат Киевская', coordinates: [55.745, 37.564], address: 'Москва, Киевская пл., 1' }
+            { name: 'Постомат Самра ТЦ', coordinates: [53.1980, 50.1520], address: 'Самара, пр. Карла Маркса, 168' },
+            { name: 'Постомат Самра Центр', coordinates: [53.2010, 50.1490], address: 'Самара, ул. Садовая, 67' }
         ];
         
         return type === 'postomat' ? postomatPoints : pvzPoints;
