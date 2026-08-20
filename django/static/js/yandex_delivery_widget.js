@@ -534,7 +534,7 @@ var YandexDeliveryWidget = (function () {
     /* ==================== Яндекс Карта 3.0 ==================== */
 
     function initYandexMapForPvz() {
-        if (!ymaps3 || yamap) return;
+        if (yamap) return; // Карта уже инициализирована
         
         var apiKey = getMapApiKey();
         if (!apiKey) {
@@ -570,11 +570,7 @@ var YandexDeliveryWidget = (function () {
         btnPlus.addEventListener('click', function() {
             if (yamap.zoom < 18) {
                 yamap.zoom++;
-                try {
-                    map.options.set('zoom', yamap.zoom);
-                } catch(e) {
-                    console.warn('⚠️ Failed to set zoom via options:', e);
-                }
+                setMapCenterWithZoom(yamap.zoom);
             }
         });
         
@@ -585,11 +581,7 @@ var YandexDeliveryWidget = (function () {
         btnMinus.addEventListener('click', function() {
             if (yamap.zoom > 3) {
                 yamap.zoom--;
-                try {
-                    map.options.set('zoom', yamap.zoom);
-                } catch(e) {
-                    console.warn('⚠️ Failed to set zoom via options:', e);
-                }
+                setMapCenterWithZoom(yamap.zoom);
             }
         });
         
@@ -598,6 +590,21 @@ var YandexDeliveryWidget = (function () {
         container.appendChild(zoomContainer);
         
         console.log('✅ HTML zoom controls added');
+    }
+    
+    function setMapCenterWithZoom(newZoom) {
+        if (!yamap || !yamap.map) return;
+        
+        // Получаем текущий центр или используем currentCenter
+        var center = yamap.map.location ? yamap.map.location.center : currentCenter;
+        
+        if (typeof yamap.map.updateLocation === 'function') {
+            yamap.map.updateLocation({
+                center: center,
+                zoom: newZoom
+            });
+            console.log('✅ Zoom set to', newZoom);
+        }
     }
 
     function setMapCenter(lat, lon, zoom) {
@@ -609,44 +616,29 @@ var YandexDeliveryWidget = (function () {
         try {
             console.log('🗺️ Setting map center to:', [lat, lon], 'zoom:', zoom);
             
-            // Пробуем через options (Yandex Maps 3.0)
-            try {
-                yamap.map.options.set('center', [lat, lon]);
-                yamap.map.options.set('zoom', zoom);
+            // Yandex Maps 3.0 - используем updateLocation
+            if (typeof yamap.map.updateLocation === 'function') {
+                yamap.map.updateLocation({
+                    center: [lat, lon],
+                    zoom: zoom
+                });
                 yamap.zoom = zoom;
-                console.log('✅ Map centered via options.set()');
-                return;
-            } catch(e) {
-                console.warn('⚠️ options.set() failed, trying other methods:', e);
-            }
-            
-            // Пробуем другие методы
-            if (typeof yamap.map.setCenter === 'function') {
-                yamap.map.setCenter([lat, lon], zoom);
-                yamap.zoom = zoom;
-                console.log('✅ Map centered via setCenter()');
+                console.log('✅ Map centered via updateLocation()');
                 return;
             }
             
-            if (typeof yamap.map.setZoom === 'function') {
-                yamap.map.setZoom(zoom);
-                yamap.map.setCenter([lat, lon]);
+            // Fallback: пробуем через контроллер
+            if (yamap.controller && typeof yamap.controller.setLocation === 'function') {
+                yamap.controller.setLocation({
+                    center: [lat, lon],
+                    zoom: zoom
+                });
                 yamap.zoom = zoom;
-                console.log('✅ Map centered via setZoom/setCenter()');
+                console.log('✅ Map centered via controller.setLocation()');
                 return;
             }
             
-            // Пробуем через ymaps3.setCenter (глобальная функция)
-            if (typeof ymaps3.setCenter === 'function') {
-                ymaps3.setCenter(yamap.map, [lat, lon], zoom);
-                yamap.zoom = zoom;
-                console.log('✅ Map centered via ymaps3.setCenter()');
-                return;
-            }
-            
-            console.error('❌ No method available to set map center');
-            console.log('📦 Available map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(yamap.map)).filter(function(m) { return m.indexOf('set') > -1 || m.indexOf('center') > -1 || m.indexOf('zoom') > -1; }));
-            console.log('📦 Available ymaps3 functions:', Object.keys(ymaps3).filter(function(k) { return typeof ymaps3[k] === 'function'; }).slice(0, 10));
+            console.error('❌ No method to update map location');
         } catch(e) {
             console.error('❌ Failed to set map center:', e);
         }
@@ -656,23 +648,17 @@ var YandexDeliveryWidget = (function () {
         if (!ymaps3) return;
         
         try {
-            console.log('🔍 ymaps3 version check...');
+            console.log('🔍 ymaps3 keys:', Object.keys(ymaps3));
             
             var YMap = ymaps3.YMap;
             var YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
             var YMapDefaultFeaturesLayer = ymaps3.YMapDefaultFeaturesLayer;
             var YMapCollection = ymaps3.YMapCollection;
             var YMapMarker = ymaps3.YMapMarker;
-            var YMapZoomControls = ymaps3.YMapZoomControls;
+            var YMapScaleControl = ymaps3.YMapScaleControl;
             
-            console.log('📦 Checking constructors...');
-            console.log('  YMap:', typeof YMap);
-            console.log('  YMapDefaultSchemeLayer:', typeof YMapDefaultSchemeLayer);
-            console.log('  YMapDefaultFeaturesLayer:', typeof YMapDefaultFeaturesLayer);
-            console.log('  YMapCollection:', typeof YMapCollection);
-            console.log('  YMapMarker:', typeof YMapMarker);
-            console.log('  YMapZoomControls:', typeof YMapZoomControls);
-            console.log('  ymaps3 keys:', Object.keys(ymaps3).filter(function(k) { return k.indexOf('Zoom') > -1 || k.indexOf('Camera') > -1 || k.indexOf('Control') > -1; }));
+            console.log('📦 Checking controls...');
+            console.log('  YMapScaleControl:', typeof YMapScaleControl);
             
             if (!YMap) {
                 console.error('❌ YMap constructor not found');
@@ -685,94 +671,89 @@ var YandexDeliveryWidget = (function () {
                 return;
             }
             
-            // Yandex Maps 3.0 API использует addChild для добавления слоев
+            // Yandex Maps 3.0 использует Promise для инициализации карты
+            console.log('🗺️ Creating Yandex Map...');
             
-            // Создаем карту с Самарой по умолчанию
-            console.log('🗺️ Creating Yandex Map with Samara center [53.2001, 50.1500]...');
-            var map = new YMap(mapContainer, {
-                location: {
-                    center: [53.2001, 50.1500],  // Самара: [lat, lon]
-                    zoom: 12
-                }
-            });
-            
-            // Проверяем, как карта принимает параметры
-            console.log('📦 Map constructor signature:', YMap.toString().substring(0, 200));
-            console.log('📦 YMap options:', Object.keys(YMap.prototype).slice(0, 10));
-            
-            console.log('🗺️ Map created, type:', typeof map);
-            console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)));
-            console.log('🗺️ Map own props:', Object.keys(map));
-            console.log('🗺️ Map location:', map.location);
-            console.log('🗺️ Map options:', map.options);
-            
-            // Добавляем слои через addChild (Yandex Maps 3.0 API)
-            map.addChild(new YMapDefaultSchemeLayer());
-            console.log('✅ Scheme layer added');
-            
-            // YMapDefaultFeaturesLayer требуется для работы маркеров (YMapMarker использует default data source)
-            if (YMapDefaultFeaturesLayer) {
-                map.addChild(new YMapDefaultFeaturesLayer());
-                console.log('✅ Features layer added (required for markers)');
-            } else {
-                console.warn('⚠️ YMapDefaultFeaturesLayer not available');
-            }
-            
-            // Создаем коллекцию маркеров
-            var collection = null;
-            if (YMapCollection && typeof YMapCollection === 'function') {
-                try {
-                    collection = new YMapCollection(mapContainer, {
-                        components: 'points'
-                    });
-                    console.log('📍 Collection created');
+            ymaps3.init().then(function(components) {
+                console.log('✅ ymaps3.init() resolved');
+                console.log('📦 Available components:', Object.keys(components));
+                
+                // Получаем компоненты
+                var YMapController = components.YMapController;
+                var YMapDefaultSchemeLayer = components.YMapDefaultSchemeLayer;
+                var YMapDefaultFeaturesLayer = components.YMapDefaultFeaturesLayer;
+                var YMapMarker = components.YMapMarker;
+                var YMapZoomControl = components.YMapZoomControl;
+                
+                console.log('📦 Components:', {
+                    YMapController: !!YMapController,
+                    YMapZoomControl: !!YMapZoomControl,
+                    YMapDefaultSchemeLayer: !!YMapDefaultSchemeLayer,
+                    YMapDefaultFeaturesLayer: !!YMapDefaultFeaturesLayer,
+                    YMapMarker: !!YMapMarker
+                });
+                
+                // Создаем карту через контроллер
+                var controller = new YMapController(mapContainer, {
+                    apiKey: getMapApiKey()
+                });
+                
+                controller.initMap().then(function(map) {
+                    console.log('🗺️ Map initialized via controller');
                     
-                    // Добавляем коллекцию на карту
-                    map.addChild(collection);
-                } catch(e) {
-                    console.warn('⚠️ Failed to create collection:', e);
-                }
-            }
-            
-            // Добавляем контролы зума (если доступны)
-            if (YMapZoomControls) {
-                try {
-                    var controls = new YMapZoomControls();
-                    map.addChild(controls);
-                    console.log('✅ Zoom controls added');
-                } catch(e) {
-                    console.warn('⚠️ Failed to add zoom controls:', e);
-                }
-            } else {
-                console.log('⚠️ YMapZoomControls not available - using HTML controls');
-                addHtmlZoomControls(mapContainer, map);
-            }
-            
-            yamap = {
-                map: map,
-                collection: collection,
-                markers: [],
-                zoom: 12,
-                components: {
-                    YMap: YMap,
-                    YMapDefaultSchemeLayer: YMapDefaultSchemeLayer,
-                    YMapDefaultFeaturesLayer: YMapDefaultFeaturesLayer,
-                    YMapMarker: YMapMarker,
-                    YMapCollection: YMapCollection
-                }
-            };
-            
-            // Сохраняем глобально для отладки
-            window.coffeeShopMap = map;
-            window.coffeeShopCollection = collection;
-            
-            console.log('✅ Map initialization complete');
-            console.log('🗺️ Map setZoom available:', typeof map.setZoom);
-            console.log('🗺️ Map setCenter available:', typeof map.setCenter);
-            console.log('🗺️ Map setOptions available:', typeof map.setOptions);
-            
-            // Загружаем точки ПВЗ/постоматов
-            loadPvzPoints();
+                    // Устанавливаем камеру (Самара)
+                    map.updateLocation({
+                        center: [53.2001, 50.1500],  // Самара: [lat, lon]
+                        zoom: 12
+                    });
+                    
+                    // Добавляем слои
+                    map.addLayer(new YMapDefaultSchemeLayer());
+                    map.addLayer(new YMapDefaultFeaturesLayer());
+                    
+                    console.log('✅ Layers added');
+                    
+                    // Создаем коллекцию маркеров
+                    var YMapCollection = ymaps3.YMapCollection;
+                    var collection = null;
+                    if (YMapCollection) {
+                        collection = new YMapCollection(mapContainer, {
+                            components: 'points'
+                        });
+                        map.addLayer(collection);
+                        console.log('📍 Collection added');
+                    }
+                    
+                    // Добавляем контрол зума
+                    if (YMapZoomControl) {
+                        try {
+                            var zoomControl = new YMapZoomControl({
+                                size: 'medium'
+                            });
+                            // В Yandex Maps 3.0 контролы добавляются через options или collection
+                            console.log('✅ ZoomControl created');
+                        } catch(e) {
+                            console.warn('⚠️ Failed to add zoom control:', e);
+                        }
+                    }
+                    
+                    yamap = {
+                        map: map,
+                        controller: controller,
+                        collection: collection,
+                        markers: [],
+                        zoom: 12,
+                        components: components
+                    };
+                    
+                    console.log('✅ Map ready');
+                    console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)).filter(function(m) { return m.indexOf('update') > -1 || m.indexOf('location') > -1; }));
+                    
+                    loadPvzPoints();
+                });
+            }).catch(function(err) {
+                console.error('❌ ymaps3.init() failed:', err);
+            });
         } catch (e) {
             console.error('Yandex Map init error:', e);
         }
