@@ -692,15 +692,19 @@ var YandexDeliveryWidget = (function () {
 
         // Загружаем точки ПВЗ/постоматов через API
         var type = selectedType; // 'pvz' или 'postomat'
-        fetch('/checkout/pvz-locations/?type=' + type + '&city=moscow')
+        fetch('/checkout/pvz-locations/?type=' + type)
             .then(function(response) { return response.json(); })
             .then(function(data) {
-                var points = data.success ? data.points : getMockPvzPoints(type);
+                console.log('📍 API response:', data);
+                var points = data.points || [];
+                if (points.length === 0 && data.error) {
+                    console.warn('⚠️ No PVZ points found:', data.error);
+                }
                 renderPvzPoints(points);
             })
-            .catch(function() {
-                var points = getMockPvzPoints(type);
-                renderPvzPoints(points);
+            .catch(function(err) {
+                console.error('❌ Failed to load PVZ points:', err);
+                renderPvzPoints([]);
             });
     }
 
@@ -769,24 +773,6 @@ var YandexDeliveryWidget = (function () {
         
         console.log('🎨 Created icon HTML:', icon.substring(0, 50));
         return icon;
-    }
-
-    function getMockPvzPoints(type) {
-        var points = [];
-        // Самарские адреса для ПВЗ
-        var pvzPoints = [
-            { name: 'ПВЗ Самара Центральная', coordinates: [53.2001, 50.1500], address: 'Самара, ул. Молодогвардейская, 1' },
-            { name: 'ПВЗ Самра Юг', coordinates: [53.1550, 50.1470], address: 'Самара, ул. Академика Павлова, 5' },
-            { name: 'ПВЗ Самра Север', coordinates: [53.2350, 50.1680], address: 'Самара, ул. Ленинградской, 72' },
-            { name: 'ПВЗ Самра Юго-Запад', coordinates: [53.1830, 50.1190], address: 'Самара, ул. Стара-Загора, 77' }
-        ];
-        // Самарские адреса для постоматов
-        var postomatPoints = [
-            { name: 'Постомат Самра ТЦ', coordinates: [53.1980, 50.1520], address: 'Самара, пр. Карла Маркса, 168' },
-            { name: 'Постомат Самра Центр', coordinates: [53.2010, 50.1490], address: 'Самара, ул. Садовая, 67' }
-        ];
-        
-        return type === 'postomat' ? postomatPoints : pvzPoints;
     }
 
     function highlightSelectedPoint(marker) {
