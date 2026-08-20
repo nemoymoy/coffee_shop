@@ -468,7 +468,10 @@ var YandexDeliveryWidget = (function () {
     }
 
     function placeSingleMarker(coords, text) {
-        if (!ymaps3 || !yamap || !yamap.map) return;
+        if (!yamap || !yamap.collection) {
+            console.warn('YMapCollection not available for single marker');
+            return;
+        }
         
         // Удаляем старые маркеры
         pointObjects.forEach(function(obj) {
@@ -476,23 +479,21 @@ var YandexDeliveryWidget = (function () {
         });
         pointObjects = [];
         
-        var YMapMarker = yamap.components && yamap.components.YMapMarker;
-        if (!YMapMarker) {
-            console.error('YMapMarker not available');
-            return;
-        }
-        
         var icon = '<div style="width:30px;height:30px;background:#FF6B6B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>';
         
         try {
-            var marker = new YMapMarker({
+            yamap.collection.addItem({
                 coordinates: coords,
-                html: icon
+                icon: icon,
+                onClick: function() {
+                    selectedAddress = text;
+                    document.getElementById('yandexAddressInput').value = text;
+                    calculateDelivery();
+                }
             });
-            yamap.map.addLayer(marker);
-            pointObjects.push(marker);
+            pointObjects.push(yamap.collection);
         } catch(e) {
-            console.warn('Failed to add marker:', e);
+            console.warn('Failed to add single marker:', e);
         }
     }
 
@@ -541,83 +542,73 @@ var YandexDeliveryWidget = (function () {
         });
     }
 
-    async function initYandexMap() {
+    function initYandexMap() {
         if (!ymaps3) return;
         
         try {
-            console.log('🔍 ymaps3 object keys:', Object.keys(ymaps3).slice(0, 20));
+            console.log('🔍 ymaps3 available components:', Object.keys(ymaps3));
             
-            // Yandex Maps 3.0 использует модульную систему
-            // Пробуем разные варианты загрузки компонентов
-            var YMapController, YMapDefaultSchemeLayer, YMapDefaultFeatureLayer, YMapMarker;
+            var YMap = ymaps3.YMap;
+            var YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
+            var YMapMarker = ymaps3.YMapMarker;
+            var YMapCollection = ymaps3.YMapCollection;
             
-            // Вариант 1: ymaps3.init() с массивом компонентов
-            if (typeof ymaps3.init === 'function') {
-                console.log('✅ Using ymaps3.init()');
-                var components = await ymaps3.init([
-                    'ymap://controller.YMapController',
-                    'ymap://layer.Default.YMapDefaultSchemeLayer',
-                    'ymap://layer.Default.YMapDefaultFeatureLayer',
-                    'ymap://marker.YMapMarker'
-                ]);
-                YMapController = components['ymap://controller.YMapController'];
-                YMapDefaultSchemeLayer = components['ymap://layer.Default.YMapDefaultSchemeLayer'];
-                YMapDefaultFeatureLayer = components['ymap://layer.Default.YMapDefaultFeatureLayer'];
-                YMapMarker = components['ymap://marker.YMapMarker'];
-            }
-            // Вариант 2: ymaps3.ready() возвращает компоненты
-            else if (typeof ymaps3.ready === 'function') {
-                console.log('✅ Using ymaps3.ready()');
-                var comps = await ymaps3.ready();
-                YMapController = comps.YMapController;
-                YMapDefaultSchemeLayer = comps.YMapDefaultSchemeLayer;
-                YMapDefaultFeatureLayer = comps.YMapDefaultFeatureLayer;
-                YMapMarker = comps.YMapMarker;
-            }
-            
-            // Если компоненты не загрузились - пробуем прямой доступ
-            if (!YMapController) {
-                console.warn('⚠️ Falling back to direct access');
-                YMapController = ymaps3.YMapController;
-                YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
-                YMapDefaultFeatureLayer = ymaps3.YMapDefaultFeatureLayer;
-                YMapMarker = ymaps3.YMapMarker;
-            }
-            
-            console.log('📦 Loaded components:', {
-                YMapController: !!YMapController,
+            console.log('📦 Available components:', {
+                YMap: !!YMap,
                 YMapDefaultSchemeLayer: !!YMapDefaultSchemeLayer,
-                YMapDefaultFeatureLayer: !!YMapDefaultFeatureLayer,
-                YMapMarker: !!YMapMarker
+                YMapMarker: !!YMapMarker,
+                YMapCollection: !!YMapCollection
             });
+            
+            if (!YMap || !YMapDefaultSchemeLayer) {
+                console.error('❌ Required Yandex Maps components not available');
+                var warning = document.getElementById('mapUnavailableWarning');
+                var mapContainer = document.getElementById('yandexMapContainer');
+                if (mapContainer) mapContainer.style.display = 'none';
+                if (warning) warning.style.display = 'block';
+                return;
+            }
             
             var mapContainer = document.getElementById('yandexMap');
             if (!mapContainer) return;
 
             yamap = {
-                controller: new YMapController(mapContainer, {
-                    apiKey: getMapApiKey(),
-                    direction: 'ltr'
-                }),
                 map: null,
+                collection: null,
                 markers: [],
                 components: {
-                    YMapController: YMapController,
+                    YMap: YMap,
                     YMapDefaultSchemeLayer: YMapDefaultSchemeLayer,
-                    YMapDefaultFeatureLayer: YMapDefaultFeatureLayer,
-                    YMapMarker: YMapMarker
+                    YMapMarker: YMapMarker,
+                    YMapCollection: YMapCollection
                 }
             };
 
-            var map = await yamap.controller.initMap();
-            yamap.map = map;
-            map.setLocation({
-                center: currentCenter,
-                zoom: 12
-            });
+            // Создаем карту через YMap с опциями в конструкторе
+            yamap.map = new YMap(
+                mapContainer,
+                {
+                    apiKey: getMapApiKey(),
+                    location: {
+                        center: currentCenter,
+                        zoom: 12
+                    }
+                }
+            );
 
-            map.addLayer(new YMapDefaultSchemeLayer());
-            map.addLayer(new YMapDefaultFeatureLayer());
+            // Добавляем слои
+            yamap.map.addLayer(new YMapDefaultSchemeLayer());
+
+            // Создаем коллекцию маркеров
+            if (YMapCollection) {
+                yamap.collection = new YMapCollection(
+                    mapContainer,
+                    {
+                        components: 'points'
+                    }
+                );
+                yamap.map.addLayer(yamap.collection);
+            }
 
             // Загружаем точки ПВЗ/постоматов
             loadPvzPoints();
@@ -650,38 +641,36 @@ var YandexDeliveryWidget = (function () {
     }
 
     function renderPvzPoints(points) {
-        if (!yamap || !yamap.map) return;
-        
-        var YMapMarker = yamap.components && yamap.components.YMapMarker;
-        if (!YMapMarker) {
-            console.error('YMapMarker not available in renderPvzPoints');
+        if (!yamap || !yamap.collection) {
+            console.error('YMapCollection not available');
             return;
         }
+        
+        // Очищаем старые маркеры
+        yamap.collection.clearItems();
+        pointObjects = [];
         
         points.forEach(function(point) {
             var coordinates = point.coordinates || point.coords || currentCenter;
             var icon = createPvzIcon(point, selectedType);
             
             try {
-                var marker = new YMapMarker({
+                yamap.collection.addItem({
                     coordinates: coordinates,
-                    html: icon
+                    icon: icon,
+                    onClick: function() {
+                        selectedAddress = point.address || point.name;
+                        document.getElementById('yandexAddressInput').value = selectedAddress;
+                        selectedType = point.type || selectedType;
+                        
+                        highlightSelectedPoint({});
+                        
+                        calculateDelivery();
+                    }
                 });
-                
-                marker.on('click', function() {
-                    selectedAddress = point.address || point.name;
-                    document.getElementById('yandexAddressInput').value = selectedAddress;
-                    selectedType = point.type || selectedType;
-                    
-                    highlightSelectedPoint(marker);
-                    
-                    calculateDelivery();
-                });
-                
-                yamap.map.addLayer(marker);
-                pointObjects.push(marker);
+                pointObjects.push(point);
             } catch(e) {
-                console.warn('Failed to add marker:', e);
+                console.warn('Failed to add PVZ marker:', e);
             }
         });
     }
