@@ -468,30 +468,37 @@ var YandexDeliveryWidget = (function () {
     }
 
     function placeSingleMarker(coords, text) {
-        if (!yamap || !yamap.collection) {
-            console.warn('YMapCollection not available for single marker');
+        if (!yamap || !yamap.map) {
+            console.warn('Map not available for single marker');
             return;
         }
         
         // Удаляем старые маркеры
         pointObjects.forEach(function(obj) {
-            try { obj.unlink(); } catch(e) {}
+            try {
+                if (obj && obj.unlink) obj.unlink();
+            } catch(e) {}
         });
         pointObjects = [];
         
         var icon = '<div style="width:30px;height:30px;background:#FF6B6B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>';
         
         try {
-            yamap.collection.addItem({
+            var YMapMarker = ymaps3.YMapMarker;
+            var marker = new YMapMarker({
                 coordinates: coords,
-                icon: icon,
-                onClick: function() {
-                    selectedAddress = text;
-                    document.getElementById('yandexAddressInput').value = text;
-                    calculateDelivery();
-                }
+                icon: icon
             });
-            pointObjects.push(yamap.collection);
+            
+            yamap.map.addChild(marker);
+            
+            marker.events.add('click', function() {
+                selectedAddress = text;
+                document.getElementById('yandexAddressInput').value = text;
+                calculateDelivery();
+            });
+            
+            pointObjects.push(marker);
         } catch(e) {
             console.warn('Failed to add single marker:', e);
         }
@@ -546,35 +553,65 @@ var YandexDeliveryWidget = (function () {
         if (!ymaps3) return;
         
         try {
-            console.log('🔍 ymaps3 available components:', Object.keys(ymaps3));
+            console.log('🔍 ymaps3 version check...');
             
             var YMap = ymaps3.YMap;
             var YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
-            var YMapMarker = ymaps3.YMapMarker;
             var YMapCollection = ymaps3.YMapCollection;
+            var YMapMarker = ymaps3.YMapMarker;
             
-            console.log('📦 Available components:', {
-                YMap: !!YMap,
-                YMapDefaultSchemeLayer: !!YMapDefaultSchemeLayer,
-                YMapMarker: !!YMapMarker,
-                YMapCollection: !!YMapCollection
-            });
+            console.log('📦 Checking constructors...');
+            console.log('  YMap:', typeof YMap);
+            console.log('  YMapDefaultSchemeLayer:', typeof YMapDefaultSchemeLayer);
+            console.log('  YMapCollection:', typeof YMapCollection);
             
-            if (!YMap || !YMapDefaultSchemeLayer) {
-                console.error('❌ Required Yandex Maps components not available');
-                var warning = document.getElementById('mapUnavailableWarning');
-                var mapContainer = document.getElementById('yandexMapContainer');
-                if (mapContainer) mapContainer.style.display = 'none';
-                if (warning) warning.style.display = 'block';
+            if (!YMap) {
+                console.error('❌ YMap constructor not found');
                 return;
             }
             
             var mapContainer = document.getElementById('yandexMap');
-            if (!mapContainer) return;
-
+            if (!mapContainer) {
+                console.error('❌ mapContainer not found');
+                return;
+            }
+            
+            // Yandex Maps 3.0 API использует Promise-based инициализацию
+            // Сначала создаем карту, затем добавляем слои
+            
+            // Создаем карту
+            var map = new YMap(mapContainer, {
+                location: {
+                    center: currentCenter,
+                    zoom: 12
+                }
+            });
+            
+            console.log('🗺️ Map created, type:', typeof map);
+            
+            // Добавляем слои через addChild (Yandex Maps 3.0 API)
+            map.addChild(new YMapDefaultSchemeLayer());
+            console.log('✅ Scheme layer added');
+            
+            // Создаем коллекцию маркеров
+            var collection = null;
+            if (YMapCollection && typeof YMapCollection === 'function') {
+                try {
+                    collection = new YMapCollection(mapContainer, {
+                        components: 'points'
+                    });
+                    console.log('📍 Collection created');
+                    
+                    // Добавляем коллекцию на карту
+                    map.addChild(collection);
+                } catch(e) {
+                    console.warn('⚠️ Failed to create collection:', e);
+                }
+            }
+            
             yamap = {
-                map: null,
-                collection: null,
+                map: map,
+                collection: collection,
                 markers: [],
                 components: {
                     YMap: YMap,
@@ -583,33 +620,13 @@ var YandexDeliveryWidget = (function () {
                     YMapCollection: YMapCollection
                 }
             };
-
-            // Создаем карту через YMap с опциями в конструкторе
-            yamap.map = new YMap(
-                mapContainer,
-                {
-                    apiKey: getMapApiKey(),
-                    location: {
-                        center: currentCenter,
-                        zoom: 12
-                    }
-                }
-            );
-
-            // Добавляем слои
-            yamap.map.addLayer(new YMapDefaultSchemeLayer());
-
-            // Создаем коллекцию маркеров
-            if (YMapCollection) {
-                yamap.collection = new YMapCollection(
-                    mapContainer,
-                    {
-                        components: 'points'
-                    }
-                );
-                yamap.map.addLayer(yamap.collection);
-            }
-
+            
+            // Сохраняем глобально для отладки
+            window.coffeeShopMap = map;
+            window.coffeeShopCollection = collection;
+            
+            console.log('✅ Map initialization complete');
+            
             // Загружаем точки ПВЗ/постоматов
             loadPvzPoints();
         } catch (e) {
@@ -641,34 +658,47 @@ var YandexDeliveryWidget = (function () {
     }
 
     function renderPvzPoints(points) {
-        if (!yamap || !yamap.collection) {
-            console.error('YMapCollection not available');
+        if (!yamap || !yamap.map) {
+            console.error('Map not available');
             return;
         }
         
-        // Очищаем старые маркеры
-        yamap.collection.clearItems();
+        // Очищаем старые маркеры через удаление дочерних элементов
+        pointObjects.forEach(function(obj) {
+            try {
+                if (obj && obj.unlink) obj.unlink();
+            } catch(e) {}
+        });
         pointObjects = [];
+        
+        var YMapMarker = ymaps3.YMapMarker;
         
         points.forEach(function(point) {
             var coordinates = point.coordinates || point.coords || currentCenter;
             var icon = createPvzIcon(point, selectedType);
             
             try {
-                yamap.collection.addItem({
+                // Создаем маркер напрямую
+                var marker = new YMapMarker({
                     coordinates: coordinates,
-                    icon: icon,
-                    onClick: function() {
-                        selectedAddress = point.address || point.name;
-                        document.getElementById('yandexAddressInput').value = selectedAddress;
-                        selectedType = point.type || selectedType;
-                        
-                        highlightSelectedPoint({});
-                        
-                        calculateDelivery();
-                    }
+                    icon: icon
                 });
-                pointObjects.push(point);
+                
+                // Добавляем маркер как дочерний элемент карты
+                yamap.map.addChild(marker);
+                
+                // Добавляем обработчик клика
+                marker.events.add('click', function() {
+                    selectedAddress = point.address || point.name;
+                    document.getElementById('yandexAddressInput').value = selectedAddress;
+                    selectedType = point.type || selectedType;
+                    
+                    highlightSelectedPoint({});
+                    
+                    calculateDelivery();
+                });
+                
+                pointObjects.push(marker);
             } catch(e) {
                 console.warn('Failed to add PVZ marker:', e);
             }
@@ -703,16 +733,9 @@ var YandexDeliveryWidget = (function () {
     }
 
     function highlightSelectedPoint(marker) {
-        pointObjects.forEach(function(obj) {
-            try {
-                obj.element.style.boxShadow = '0 2px 8px rgba(0,0,0,0.3)';
-                obj.element.style.transform = 'scale(1)';
-            } catch(e) {}
-        });
-        try {
-            marker.element.style.boxShadow = '0 4px 16px rgba(33,150,243,0.6)';
-            marker.element.style.transform = 'scale(1.2)';
-        } catch(e) {}
+        // В Yandex Maps 3.0 стилизация маркеров через icon
+        // Упрощенная версия - просто сбрасываем все маркеры
+        pointObjects = [];
     }
 
     /* ==================== Шаг 3: Расчёт стоимости ==================== */
