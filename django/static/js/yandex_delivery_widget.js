@@ -90,11 +90,24 @@ var YandexDeliveryWidget = (function () {
         var mapsScript = document.querySelector('script[src*="api-maps.yandex.ru"]');
         if (mapsScript) {
             // Скрипт Яндекс Карт подключён
-            if (typeof ymaps3 === 'undefined') {
-                // Ж загрузки ymaps3
-                window.addEventListener('ymaps3Ready', handleYMapsReady);
-            } else {
+            if (typeof ymaps3 !== 'undefined') {
                 yandexMapsInitialized = true;
+                console.log('✅ Yandex Maps already loaded');
+            } else {
+                // Ж загрузки ymaps3
+                console.log('⏳ Waiting for ymaps3 to load...');
+                var checkInterval = setInterval(function() {
+                    if (typeof ymaps3 !== 'undefined') {
+                        clearInterval(checkInterval);
+                        ymaps3.ready(function() {
+                            yandexMapsInitialized = true;
+                            console.log('✅ ymaps3.ready() completed');
+                            if (selectedType && selectedType !== 'courier') {
+                                initYandexMapForPvz();
+                            }
+                        });
+                    }
+                }, 100);
             }
         }
     }
@@ -454,7 +467,7 @@ var YandexDeliveryWidget = (function () {
         list.style.display = 'block';
     }
 
-    function placeSingleMarker(coords, text) {
+    async function placeSingleMarker(coords, text) {
         if (!ymaps3 || !yamap || !yamap.map) return;
         
         // Удаляем старые маркеры
@@ -463,7 +476,20 @@ var YandexDeliveryWidget = (function () {
         });
         pointObjects = [];
         
-        var YMapMarker = ymaps3.YMapMarker;
+        var YMapMarker;
+        if (window._ymaps3Components) {
+            YMapMarker = window._ymaps3Components.YMapMarker;
+        } else {
+            try {
+                var components = await ymaps3.init();
+                YMapMarker = components.YMapMarker;
+                window._ymaps3Components = components;
+            } catch(e) {
+                console.error('Failed to get YMapMarker:', e);
+                return;
+            }
+        }
+        
         var icon = '<div style="width:30px;height:30px;background:#FF6B6B;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,0.3);">📍</div>';
         
         try {
@@ -523,14 +549,16 @@ var YandexDeliveryWidget = (function () {
         });
     }
 
-    function initYandexMap() {
+    async function initYandexMap() {
         if (!ymaps3) return;
         
         try {
-            var YMapController = ymaps3.YMapController;
-            var YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
-            var YMapDefaultFeatureLayer = ymaps3.YMapDefaultFeatureLayer;
-            var YMapMarker = ymaps3.YMapMarker;
+            // Yandex Maps 3.0 требует инициализацию модулей через ymaps3.init()
+            var components = await ymaps3.init();
+            var YMapController = components.YMapController;
+            var YMapDefaultSchemeLayer = components.YMapDefaultSchemeLayer;
+            var YMapDefaultFeatureLayer = components.YMapDefaultFeatureLayer;
+            var YMapMarker = components.YMapMarker;
             
             var mapContainer = document.getElementById('yandexMap');
             if (!mapContainer) return;
@@ -538,25 +566,24 @@ var YandexDeliveryWidget = (function () {
             yamap = {
                 controller: new YMapController(mapContainer, {
                     apiKey: getMapApiKey(),
-                    direction: 'rtl'
+                    direction: 'ltr'
                 }),
                 map: null,
                 markers: []
             };
 
-            yamap.controller.initMap().then(function(map) {
-                yamap.map = map;
-                map.setLocation({
-                    center: currentCenter,
-                    zoom: 12
-                });
-
-                map.addLayer(new YMapDefaultSchemeLayer());
-                map.addLayer(new YMapDefaultFeatureLayer());
-
-                // Загружаем точки ПВЗ/постоматов
-                loadPvzPoints();
+            var map = await yamap.controller.initMap();
+            yamap.map = map;
+            map.setLocation({
+                center: currentCenter,
+                zoom: 12
             });
+
+            map.addLayer(new YMapDefaultSchemeLayer());
+            map.addLayer(new YMapDefaultFeatureLayer());
+
+            // Загружаем точки ПВЗ/постоматов
+            loadPvzPoints();
         } catch (e) {
             console.error('Yandex Map init error:', e);
         }
@@ -585,10 +612,22 @@ var YandexDeliveryWidget = (function () {
             });
     }
 
-    function renderPvzPoints(points) {
+    async function renderPvzPoints(points) {
         if (!yamap || !yamap.map) return;
         
-        var YMapMarker = ymaps3.YMapMarker;
+        var YMapMarker;
+        if (window._ymaps3Components) {
+            YMapMarker = window._ymaps3Components.YMapMarker;
+        } else {
+            try {
+                var components = await ymaps3.init();
+                YMapMarker = components.YMapMarker;
+                window._ymaps3Components = components;
+            } catch(e) {
+                console.error('Failed to get YMapMarker:', e);
+                return;
+            }
+        }
         
         points.forEach(function(point) {
             var coordinates = point.coordinates || point.coords || currentCenter;
