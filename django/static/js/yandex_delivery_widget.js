@@ -406,16 +406,7 @@ var YandexDeliveryWidget = (function () {
                             currentCenter = [lat, lon];
                             
                             // Устанавливаем новую позицию карты
-                            try {
-                                yamap.map.location.set({
-                                    center: currentCenter,
-                                    zoom: 15
-                                });
-                                console.log('✅ Map centered at:', currentCenter);
-                            } catch(e) {
-                                console.error('❌ Failed to set map location:', e);
-                            }
-                            
+                            setMapCenter(lat, lon, 15);
                             placeSingleMarker(currentCenter, text);
                         }
 
@@ -565,6 +556,61 @@ var YandexDeliveryWidget = (function () {
         });
     }
 
+    /* ==================== Кастомные контролы зума ==================== */
+    
+    function addHtmlZoomControls(container, map) {
+        // Создаем HTML контролы для зума
+        var zoomContainer = document.createElement('div');
+        zoomContainer.style.cssText = 'position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:5px;z-index:100;';
+        
+        // Кнопка +
+        var btnPlus = document.createElement('button');
+        btnPlus.innerHTML = '+';
+        btnPlus.style.cssText = 'width:36px;height:36px;font-size:20px;font-weight:bold;border:2px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+        btnPlus.addEventListener('click', function() {
+            if (yamap.zoom < 18) {
+                yamap.zoom++;
+                map.location.set({ zoom: yamap.zoom });
+            }
+        });
+        
+        // Кнопка -
+        var btnMinus = document.createElement('button');
+        btnMinus.innerHTML = '−';
+        btnMinus.style.cssText = 'width:36px;height:36px;font-size:20px;font-weight:bold;border:2px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;box-shadow:0 2px 4px rgba(0,0,0,0.2);';
+        btnMinus.addEventListener('click', function() {
+            if (yamap.zoom > 3) {
+                yamap.zoom--;
+                map.location.set({ zoom: yamap.zoom });
+            }
+        });
+        
+        zoomContainer.appendChild(btnPlus);
+        zoomContainer.appendChild(btnMinus);
+        container.appendChild(zoomContainer);
+        
+        console.log('✅ HTML zoom controls added');
+    }
+
+    function setMapCenter(lat, lon, zoom) {
+        if (!yamap || !yamap.map) {
+            console.error('❌ Map not available for setMapCenter');
+            return;
+        }
+        
+        try {
+            console.log('🗺️ Setting map center to:', [lat, lon], 'zoom:', zoom);
+            yamap.map.location.set({
+                center: [lat, lon],
+                zoom: zoom
+            });
+            yamap.zoom = zoom;
+            console.log('✅ Map centered at [', lat, ',', lon, ']');
+        } catch(e) {
+            console.error('❌ Failed to set map center:', e);
+        }
+    }
+
     function initYandexMap() {
         if (!ymaps3) return;
         
@@ -576,6 +622,7 @@ var YandexDeliveryWidget = (function () {
             var YMapDefaultFeaturesLayer = ymaps3.YMapDefaultFeaturesLayer;
             var YMapCollection = ymaps3.YMapCollection;
             var YMapMarker = ymaps3.YMapMarker;
+            var YMapZoomControls = ymaps3.YMapZoomControls;
             
             console.log('📦 Checking constructors...');
             console.log('  YMap:', typeof YMap);
@@ -583,10 +630,8 @@ var YandexDeliveryWidget = (function () {
             console.log('  YMapDefaultFeaturesLayer:', typeof YMapDefaultFeaturesLayer);
             console.log('  YMapCollection:', typeof YMapCollection);
             console.log('  YMapMarker:', typeof YMapMarker);
-            
-            // Проверяем доступность контролов
-            var YMapDefaultControls = ymaps3.YMapDefaultControls;
-            console.log('  YMapDefaultControls:', typeof YMapDefaultControls);
+            console.log('  YMapZoomControls:', typeof YMapZoomControls);
+            console.log('  ymaps3 keys:', Object.keys(ymaps3).filter(function(k) { return k.indexOf('Zoom') > -1 || k.indexOf('Camera') > -1 || k.indexOf('Control') > -1; }));
             
             if (!YMap) {
                 console.error('❌ YMap constructor not found');
@@ -602,7 +647,7 @@ var YandexDeliveryWidget = (function () {
             // Yandex Maps 3.0 API использует addChild для добавления слоев
             
             // Создаем карту с Самарой по умолчанию
-            console.log('🗺️ Creating Yandex Map with Samara center...');
+            console.log('🗺️ Creating Yandex Map with Samara center [53.2001, 50.1500]...');
             var map = new YMap(mapContainer, {
                 location: {
                     center: [53.2001, 50.1500],  // Самара: [lat, lon]
@@ -611,8 +656,10 @@ var YandexDeliveryWidget = (function () {
             });
             
             console.log('🗺️ Map created, type:', typeof map);
-            console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)).slice(0, 10));
+            console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)));
+            console.log('🗺️ Map own props:', Object.keys(map));
             console.log('🗺️ Map location:', map.location);
+            console.log('🗺️ Map options:', map.options);
             
             // Добавляем слои через addChild (Yandex Maps 3.0 API)
             map.addChild(new YMapDefaultSchemeLayer());
@@ -642,23 +689,25 @@ var YandexDeliveryWidget = (function () {
                 }
             }
             
-            // Добавляем контролы (zoom)
-            try {
-                if (YMapDefaultControls) {
-                    var controls = new YMapDefaultControls();
+            // Добавляем контролы зума (если доступны)
+            if (YMapZoomControls) {
+                try {
+                    var controls = new YMapZoomControls();
                     map.addChild(controls);
-                    console.log('✅ Controls (zoom) added');
-                } else {
-                    console.log('⚠️ YMapDefaultControls not available');
+                    console.log('✅ Zoom controls added');
+                } catch(e) {
+                    console.warn('⚠️ Failed to add zoom controls:', e);
                 }
-            } catch(e) {
-                console.warn('⚠️ Failed to add controls:', e);
+            } else {
+                console.log('⚠️ YMapZoomControls not available - using HTML controls');
+                addHtmlZoomControls(mapContainer, map);
             }
             
             yamap = {
                 map: map,
                 collection: collection,
                 markers: [],
+                zoom: 12,
                 components: {
                     YMap: YMap,
                     YMapDefaultSchemeLayer: YMapDefaultSchemeLayer,
@@ -673,6 +722,9 @@ var YandexDeliveryWidget = (function () {
             window.coffeeShopCollection = collection;
             
             console.log('✅ Map initialization complete');
+            console.log('🗺️ Map setZoom available:', typeof map.setZoom);
+            console.log('🗺️ Map setCenter available:', typeof map.setCenter);
+            console.log('🗺️ Map setOptions available:', typeof map.setOptions);
             
             // Загружаем точки ПВЗ/постоматов
             loadPvzPoints();
