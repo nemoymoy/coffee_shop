@@ -211,11 +211,16 @@ class YandexDeliveryService:
                     if pp.get('is_postomat', False):
                         continue
                 
+                # Yandex Maps 3.0 требует [долгота, широта]
+                coords = pp.get('coordinates')
+                if coords:
+                    coords = [coords[1], coords[0]]  # [lon, lat]
+                
                 points.append({
                     'id': pp.get('id'),
                     'name': pp.get('name', ''),
                     'address': pp.get('address', ''),
-                    'coordinates': pp.get('coordinates'),  # [lat, lon]
+                    'coordinates': coords,  # [долгота, широта]
                     'type': 'postomat' if pp.get('is_postomat') else 'pvz',
                     'working_hours': pp.get('working_hours', ''),
                     'phone': pp.get('phone', ''),
