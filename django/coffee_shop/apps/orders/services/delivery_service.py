@@ -157,3 +157,79 @@ class YandexDeliveryService:
                 'success': False,
                 'error': str(e),
             }
+
+    def get_pvz_locations(self, city: str = None, pvz_type: str = 'pvz') -> dict:
+        """
+        Получает список пунктов выдачи и постоматов.
+        
+        Args:
+            city: Город (по умолчанию из настроек)
+            pvz_type: 'pvz' или 'postomat'
+            
+        Returns:
+            {'success': True, 'points': [...]} или {'success': False, 'error': '...'}
+        """
+        if not self.is_configured():
+            return {
+                'success': True,
+                'points': [],
+                'mock': True,
+                'error': 'Yandex Delivery not configured',
+            }
+
+        try:
+            # API Яндекс Доставки для получения ПВЗ
+            # Документация: https://yandex.ru/dev/delivery/docs/ru/reference/pickup-points
+            city = city or getattr(settings, 'YANDEX_FROM_CITY', 'samara')
+            
+            payload = {
+                'yandex_account_id': self.yandex_account_id,
+                'city': city,
+                'type': pvz_type,  # 'pvz' или 'postomat'
+            }
+
+            response = requests.post(
+                f'{self.DELIVERY_API}/v1/pickup-points/list',
+                json=payload,
+                headers={'Authorization': f'OAuth {self.access_token}'},
+                timeout=15,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            points = []
+            
+            # Парсим ответ API Яндекс Доставки
+            for pp in data.get('pickup_points', []):
+                # Проверяем тип пункта
+                if pvz_type == 'postomat':
+                    # Фильтруем только постоматы
+                    if not pp.get('is_postomat', False):
+                        continue
+                else:
+                    # Фильтруем только ПВЗ
+                    if pp.get('is_postomat', False):
+                        continue
+                
+                points.append({
+                    'id': pp.get('id'),
+                    'name': pp.get('name', ''),
+                    'address': pp.get('address', ''),
+                    'coordinates': pp.get('coordinates'),  # [lat, lon]
+                    'type': 'postomat' if pp.get('is_postomat') else 'pvz',
+                    'working_hours': pp.get('working_hours', ''),
+                    'phone': pp.get('phone', ''),
+                })
+
+            return {
+                'success': True,
+                'points': points,
+                'mock': False,
+            }
+
+        except requests.RequestException as e:
+            return {
+                'success': False,
+                'points': [],
+                'error': str(e),
+            }

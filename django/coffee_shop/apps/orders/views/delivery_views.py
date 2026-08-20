@@ -175,6 +175,7 @@ def calculate_delivery_view(request):
 def pvz_locations_view(request):
     """
     Возвращает список ПВЗ и постоматов для отображения на карте.
+    Загружает данные из API Яндекс Доставки.
     
     GET params:
     - type: 'pvz' или 'postomat'
@@ -183,40 +184,43 @@ def pvz_locations_view(request):
     Returns JSON:
     {
         "success": true,
-        "points": [
-            {
-                "name": "ПВЗ Тверская",
-                "address": "Москва, ул. Тверская, 15",
-                "coordinates": [55.758, 37.608],
-                "type": "pvz"
-            }
-        ]
+        "points": [...],
+        "mock": false
     }
     """
     pvz_type = request.GET.get('type', 'pvz')
-    city = request.GET.get('city', 'moscow')
+    city = request.GET.get('city', 'samara')  # По умолчанию Самара
     
-    # Демо-данные ПВЗ
-    pvz_points = [
-        {'name': 'ПВЗ Тверская', 'address': 'Москва, ул. Тверская, 15', 'coordinates': [55.758, 37.608], 'type': 'pvz'},
-        {'name': 'ПВЗ Арбат', 'address': 'Москва, ул. Арбат, 10', 'coordinates': [55.749, 37.588], 'type': 'pvz'},
-        {'name': 'ПВЗ Парк Культуры', 'address': 'Москва, ул. Большая Ордынка, 21', 'coordinates': [55.743, 37.585], 'type': 'pvz'},
-        {'name': 'ПВЗ Садовая', 'address': 'Москва, Садовая-Спасская ул., 19', 'coordinates': [55.761, 37.592], 'type': 'pvz'},
-        {'name': 'ПВЗ Деловой центр', 'address': 'Москва, Пресненская наб., 8', 'coordinates': [55.755, 37.535], 'type': 'pvz'},
-    ]
+    # Получаем токен из сессии
+    access_token = request.session.get('yandex_delivery_access_token')
     
-    postomat_points = [
-        {'name': 'Постомат Тверская', 'address': 'Москва, ул. Тверская, 23', 'coordinates': [55.759, 37.610], 'type': 'postomat'},
-        {'name': 'Постомат Лубянка', 'address': 'Москва, Лубянская пл., 3', 'coordinates': [55.753, 37.637], 'type': 'postomat'},
-        {'name': 'Постомат Киевская', 'address': 'Москва, Киевская пл., 1', 'coordinates': [55.745, 37.564], 'type': 'postomat'},
-    ]
-    
-    points = postomat_points if pvz_type == 'postomat' else pvz_points
-    
-    return JsonResponse({
-        'success': True,
-        'points': points
-    })
+    if access_token:
+        # Загружаем реальные данные из API Яндекс Доставки
+        service = YandexDeliveryService(access_token=access_token)
+        result = service.get_pvz_locations(city=city, pvz_type=pvz_type)
+        
+        if result.get('success'):
+            return JsonResponse({
+                'success': True,
+                'points': result.get('points', []),
+                'mock': result.get('mock', False),
+            })
+        else:
+            # Если API вернул ошибку, возвращаем пустой список
+            return JsonResponse({
+                'success': True,
+                'points': [],
+                'mock': False,
+                'error': result.get('error', 'Ошибка загрузки данных'),
+            })
+    else:
+        # Нет токена — возвращаем пустой список
+        return JsonResponse({
+            'success': True,
+            'points': [],
+            'mock': True,
+            'error': 'Yandex Delivery not connected',
+        })
 
 
 @csrf_exempt

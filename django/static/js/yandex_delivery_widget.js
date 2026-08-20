@@ -408,17 +408,15 @@ var YandexDeliveryWidget = (function () {
                             // Устанавливаем новую позицию карты
                             try {
                                 yamap.map.location.set({
-                                    center: [lat, lon],
-                                    zoom: 15,
-                                    // angle: 0,  // опционально: наклон камеры
-                                    // direction: 0  // опционально: ориентация камеры
+                                    center: currentCenter,
+                                    zoom: 15
                                 });
                                 console.log('✅ Map centered at:', currentCenter);
                             } catch(e) {
                                 console.error('❌ Failed to set map location:', e);
                             }
                             
-                            placeSingleMarker([lat, lon], text);
+                            placeSingleMarker(currentCenter, text);
                         }
 
                         calculateDelivery();
@@ -584,6 +582,11 @@ var YandexDeliveryWidget = (function () {
             console.log('  YMapDefaultSchemeLayer:', typeof YMapDefaultSchemeLayer);
             console.log('  YMapDefaultFeaturesLayer:', typeof YMapDefaultFeaturesLayer);
             console.log('  YMapCollection:', typeof YMapCollection);
+            console.log('  YMapMarker:', typeof YMapMarker);
+            
+            // Проверяем доступность контролов
+            var YMapDefaultControls = ymaps3.YMapDefaultControls;
+            console.log('  YMapDefaultControls:', typeof YMapDefaultControls);
             
             if (!YMap) {
                 console.error('❌ YMap constructor not found');
@@ -596,18 +599,20 @@ var YandexDeliveryWidget = (function () {
                 return;
             }
             
-            // Yandex Maps 3.0 API использует Promise-based инициализацию
-            // Сначала создаем карту, затем добавляем слои
+            // Yandex Maps 3.0 API использует addChild для добавления слоев
             
             // Создаем карту с Самарой по умолчанию
+            console.log('🗺️ Creating Yandex Map with Samara center...');
             var map = new YMap(mapContainer, {
                 location: {
-                    center: [53.2001, 50.1500],  // Самара
+                    center: [53.2001, 50.1500],  // Самара: [lat, lon]
                     zoom: 12
                 }
             });
             
             console.log('🗺️ Map created, type:', typeof map);
+            console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)).slice(0, 10));
+            console.log('🗺️ Map location:', map.location);
             
             // Добавляем слои через addChild (Yandex Maps 3.0 API)
             map.addChild(new YMapDefaultSchemeLayer());
@@ -639,11 +644,10 @@ var YandexDeliveryWidget = (function () {
             
             // Добавляем контролы (zoom)
             try {
-                var YMapDefaultControls = ymaps3.YMapDefaultControls;
                 if (YMapDefaultControls) {
-                    var controls = new YMapDefaultControls(mapContainer);
+                    var controls = new YMapDefaultControls();
                     map.addChild(controls);
-                    console.log('✅ Controls added');
+                    console.log('✅ Controls (zoom) added');
                 } else {
                     console.log('⚠️ YMapDefaultControls not available');
                 }
