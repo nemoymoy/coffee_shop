@@ -557,12 +557,14 @@ var YandexDeliveryWidget = (function () {
             
             var YMap = ymaps3.YMap;
             var YMapDefaultSchemeLayer = ymaps3.YMapDefaultSchemeLayer;
+            var YMapDefaultFeaturesLayer = ymaps3.YMapDefaultFeaturesLayer;
             var YMapCollection = ymaps3.YMapCollection;
             var YMapMarker = ymaps3.YMapMarker;
             
             console.log('📦 Checking constructors...');
             console.log('  YMap:', typeof YMap);
             console.log('  YMapDefaultSchemeLayer:', typeof YMapDefaultSchemeLayer);
+            console.log('  YMapDefaultFeaturesLayer:', typeof YMapDefaultFeaturesLayer);
             console.log('  YMapCollection:', typeof YMapCollection);
             
             if (!YMap) {
@@ -593,6 +595,14 @@ var YandexDeliveryWidget = (function () {
             map.addChild(new YMapDefaultSchemeLayer());
             console.log('✅ Scheme layer added');
             
+            // YMapDefaultFeaturesLayer требуется для работы маркеров (YMapMarker использует default data source)
+            if (YMapDefaultFeaturesLayer) {
+                map.addChild(new YMapDefaultFeaturesLayer());
+                console.log('✅ Features layer added (required for markers)');
+            } else {
+                console.warn('⚠️ YMapDefaultFeaturesLayer not available');
+            }
+            
             // Создаем коллекцию маркеров
             var collection = null;
             if (YMapCollection && typeof YMapCollection === 'function') {
@@ -616,6 +626,7 @@ var YandexDeliveryWidget = (function () {
                 components: {
                     YMap: YMap,
                     YMapDefaultSchemeLayer: YMapDefaultSchemeLayer,
+                    YMapDefaultFeaturesLayer: YMapDefaultFeaturesLayer,
                     YMapMarker: YMapMarker,
                     YMapCollection: YMapCollection
                 }
