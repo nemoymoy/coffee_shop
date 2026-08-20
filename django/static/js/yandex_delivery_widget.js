@@ -570,7 +570,11 @@ var YandexDeliveryWidget = (function () {
         btnPlus.addEventListener('click', function() {
             if (yamap.zoom < 18) {
                 yamap.zoom++;
-                map.location.set({ zoom: yamap.zoom });
+                try {
+                    map.options.set('zoom', yamap.zoom);
+                } catch(e) {
+                    console.warn('⚠️ Failed to set zoom via options:', e);
+                }
             }
         });
         
@@ -581,7 +585,11 @@ var YandexDeliveryWidget = (function () {
         btnMinus.addEventListener('click', function() {
             if (yamap.zoom > 3) {
                 yamap.zoom--;
-                map.location.set({ zoom: yamap.zoom });
+                try {
+                    map.options.set('zoom', yamap.zoom);
+                } catch(e) {
+                    console.warn('⚠️ Failed to set zoom via options:', e);
+                }
             }
         });
         
@@ -600,12 +608,45 @@ var YandexDeliveryWidget = (function () {
         
         try {
             console.log('🗺️ Setting map center to:', [lat, lon], 'zoom:', zoom);
-            yamap.map.location.set({
-                center: [lat, lon],
-                zoom: zoom
-            });
-            yamap.zoom = zoom;
-            console.log('✅ Map centered at [', lat, ',', lon, ']');
+            
+            // Пробуем через options (Yandex Maps 3.0)
+            try {
+                yamap.map.options.set('center', [lat, lon]);
+                yamap.map.options.set('zoom', zoom);
+                yamap.zoom = zoom;
+                console.log('✅ Map centered via options.set()');
+                return;
+            } catch(e) {
+                console.warn('⚠️ options.set() failed, trying other methods:', e);
+            }
+            
+            // Пробуем другие методы
+            if (typeof yamap.map.setCenter === 'function') {
+                yamap.map.setCenter([lat, lon], zoom);
+                yamap.zoom = zoom;
+                console.log('✅ Map centered via setCenter()');
+                return;
+            }
+            
+            if (typeof yamap.map.setZoom === 'function') {
+                yamap.map.setZoom(zoom);
+                yamap.map.setCenter([lat, lon]);
+                yamap.zoom = zoom;
+                console.log('✅ Map centered via setZoom/setCenter()');
+                return;
+            }
+            
+            // Пробуем через ymaps3.setCenter (глобальная функция)
+            if (typeof ymaps3.setCenter === 'function') {
+                ymaps3.setCenter(yamap.map, [lat, lon], zoom);
+                yamap.zoom = zoom;
+                console.log('✅ Map centered via ymaps3.setCenter()');
+                return;
+            }
+            
+            console.error('❌ No method available to set map center');
+            console.log('📦 Available map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(yamap.map)).filter(function(m) { return m.indexOf('set') > -1 || m.indexOf('center') > -1 || m.indexOf('zoom') > -1; }));
+            console.log('📦 Available ymaps3 functions:', Object.keys(ymaps3).filter(function(k) { return typeof ymaps3[k] === 'function'; }).slice(0, 10));
         } catch(e) {
             console.error('❌ Failed to set map center:', e);
         }
@@ -654,6 +695,10 @@ var YandexDeliveryWidget = (function () {
                     zoom: 12
                 }
             });
+            
+            // Проверяем, как карта принимает параметры
+            console.log('📦 Map constructor signature:', YMap.toString().substring(0, 200));
+            console.log('📦 YMap options:', Object.keys(YMap.prototype).slice(0, 10));
             
             console.log('🗺️ Map created, type:', typeof map);
             console.log('🗺️ Map methods:', Object.getOwnPropertyNames(Object.getPrototypeOf(map)));
