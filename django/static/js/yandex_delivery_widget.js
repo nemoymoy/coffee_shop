@@ -487,17 +487,15 @@ var YandexDeliveryWidget = (function () {
             var YMapMarker = ymaps3.YMapMarker;
             var marker = new YMapMarker({
                 coordinates: coords,
-                icon: icon
+                icon: icon,
+                onClick: function() {
+                    selectedAddress = text;
+                    document.getElementById('yandexAddressInput').value = text;
+                    calculateDelivery();
+                }
             });
             
             yamap.map.addChild(marker);
-            
-            marker.events.add('click', function() {
-                selectedAddress = text;
-                document.getElementById('yandexAddressInput').value = text;
-                calculateDelivery();
-            });
-            
             pointObjects.push(marker);
         } catch(e) {
             console.warn('Failed to add single marker:', e);
@@ -689,25 +687,23 @@ var YandexDeliveryWidget = (function () {
             var icon = createPvzIcon(point, selectedType);
             
             try {
-                // Создаем маркер напрямую
+                // Создаем маркер с обработчиком клика
                 var marker = new YMapMarker({
                     coordinates: coordinates,
-                    icon: icon
+                    icon: icon,
+                    onClick: function() {
+                        selectedAddress = point.address || point.name;
+                        document.getElementById('yandexAddressInput').value = selectedAddress;
+                        selectedType = point.type || selectedType;
+                        
+                        highlightSelectedPoint({});
+                        
+                        calculateDelivery();
+                    }
                 });
                 
                 // Добавляем маркер как дочерний элемент карты
                 yamap.map.addChild(marker);
-                
-                // Добавляем обработчик клика
-                marker.events.add('click', function() {
-                    selectedAddress = point.address || point.name;
-                    document.getElementById('yandexAddressInput').value = selectedAddress;
-                    selectedType = point.type || selectedType;
-                    
-                    highlightSelectedPoint({});
-                    
-                    calculateDelivery();
-                });
                 
                 pointObjects.push(marker);
             } catch(e) {
