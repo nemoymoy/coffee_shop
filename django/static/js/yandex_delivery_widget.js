@@ -723,12 +723,16 @@ var YandexDeliveryWidget = (function () {
         ymapMapElement = mapElement;
         console.log('🗺️ Map DOM element captured:', ymapMapElement);
         
-        var map = new YMap(mapElement, {
+        // YMaps 3.0: events указываются в опциях при создании карты
+        var mapOptions = {
             location: {
                 center: center,
                 zoom: zoom
-            }
-        });
+            },
+            events: ['click'] // Обязательно: включаем поддержку событий клика
+        };
+        
+        var map = new YMap(mapElement, mapOptions);
         
         map.addChild(new YMapDefaultSchemeLayer());
         if (YMapDefaultFeaturesLayer) {
@@ -738,7 +742,7 @@ var YandexDeliveryWidget = (function () {
         var collection = null;
         if (YMapCollection && typeof YMapCollection === 'function') {
             try {
-                collection = new YMapCollection(mapContainer, {
+                collection = new YMapCollection(mapElement, {
                     components: 'points'
                 });
                 map.addChild(collection);
@@ -947,34 +951,61 @@ var YandexDeliveryWidget = (function () {
             // Обработчик клика по карте для YMaps 3.0
             // ========================================
             // В YMaps 3 координаты приходят прямо через e.coord в событии клика
-            // Не нужно никакой пиксельной математики!
             
+            function handleMapClick(e) {
+                console.log('🗺️ Click event triggered');
+                console.log('  e.coord:', e.coord);
+                
+                // e.coord — это [долгота, широта] в формате EPSG:3857
+                if (!e.coord || !Array.isArray(e.coord) || e.coord.length < 2) {
+                    console.error('❌ Invalid e.coord:', e.coord);
+                    return;
+                }
+                
+                var lon = e.coord[0];
+                var lat = e.coord[1];
+                console.log('  📍 Click at: lon=' + lon + ', lat=' + lat);
+                
+                // Центрируем карту на точку клика
+                setMapCenter(lon, lat, currentZoom);
+                
+                // Обратное геокодирование: координаты → адрес для поисковой строки
+                reverseGeocodeToAddress(lon, lat);
+            }
+            
+            // YMaps 3.0: events добавляются через опции при создании карты
             if (ymap.events && typeof ymap.events.add === 'function') {
-                ymap.events.add('click', function(e) {
-                    console.log('🗺️ YMaps 3.0 click event triggered');
-                    console.log('  e.coord:', e.coord);
-                    
-                    // e.coord — это [долгота, широта] в формате EPSG:3857
-                    if (!e.coord || !Array.isArray(e.coord) || e.coord.length < 2) {
-                        console.error('❌ Invalid e.coord:', e.coord);
-                        return;
-                    }
-                    
-                    var lon = e.coord[0];
-                    var lat = e.coord[1];
-                    console.log('  📍 Click at: lon=' + lon + ', lat=' + lat);
-                    
-                    // Центрируем карту на точку клика
-                    setMapCenter(lon, lat, currentZoom);
-                    
-                    // Обратное геокодирование: координаты → адрес для поисковой строки
-                    reverseGeocodeToAddress(lon, lat);
-                });
+                ymap.events.add('click', handleMapClick);
                 console.log('✅ Click handler registered via ymap.events.add');
             } else {
-                console.error('❌ ymap.events.add is not available!');
-                console.log('  ymap.events:', ymap.events);
-                console.log('  typeof ymap.events.add:', typeof ymap?.events?.add);
+                console.warn('⚠️ ymap.events.add not available, using DOM fallback');
+                if (ymapMapElement) {
+                    ymapMapElement.addEventListener('click', function(domEvent) {
+                        // Получаем центр карты
+                        var center = ymap.location.center;
+                        var zoom = ymap.location.zoom;
+                        
+                        // Получаем размеры карты
+                        var rect = ymapMapElement.getBoundingClientRect();
+                        var x = domEvent.clientX - rect.left;
+                        var y = domEvent.clientY - rect.top;
+                        var centerX = rect.width / 2;
+                        var centerY = rect.height / 2;
+                        
+                        // Конвертируем пиксели в координаты (EPSG:3857)
+                        var metersPerPixel = 156543.03392804095 * Math.cos(center[1] * Math.PI / 180) / Math.pow(2, zoom);
+                        var pixelScale = 256; // размер тайла
+                        
+                        var lon = center[0] + (x - centerX) * metersPerPixel / 111320;
+                        var lat = center[1] - (y - centerY) * metersPerPixel / 111320;
+                        
+                        console.log('🗺️ DOM click converted to coords:', [lon, lat]);
+                        
+                        setMapCenter(lon, lat, zoom);
+                        reverseGeocodeToAddress(lon, lat);
+                    });
+                    console.log('✅ DOM click fallback registered on map element');
+                }
             }
             
             // Добавляем кастомные контролы зума
