@@ -104,6 +104,50 @@ var CoffeeShop = window.CoffeeShop || {};
     /* ======================= Utilities ======================= */
 
     /**
+     * Получить cookie по имени.
+     */
+    CoffeeShop.getCookie = function (name) {
+        var cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            var cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                var cookie = cookies[i].trim();
+                if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    };
+
+    /**
+     * Парсить адресную строку в структурированные данные.
+     * Формат: "Город, улица, дом-кв"
+     */
+    CoffeeShop.parseAddress = function (raw) {
+        var result = {
+            city: '',
+            street: '',
+            house: '',
+            apartment: ''
+        };
+        var parts = raw.split(',').map(function (s) { return s.trim(); });
+
+        if (parts.length >= 1) result.city = parts[0];
+        if (parts.length >= 2) result.street = parts[1];
+        if (parts.length >= 3) {
+            var houseParts = parts[2].split('-');
+            result.house = houseParts[0].trim();
+            if (houseParts.length > 1) {
+                result.apartment = houseParts[1].trim();
+            }
+        }
+
+        return result;
+    };
+
+    /**
      * Debounce — задержка вызова функции.
      */
     CoffeeShop.debounce = function (func, wait) {
