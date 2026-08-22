@@ -43,6 +43,45 @@ var Checkout = (function () {
         return cookieValue;
     }
 
+
+    /* ==================== Delivery Summary ==================== */
+
+    function updateDeliverySummary() {
+        var deliverySummary = document.getElementById('deliverySummary');
+        if (!deliverySummary) return;
+
+        var addressInput = document.getElementById('id_delivery_address');
+        var addressValue = addressInput ? addressInput.value.trim() : '';
+        if (!addressValue) {
+            deliverySummary.style.display = 'none';
+            return;
+        }
+
+        var summaryType = document.getElementById('summaryType');
+        var summaryAddress = document.getElementById('summaryAddress');
+        var summaryCost = document.getElementById('summaryCost');
+        var summaryEta = document.getElementById('summaryEta');
+        var deliveryCostEl = document.getElementById('deliveryCost');
+        var deliveryEtaEl = document.getElementById('deliveryEta');
+
+        var selectedType = null;
+        if (window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
+            selectedType = window.YandexDeliveryWidget.getSelectedType();
+        }
+        var typeLabel = {
+            courier: '🚗 Курьер',
+            pvz: '📦 Пункт выдачи (ПВЗ)',
+            postomat: '📮 Постомат'
+        }[selectedType || 'courier'] || 'Delivery';
+
+        if (summaryType) summaryType.textContent = typeLabel;
+        if (summaryAddress) summaryAddress.textContent = addressValue;
+        if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '—';
+        if (summaryEta) summaryEta.textContent = deliveryEtaEl ? deliveryEtaEl.textContent : '';
+
+        deliverySummary.style.display = 'block';
+    }
+
     /* ==================== Инициализация ==================== */
 
     function init() {
@@ -85,7 +124,8 @@ var Checkout = (function () {
             });
         }
 
-        /* ---- Email validation ---- */
+
+    /* ---- Email validation ---- */
         if (emailInput) {
             emailInput.addEventListener('blur', function () {
                 if (this.value && !isValidEmail(this.value)) {
@@ -238,40 +278,6 @@ var Checkout = (function () {
             }
         }
 
-        function updateDeliverySummary() {
-            var deliverySummary = document.getElementById('deliverySummary');
-            if (!deliverySummary) return;
-
-            var addressValue = addressInput ? addressInput.value.trim() : '';
-            if (!addressValue) {
-                deliverySummary.style.display = 'none';
-                return;
-            }
-
-            // Determine type label
-            var summaryType = document.getElementById('summaryType');
-            var selectedType = null;
-            if (window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
-                selectedType = window.YandexDeliveryWidget.getSelectedType();
-            }
-            var typeLabel = {
-                courier: '🚗 Курьер',
-                pvz: '📦 Пункт выдачи (ПВЗ)',
-                postomat: '📮 Постомат'
-            }[selectedType || 'courier'] || '🚗 Доставка';
-
-            var summaryCost = document.getElementById('summaryCost');
-            var summaryEta = document.getElementById('summaryEta');
-            var deliveryCostEl = document.getElementById('deliveryCost');
-            var deliveryEtaEl = document.getElementById('deliveryEta');
-
-            if (summaryType) summaryType.textContent = typeLabel;
-            if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '—';
-            if (summaryEta) summaryEta.textContent = deliveryEtaEl ? deliveryEtaEl.textContent : '';
-            document.getElementById('summaryAddress').textContent = addressValue;
-
-            deliverySummary.style.display = 'block';
-        }
 
         if (deliveryInputs && deliveryInputs.length) {
             deliveryInputs.forEach(function (radio) {
