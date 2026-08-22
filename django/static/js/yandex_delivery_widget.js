@@ -614,8 +614,7 @@ var YandexDeliveryWidget = (function () {
                     var lon = state.currentCenter[0] + pixelDeltaX * metersPerPixel / 111320;
                     var lat = state.currentCenter[1] - pixelDeltaY * metersPerPixel / 111320;
 
-                    state.currentCenter = [lon, lat];
-                    setMapCenter(lon, lat, state.currentZoom);
+                    // Don't re-center the map on single click — only geocode
                     reverseGeocodeToAddress(lon, lat);
                 };
 
@@ -662,6 +661,16 @@ var YandexDeliveryWidget = (function () {
 
     function setMapCenterWithZoom(newZoom) {
         try {
+            // Sync state from ymaps3 before zooming — the center may have
+            // changed via drag since state.currentCenter was last set.
+            if (state.map.center && Array.isArray(state.map.center)) {
+                state.currentCenter = state.map.center;
+            }
+            if (state.map.zoom !== undefined) {
+                state.currentZoom = state.map.zoom;
+            }
+
+            newZoom = Math.max(MAP_MIN_ZOOM, Math.min(MAP_MAX_ZOOM, newZoom));
             state.currentZoom = newZoom;
             state.map.setLocation({
                 center: state.currentCenter,
@@ -815,6 +824,11 @@ var YandexDeliveryWidget = (function () {
             deliveryInfoBlock.style.display = 'block';
         }
 
+        // Update summary on checkout page
+        if (window.Checkout && typeof window.Checkout.updateDeliverySummary === 'function') {
+            window.Checkout.updateDeliverySummary();
+        }
+
         var addressBlock = document.getElementById('addressBlock');
         if (addressBlock) {
             addressBlock.style.display = 'none';
@@ -907,7 +921,8 @@ var YandexDeliveryWidget = (function () {
 
     return {
         init: init,
-        openModal: openModal
+        openModal: openModal,
+        getSelectedType: function() { return state.selectedType; }
     };
 
 })();

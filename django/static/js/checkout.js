@@ -71,6 +71,20 @@ var Checkout = (function () {
             });
         }
 
+        /* ---- Address input ---- */
+        if (addressInput) {
+            addressInput.addEventListener('input', function () {
+                var value = this.value.trim();
+                var isDeliveryChecked = form.querySelector('input[name="delivery_method"][value="delivery"]:checked');
+                if (value) {
+                    updateDeliverySummary();
+                    if (isDeliveryChecked) {
+                        calculateDeliveryPrice();
+                    }
+                }
+            });
+        }
+
         /* ---- Email validation ---- */
         if (emailInput) {
             emailInput.addEventListener('blur', function () {
@@ -140,10 +154,12 @@ var Checkout = (function () {
                         deliveryCostEl.textContent =
                             CoffeeShop.formatPrice(data.price) + ' ₽';
                         deliveryEtaEl.textContent = data.eta || '';
+                        updateDeliverySummary();
                     } else {
                         // Fallback: show default price
                         deliveryCostEl.textContent = '299 ₽';
                         deliveryEtaEl.textContent = '30-45 мин';
+                        updateDeliverySummary();
                     }
                 })
                 .catch(function () {
@@ -196,6 +212,7 @@ var Checkout = (function () {
                 // Trigger delivery price calculation (if address is already set)
                 if (addressInput && addressInput.value.trim()) {
                     calculateDeliveryPrice();
+                    updateDeliverySummary();
                 }
             } else {
                 if (addressBlock) addressBlock.style.display = 'none';
@@ -208,12 +225,52 @@ var Checkout = (function () {
                 if (deliveryInfoBlock) {
                     deliveryInfoBlock.style.display = 'none';
                 }
+                // Hide delivery summary
+                var deliverySummary = document.getElementById('deliverySummary');
+                if (deliverySummary) {
+                    deliverySummary.style.display = 'none';
+                }
                 // Reset delivery info
                 var deliveryCostEl = document.getElementById('deliveryCost');
                 var deliveryEtaEl = document.getElementById('deliveryEta');
                 if (deliveryCostEl) deliveryCostEl.textContent = '—';
                 if (deliveryEtaEl) deliveryEtaEl.textContent = '—';
             }
+        }
+
+        function updateDeliverySummary() {
+            var deliverySummary = document.getElementById('deliverySummary');
+            if (!deliverySummary) return;
+
+            var addressValue = addressInput ? addressInput.value.trim() : '';
+            if (!addressValue) {
+                deliverySummary.style.display = 'none';
+                return;
+            }
+
+            // Determine type label
+            var summaryType = document.getElementById('summaryType');
+            var selectedType = null;
+            if (window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
+                selectedType = window.YandexDeliveryWidget.getSelectedType();
+            }
+            var typeLabel = {
+                courier: '🚗 Курьер',
+                pvz: '📦 Пункт выдачи (ПВЗ)',
+                postomat: '📮 Постомат'
+            }[selectedType || 'courier'] || '🚗 Доставка';
+
+            var summaryCost = document.getElementById('summaryCost');
+            var summaryEta = document.getElementById('summaryEta');
+            var deliveryCostEl = document.getElementById('deliveryCost');
+            var deliveryEtaEl = document.getElementById('deliveryEta');
+
+            if (summaryType) summaryType.textContent = typeLabel;
+            if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '—';
+            if (summaryEta) summaryEta.textContent = deliveryEtaEl ? deliveryEtaEl.textContent : '';
+            document.getElementById('summaryAddress').textContent = addressValue;
+
+            deliverySummary.style.display = 'block';
         }
 
         if (deliveryInputs && deliveryInputs.length) {
@@ -314,7 +371,8 @@ var Checkout = (function () {
     /* ==================== Export ==================== */
 
     return {
-        init: init
+        init: init,
+        updateDeliverySummary: updateDeliverySummary
     };
 
 })();
