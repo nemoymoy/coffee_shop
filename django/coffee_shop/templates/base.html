@@ -155,13 +155,16 @@
     {% if cart_count is not None %}
     <script>
         (function() {
-            var badge = document.getElementById('cartBadge');
-            if (!badge) return;
-            var count = {{ cart_count }};
-            if (count > 0) {
-                badge.textContent = count;
-                badge.style.display = 'inline-block';
-            }
+            // Defer to next microtask to avoid forced layout before CSS loads
+            window.addEventListener('load', function() {
+                var badge = document.getElementById('cartBadge');
+                if (!badge) return;
+                var count = {{ cart_count }};
+                if (count > 0) {
+                    badge.textContent = count;
+                    badge.style.display = 'inline-block';
+                }
+            });
         })();
     </script>
     {% endif %}
