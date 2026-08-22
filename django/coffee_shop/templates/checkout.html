@@ -35,21 +35,29 @@
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label class="form-label">Имя *</label>
-                    <input type="text" name="first_name" id="id_first_name" class="form-control" placeholder="Иван" required>
+                    <input type="text" name="first_name" id="id_first_name" class="form-control"
+                           value="{% if form.is_bound %}{{ form.first_name.value|default:'' }}{% else %}{{ user_data.first_name|default:'' }}{% endif %}"
+                           placeholder="Иван" required>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Фамилия *</label>
-                    <input type="text" name="last_name" id="id_last_name" class="form-control" placeholder="Иванов" required>
+                    <input type="text" name="last_name" id="id_last_name" class="form-control"
+                           value="{% if form.is_bound %}{{ form.last_name.value|default:'' }}{% else %}{{ user_data.last_name|default:'' }}{% endif %}"
+                           placeholder="Иванов" required>
                 </div>
             </div>
             <div class="row mb-3">
                 <div class="col-md-6">
                     <label class="form-label">Телефон *</label>
-                    <input type="tel" name="phone" id="id_phone" class="form-control" placeholder="+7 (999) 123-45-67" required>
+                    <input type="tel" name="phone" id="id_phone" class="form-control"
+                           value="{% if form.is_bound %}{{ form.phone.value|default:'' }}{% else %}{% endif %}"
+                           placeholder="+7 (999) 123-45-67" required>
                 </div>
                 <div class="col-md-6">
                     <label class="form-label">Email *</label>
-                    <input type="email" name="email" id="id_email" class="form-control" placeholder="ivan@example.com" required>
+                    <input type="email" name="email" id="id_email" class="form-control"
+                           value="{% if form.is_bound %}{{ form.email.value|default:'' }}{% else %}{{ user_data.email|default:'' }}{% endif %}"
+                           placeholder="ivan@example.com" required>
                 </div>
             </div>
 

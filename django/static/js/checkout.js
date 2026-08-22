@@ -5,384 +5,436 @@
  */
 var Checkout = (function () {
 
-    /* ==================== Вспомогательные функции ==================== */
+    /* ==================== Конфигурация ==================== */
 
+    var CONFIG = {
+        DELIVERY_CALCULATION_URL: '/checkout/calculate-delivery/',
+        DELIVERY_CALCULATION_DEBOUNCE_MS: 1500,
+        NAME_DEBOUNCE_MS: 300,
+        YANDEX_WIDGET_OPEN_DELAY_MS: 200,
+        MIN_NAME_LENGTH: 2,
+        MIN_PHONE_DIGITS: 11,
+        DEFAULT_DELIVERY_PRICE: 299,
+        DEFAULT_DELIVERY_ETA: '30-45 мин',
+        DELIVERY_SUMMARY_TYPES: {
+            courier: '🚗 Курьер',
+            pvz: '📦 Пункт выдачи (ПВЗ)',
+            postomat: '📮 Постомат'
+        }
+    };
+
+    /* ==================== Состояние ==================== */
+
+    var _elements = {};
+    var _deliveryCalculationTimeout = null;
+
+    /* ==================== Приватные утилиты ==================== */
+
+    /**
+     * Валидация email по regex.
+     */
     function isValidEmail(email) {
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
     }
 
-    function debounce(func, wait) {
-        var timeout;
-        return function () {
-            var context = this;
-            var args = arguments;
-            clearTimeout(timeout);
-            timeout = setTimeout(function () {
-                func.apply(context, args);
-            }, wait);
+    /**
+     * Кэширование DOM-элементов формы.
+     */
+    function _cacheElements(form) {
+        _elements = {
+            form: form,
+            phone: form.querySelector('#id_phone'),
+            email: form.querySelector('#id_email'),
+            firstName: form.querySelector('#id_first_name'),
+            lastName: form.querySelector('#id_last_name'),
+            address: form.querySelector('#id_delivery_address'),
+            deliveryRadios: form.querySelectorAll('input[name="delivery_method"]'),
+            submitBtn: form.querySelector('button[type="submit"]')
         };
+        _elements.deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
+        _elements.deliverySummary = document.getElementById('deliverySummary');
+        _elements.addressBlock = document.getElementById('addressBlock');
+        _elements.summaryType = document.getElementById('summaryType');
+        _elements.summaryAddress = document.getElementById('summaryAddress');
+        _elements.summaryCost = document.getElementById('summaryCost');
+        _elements.summaryEta = document.getElementById('summaryEta');
+        _elements.deliveryCost = document.getElementById('deliveryCost');
+        _elements.deliveryEta = document.getElementById('deliveryEta');
+        _elements.total = document.getElementById('checkoutTotal');
     }
 
-    function getCookie(name) {
-        var cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            var cookies = document.cookie.split(';');
-            for (var i = 0; i < cookies.length; i++) {
-                var cookie = cookies[i].trim();
-                if (
-                    cookie.substring(0, name.length + 1) ===
-                    name + '='
-                ) {
-                    cookieValue = decodeURIComponent(
-                        cookie.substring(name.length + 1)
-                    );
-                    break;
-                }
-            }
-        }
-        return cookieValue;
-    }
+    /**
+     * Расчёт стоимости доставки с debounce.
+     */
+    function _calculateDeliveryPrice() {
+        var addressValue = _elements.address ? _elements.address.value.trim() : '';
 
-
-    /* ==================== Delivery Summary ==================== */
-
-    function updateDeliverySummary(selectedTypeOverride) {
-        var form = document.querySelector('.checkout-form');
-        var deliverySummary = document.getElementById('deliverySummary');
-        if (!deliverySummary) return;
-
-        var addressInput = document.getElementById('id_delivery_address');
-        var addressValue = addressInput ? addressInput.value.trim() : '';
-        var isDeliveryChecked = form ? form.querySelector('input[name="delivery_method"][value="delivery"]:checked') : null;
-
-        // Show summary only if delivery is selected and address is set
-        if (!addressValue || !isDeliveryChecked) {
-            deliverySummary.style.display = 'none';
+        if (!addressValue) {
+            _setDeliveryPlaceholder();
             return;
         }
 
-        var summaryType = document.getElementById('summaryType');
-        var summaryAddress = document.getElementById('summaryAddress');
-        var summaryCost = document.getElementById('summaryCost');
-        var summaryEta = document.getElementById('summaryEta');
-        var deliveryCostEl = document.getElementById('deliveryCost');
-        var deliveryEtaEl = document.getElementById('deliveryEta');
+        var address = CoffeeShop.parseAddress(addressValue);
+        if (!address.city || !address.street || !address.house) {
+            return;
+        }
+
+        _setDeliveryLoading();
+
+        if (_deliveryCalculationTimeout) {
+            clearTimeout(_deliveryCalculationTimeout);
+        }
+
+        _deliveryCalculationTimeout = setTimeout(function () {
+            fetch(CONFIG.DELIVERY_CALCULATION_URL, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': CoffeeShop.getCookie('csrftoken')
+                },
+                body: JSON.stringify({
+                    city: address.city,
+                    street: address.street,
+                    house: address.house,
+                    apartment: address.apartment
+                })
+            })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+                if (data.success && data.price) {
+                    _setDeliveryResult(data.price, data.eta);
+                } else {
+                    _setDeliveryFallback();
+                }
+            })
+            .catch(function () {
+                _setDeliveryFallback();
+            });
+        }, CONFIG.DELIVERY_CALCULATION_DEBOUNCE_MS);
+    }
+
+    /**
+     * Обновление сводки доставки.
+     */
+    function _updateDeliverySummary(selectedTypeOverride) {
+        var summary = _elements.deliverySummary;
+        if (!summary) return;
+
+        var addressValue = _elements.address ? _elements.address.value.trim() : '';
+        var isDeliveryChecked = _elements.form
+            ? _elements.form.querySelector('input[name="delivery_method"][value="delivery"]:checked')
+            : null;
+
+        if (!addressValue || !isDeliveryChecked) {
+            summary.style.display = 'none';
+            return;
+        }
 
         var selectedType = selectedTypeOverride || null;
         if (!selectedType && window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
             selectedType = window.YandexDeliveryWidget.getSelectedType();
         }
-        var typeLabel = {
-            courier: '🚗 Курьер',
-            pvz: '📦 Пункт выдачи (ПВЗ)',
-            postomat: '📮 Постомат'
-        }[selectedType || 'courier'] || '🚗 Курьер';
 
-        if (summaryType) summaryType.textContent = typeLabel;
-        if (summaryAddress) summaryAddress.textContent = addressValue;
-        if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '299 ₽';
-        if (summaryEta) summaryEta.textContent = deliveryEtaEl ? deliveryEtaEl.textContent : '';
+        var typeLabel = CONFIG.DELIVERY_SUMMARY_TYPES[selectedType || 'courier'] || CONFIG.DELIVERY_SUMMARY_TYPES.courier;
 
-        deliverySummary.style.display = 'block';
+        _elements.summaryType.textContent = typeLabel;
+        _elements.summaryAddress.textContent = addressValue;
+        _elements.summaryCost.textContent = _elements.deliveryCost ? _elements.deliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
+        _elements.summaryEta.textContent = _elements.deliveryEta ? _elements.deliveryEta.textContent : '';
+
+        summary.style.display = 'block';
     }
 
-    /* ==================== Инициализация ==================== */
+    /**
+     * Переключение блока адреса при смене способа доставки.
+     */
+    function _updateAddressBlock() {
+        var isDeliveryChecked = _elements.form
+            ? _elements.form.querySelector('input[name="delivery_method"][value="delivery"]:checked')
+            : null;
 
+        if (isDeliveryChecked) {
+            _showDeliveryBlock();
+        } else {
+            _hideDeliveryBlock();
+        }
+    }
+
+    /* ==================== Вспомогательные функции доставки ==================== */
+
+    function _showDeliveryBlock() {
+        if (_elements.addressBlock) {
+            _elements.addressBlock.style.display = 'block';
+        }
+        if (_elements.address) {
+            _elements.address.setAttribute('required', 'required');
+        }
+        if (_elements.deliveryInfoBlock) {
+            _elements.deliveryInfoBlock.style.display = 'block';
+        }
+        if (_elements.address && _elements.address.value.trim()) {
+            _calculateDeliveryPrice();
+            _updateDeliverySummary();
+        }
+    }
+
+    function _hideDeliveryBlock() {
+        if (_elements.addressBlock) {
+            _elements.addressBlock.style.display = 'none';
+        }
+        if (_elements.address) {
+            _elements.address.removeAttribute('required');
+            _elements.address.value = '';
+        }
+        if (_elements.deliveryInfoBlock) {
+            _elements.deliveryInfoBlock.style.display = 'none';
+        }
+        if (_elements.deliverySummary) {
+            _elements.deliverySummary.style.display = 'none';
+        }
+        _setDeliveryPlaceholder();
+    }
+
+    function _setDeliveryPlaceholder() {
+        if (_elements.deliveryCost) _elements.deliveryCost.textContent = '—';
+        if (_elements.deliveryEta) _elements.deliveryEta.textContent = '—';
+    }
+
+    function _setDeliveryLoading() {
+        if (_elements.deliveryCost) _elements.deliveryCost.textContent = 'Расчёт...';
+        if (_elements.deliveryEta) _elements.deliveryEta.textContent = '';
+    }
+
+    function _setDeliveryResult(price, eta) {
+        if (_elements.deliveryCost) {
+            _elements.deliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
+        }
+        if (_elements.deliveryEta) {
+            _elements.deliveryEta.textContent = eta || '';
+        }
+        _updateDeliverySummary();
+    }
+
+    function _setDeliveryFallback() {
+        if (_elements.deliveryCost) {
+            _elements.deliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
+        }
+        if (_elements.deliveryEta) {
+            _elements.deliveryEta.textContent = CONFIG.DEFAULT_DELIVERY_ETA;
+        }
+        _updateDeliverySummary();
+    }
+
+    /* ==================== Инициализация компонентов ==================== */
+
+    /**
+     * Форматирование телефона при вводе.
+     */
+    function _initPhoneFormatting() {
+        var phone = _elements.phone;
+        if (!phone) return;
+
+        phone.addEventListener('input', function () {
+            var raw = this.value.replace(/^(\+)?(?=8|7)/, '');
+            this.value = CoffeeShop.formatPhone(raw);
+        });
+    }
+
+    /**
+     * Валидация email при потере фокуса.
+     */
+    function _initEmailValidation() {
+        var email = _elements.email;
+        if (!email) return;
+
+        email.addEventListener('blur', function () {
+            if (this.value && !isValidEmail(this.value)) {
+                this.classList.add('is-invalid');
+                var feedback = this.nextElementSibling;
+                if (feedback && feedback.classList.contains('invalid-feedback')) {
+                    feedback.style.display = 'block';
+                }
+            } else {
+                this.classList.remove('is-invalid');
+                this.classList.add('is-valid');
+            }
+        });
+    }
+
+    /**
+     * Обработка ввода адреса.
+     */
+    function _initAddressInput() {
+        var address = _elements.address;
+        if (!address) return;
+
+        address.addEventListener('input', function () {
+            var value = this.value.trim();
+            var isDeliveryChecked = _elements.form
+                ? _elements.form.querySelector('input[name="delivery_method"][value="delivery"]:checked')
+                : null;
+
+            if (value) {
+                _updateDeliverySummary();
+                if (isDeliveryChecked) {
+                    _calculateDeliveryPrice();
+                }
+            }
+        });
+    }
+
+    /**
+     * Переключение radio-кнопок способа доставки.
+     */
+    function _initDeliveryToggle() {
+        var radios = _elements.deliveryRadios;
+        if (!radios || !radios.length) return;
+
+        for (var i = 0; i < radios.length; i++) {
+            radios[i].addEventListener('change', _updateAddressBlock);
+        }
+        _updateAddressBlock();
+    }
+
+    /**
+     * Интеграция с виджетом Яндекс Доставки.
+     */
+    function _initYandexWidget() {
+        var radios = _elements.deliveryRadios;
+        if (!radios || !radios.length || !window.YandexDeliveryWidget) return;
+
+        for (var i = 0; i < radios.length; i++) {
+            var radio = radios[i];
+            if (radio.value === 'delivery' && radio.checked) {
+                setTimeout(function () {
+                    window.YandexDeliveryWidget.openModal();
+                }, CONFIG.YANDEX_WIDGET_OPEN_DELAY_MS);
+            }
+
+            (function (r) {
+                r.addEventListener('change', function () {
+                    if (this.checked && this.value === 'delivery') {
+                        setTimeout(function () {
+                            window.YandexDeliveryWidget.openModal();
+                        }, CONFIG.YANDEX_WIDGET_OPEN_DELAY_MS);
+                    }
+                });
+            })(radio);
+        }
+    }
+
+    /**
+     * Валидация полей имени и фамилии с debounce.
+     */
+    function _initNameFields() {
+        var fields = [_elements.firstName, _elements.lastName];
+        for (var i = 0; i < fields.length; i++) {
+            var input = fields[i];
+            if (!input) continue;
+
+            input.addEventListener('input', CoffeeShop.debounce(function () {
+                if (this.value.trim().length >= CONFIG.MIN_NAME_LENGTH) {
+                    this.classList.remove('is-invalid');
+                    this.classList.add('is-valid');
+                }
+            }, CONFIG.NAME_DEBOUNCE_MS));
+        }
+    }
+
+    /**
+     * Валидация формы перед отправкой.
+     */
+    function _initSubmitValidation() {
+        var submitBtn = _elements.submitBtn;
+        if (!submitBtn) return;
+
+        submitBtn.addEventListener('click', function (e) {
+            var isValid = true;
+            var firstInvalid = null;
+
+            // Проверка обязательных полей
+            var requiredInputs = _elements.form.querySelectorAll('[required]');
+            for (var i = 0; i < requiredInputs.length; i++) {
+                var input = requiredInputs[i];
+                if (!input.value.trim()) {
+                    isValid = false;
+                    input.classList.add('is-invalid');
+                    if (!firstInvalid && input.classList.contains('form-control')) {
+                        firstInvalid = input;
+                    }
+                } else {
+                    input.classList.remove('is-invalid');
+                    input.classList.add('is-valid');
+                }
+            }
+
+            // Валидация email
+            if (_elements.email && _elements.email.value && !isValidEmail(_elements.email.value)) {
+                isValid = false;
+                _elements.email.classList.add('is-invalid');
+                if (!firstInvalid) firstInvalid = _elements.email;
+            }
+
+            // Валидация телефона
+            if (_elements.phone) {
+                var digits = _elements.phone.value.replace(/\D/g, '');
+                if (digits.length < CONFIG.MIN_PHONE_DIGITS) {
+                    isValid = false;
+                    _elements.phone.classList.add('is-invalid');
+                    if (!firstInvalid) firstInvalid = _elements.phone;
+                }
+            }
+
+            if (!isValid) {
+                e.preventDefault();
+                if (firstInvalid) firstInvalid.focus();
+                CoffeeShop.showToast('Заполните все обязательные поля', 'warning');
+            }
+        });
+    }
+
+    /**
+     * Отображение итоговой суммы заказа.
+     */
+    function _initTotalDisplay() {
+        var total = _elements.total;
+        if (!total) return;
+
+        var rawTotal = total.getAttribute('data-total');
+        if (rawTotal) {
+            total.textContent = CoffeeShop.formatPrice(rawTotal) + ' ₽';
+        }
+    }
+
+    /* ==================== Основная инициализация ==================== */
+
+    /**
+     * Инициализация всех компонентов checkout-формы.
+     */
     function init() {
         var form = document.querySelector('.checkout-form');
         if (!form) return;
 
-        var phoneInput = form.querySelector('#id_phone');
-        var emailInput = form.querySelector('#id_email');
-        var firstNameInput = form.querySelector('#id_first_name');
-        var lastNameInput = form.querySelector('#id_last_name');
-        var addressInput = form.querySelector('#id_delivery_address');
-        var deliveryInputs = form.querySelectorAll('input[name="delivery_method"]');
-        var addressBlock = document.getElementById('addressBlock');
-        var submitBtn = form.querySelector('button[type="submit"]');
-        var totalEl = document.getElementById('checkoutTotal');
+        _cacheElements(form);
 
-        var deliveryCalculationTimeout = null;
-        var deliveryCalculationDebounced = null;
-
-        /* ---- Phone formatting ---- */
-        if (phoneInput) {
-            phoneInput.addEventListener('input', function () {
-                var raw = this.value.replace(/^(\+)?(?=8|7)/, '');
-                var formatted = CoffeeShop.formatPhone(raw);
-                this.value = formatted;
-            });
-        }
-
-        /* ---- Address input ---- */
-        if (addressInput) {
-            addressInput.addEventListener('input', function () {
-                var value = this.value.trim();
-                var isDeliveryChecked = form.querySelector('input[name="delivery_method"][value="delivery"]:checked');
-                if (value) {
-                    updateDeliverySummary();
-                    if (isDeliveryChecked) {
-                        calculateDeliveryPrice();
-                    }
-                }
-            });
-        }
-
-
-    /* ---- Email validation ---- */
-        if (emailInput) {
-            emailInput.addEventListener('blur', function () {
-                if (this.value && !isValidEmail(this.value)) {
-                    this.classList.add('is-invalid');
-                    var feedback = this.nextElementSibling;
-                    if (feedback && feedback.classList.contains('invalid-feedback')) {
-                        feedback.style.display = 'block';
-                    }
-                } else {
-                    this.classList.remove('is-invalid');
-                    this.classList.add('is-valid');
-                }
-            });
-        }
-
-        /* ---- Delivery price calculation ---- */
-        function calculateDeliveryPrice() {
-            var deliveryAddressInput = addressInput;
-            var deliveryCostEl = document.getElementById('deliveryCost');
-            var deliveryEtaEl = document.getElementById('deliveryEta');
-
-            if (!deliveryAddressInput || !deliveryCostEl || !deliveryEtaEl) {
-                return;
-            }
-
-            var addressValue = deliveryAddressInput.value.trim();
-            if (!addressValue) {
-                deliveryCostEl.textContent = '—';
-                deliveryEtaEl.textContent = '—';
-                return;
-            }
-
-            // Parse address into city/street/house
-            var address = parseAddress(addressValue);
-            if (!address.city || !address.street || !address.house) {
-                return;
-            }
-
-            // Show loading
-            deliveryCostEl.textContent = 'Расчёт...';
-            deliveryEtaEl.textContent = '';
-
-            // Debounce the request
-            if (deliveryCalculationTimeout) {
-                clearTimeout(deliveryCalculationTimeout);
-            }
-            deliveryCalculationTimeout = setTimeout(function () {
-                fetch('/checkout/calculate-delivery/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken'),
-                    },
-                    body: JSON.stringify({
-                        city: address.city,
-                        street: address.street,
-                        house: address.house,
-                        apartment: address.apartment,
-                    }),
-                })
-                .then(function (response) {
-                    return response.json();
-                })
-                .then(function (data) {
-                    if (data.success && data.price) {
-                        deliveryCostEl.textContent =
-                            CoffeeShop.formatPrice(data.price) + ' ₽';
-                        deliveryEtaEl.textContent = data.eta || '';
-                        updateDeliverySummary();
-                    } else {
-                        // Fallback: show default price
-                        deliveryCostEl.textContent = '299 ₽';
-                        deliveryEtaEl.textContent = '30-45 мин';
-                        updateDeliverySummary();
-                    }
-                })
-                .catch(function () {
-                    // Fallback on error
-                    deliveryCostEl.textContent = '299 ₽';
-                    deliveryEtaEl.textContent = '30-45 мин';
-                });
-            }, 1500);
-        }
-
-        /* Parse address string into structured data */
-        function parseAddress(raw) {
-            var result = {
-                city: '',
-                street: '',
-                house: '',
-                apartment: '',
-            };
-            var parts = raw.split(',').map(function (s) { return s.trim(); });
-
-            // Format: "Город, улица, дом, кв"
-            if (parts.length >= 1) {
-                result.city = parts[0];
-            }
-            if (parts.length >= 2) {
-                result.street = parts[1];
-            }
-            if (parts.length >= 3) {
-                var parts3 = parts[2].split('-');
-                result.house = parts3[0].trim();
-                if (parts3.length > 1) {
-                    result.apartment = parts3[1].trim();
-                }
-            }
-
-            return result;
-        }
-
-        /* ---- Delivery method toggle ---- */
-        function updateAddressBlock() {
-            var checked = form.querySelector('input[name="delivery_method"][value="delivery"]:checked');
-            if (checked) {
-                if (addressBlock) addressBlock.style.display = 'block';
-                if (addressInput) addressInput.setAttribute('required', 'required');
-                // Show delivery info block
-                var deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
-                if (deliveryInfoBlock) {
-                    deliveryInfoBlock.style.display = 'block';
-                }
-                // Trigger delivery price calculation (if address is already set)
-                if (addressInput && addressInput.value.trim()) {
-                    calculateDeliveryPrice();
-                    updateDeliverySummary();
-                }
-            } else {
-                if (addressBlock) addressBlock.style.display = 'none';
-                if (addressInput) {
-                    addressInput.removeAttribute('required');
-                    addressInput.value = '';
-                }
-                // Hide delivery info
-                var deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
-                if (deliveryInfoBlock) {
-                    deliveryInfoBlock.style.display = 'none';
-                }
-                // Hide delivery summary
-                var deliverySummary = document.getElementById('deliverySummary');
-                if (deliverySummary) {
-                    deliverySummary.style.display = 'none';
-                }
-                // Reset delivery info
-                var deliveryCostEl = document.getElementById('deliveryCost');
-                var deliveryEtaEl = document.getElementById('deliveryEta');
-                if (deliveryCostEl) deliveryCostEl.textContent = '—';
-                if (deliveryEtaEl) deliveryEtaEl.textContent = '—';
-            }
-        }
-
-
-        if (deliveryInputs && deliveryInputs.length) {
-            deliveryInputs.forEach(function (radio) {
-                radio.addEventListener('change', updateAddressBlock);
-            });
-            // Init
-            updateAddressBlock();
-        }
-
-        /* ---- Yandex Delivery Widget integration ---- */
-        // При выборе radio "Доставка" — автоматически открываем виджет
-        if (deliveryInputs && deliveryInputs.length && window.YandexDeliveryWidget) {
-            deliveryInputs.forEach(function (radio) {
-                if (radio.value === 'delivery' && radio.checked) {
-                    // Виджет уже открыт при загрузке, если выбрана доставка
-                    setTimeout(function() {
-                        YandexDeliveryWidget.openModal();
-                    }, 300);
-                }
-                radio.addEventListener('change', function () {
-                    if (this.checked && this.value === 'delivery') {
-                        // Автоматически открываем виджет
-                        setTimeout(function() {
-                            YandexDeliveryWidget.openModal();
-                        }, 200);
-                    }
-                });
-            });
-        }
-
-        /* ---- Debounced required fields ---- */
-        [firstNameInput, lastNameInput].forEach(function (input) {
-            if (input) {
-                input.addEventListener('input', debounce(function () {
-                    if (this.value.trim().length >= 2) {
-                        this.classList.remove('is-invalid');
-                        this.classList.add('is-valid');
-                    }
-                }, 300));
-            }
-        });
-
-        /* ---- Submit validation ---- */
-        if (submitBtn) {
-            submitBtn.addEventListener('click', function (e) {
-                var isValid = true;
-
-                // Required fields
-                form.querySelectorAll('[required]').forEach(function (input) {
-                    if (!input.value.trim()) {
-                        isValid = false;
-                        input.classList.add('is-invalid');
-                        if (input.classList.contains('form-control')) {
-                            input.focus();
-                            return false; // stop on first
-                        }
-                    } else {
-                        input.classList.remove('is-invalid');
-                        input.classList.add('is-valid');
-                    }
-                });
-
-                // Email validation
-                if (emailInput && emailInput.value && !isValidEmail(emailInput.value)) {
-                    isValid = false;
-                    emailInput.classList.add('is-invalid');
-                    emailInput.focus();
-                }
-
-                // Phone validation
-                if (phoneInput) {
-                    var digits = phoneInput.value.replace(/\D/g, '');
-                    if (digits.length < 11) {
-                        isValid = false;
-                        phoneInput.classList.add('is-invalid');
-                        if (isValid) phoneInput.focus();
-                    }
-                }
-
-                if (!isValid) {
-                    e.preventDefault();
-                    CoffeeShop.showToast('Заполните все обязательные поля', 'warning');
-                }
-            });
-        }
-
-        /* ---- Total display ---- */
-        if (totalEl) {
-            // Переводим цену из числа в форматированный вид
-            var rawTotal = totalEl.getAttribute('data-total');
-            if (rawTotal) {
-                totalEl.textContent = CoffeeShop.formatPrice(rawTotal) + ' ₽';
-            }
-        }
+        _initPhoneFormatting();
+        _initEmailValidation();
+        _initAddressInput();
+        _initDeliveryToggle();
+        _initYandexWidget();
+        _initNameFields();
+        _initSubmitValidation();
+        _initTotalDisplay();
     }
 
     /* ==================== Export ==================== */
 
     return {
         init: init,
-        updateDeliverySummary: updateDeliverySummary
+        updateDeliverySummary: function (selectedType) {
+            _cacheElements(document.querySelector('.checkout-form'));
+            _updateDeliverySummary(selectedType);
+        }
     };
 
 })();

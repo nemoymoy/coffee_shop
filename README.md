@@ -162,29 +162,41 @@ coffee_shop/
 │   │   │   │   └── admin.py       # Админ-новости и акции
 │   │   │   ├── orders/            # Заказы
 │   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode
-│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, OAuth, Promo
+│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, OAuth, Promo, YooKassa
 │   │   │   │   ├── forms/         # Формы: CheckoutForm, OrderForm (с промокодом)
 │   │   │   │   ├── serializers.py # DRF сериализаторы: OrderDetail, OrderList, PromoCode
-│   │   │   │   ├── views.py       # View: корзина, оформление, промокод, webhook
-│   │   │   │   ├── urls.py        # URL заказов (+ /promo/check/)
+│   │   │   │   ├── views/         # View: delivery_views
+│   │   │   │   ├── order_views.py # View: корзина, оформление, промокод, webhook
+│   │   │   │   ├── urls.py        # URL заказов
 │   │   │   │   └── admin.py       # Админ-заказы и промокоды
 │   │   │   │
 │   │   │   ├── users/             # Пользователи
 │   │   │   │   ├── forms/         # Формы: UserUpdateForm, UserRegistrationForm
 │   │   │   │   ├── services/      # Сервисы: UserService
-│   │   │   │   ├── views.py       # View: логин, регистрация
+│   │   │   │   ├── views.py       # View: логин, регистрация, OAuth
 │   │   │   │   ├── urls.py        # URL: /accounts/*
 │   │   │   │   ├── serializers.py # DRF сериализаторы
-│   │   │   │   └── admin.py       # Админ: UserAdmin переопределён
+│   │   │   │   ├── admin.py       # Админ: UserAdmin переопределён
+│   │   │   │   ├── backends.py    # Кастомный backend для Yandex OAuth
+│   │   │   │   └── pipeline.py    # Social auth pipeline
 │   │   │   │
 │   │   │   └── news/              # Новости и акции
 │   │   │       ├── models/        # Модели: News, Promotion
+│   │   │       ├── services/      # Сервисы: NewsService, PromotionService
+│   │   │       ├── forms/         # Формы: NewsForm, PromotionForm
+│   │   │       ├── serializers.py # DRF сериализаторы: News, Promotion
+│   │   │       ├── api/           # REST API endpoints
+│   │   │       │   ├── views.py   # ViewSet: News, Promotion
+│   │   │       │   └── urls.py    # /api/news/ маршруты
 │   │   │       ├── views.py       # View: новости, акции
-│   │   │       └── admin.py       # Админ-новости
+│   │   │       ├── urls.py        # URL новостей
+│   │   │       └── admin.py       # Админ-новости и акции
 │   │   │
 │   │   ├── templates/             # Шаблоны Django
 │   │   │   ├── base.html          # Базовый шаблон
+│   │   │   ├── base_without_nav.html # Базовый шаблон без навигации
 │   │   │   ├── home.html          # Главная
+│   │   │   ├── about.html         # О кофейне
 │   │   │   ├── catalog.html       # Каталог
 │   │   │   ├── product_detail.html # Карточка товара
 │   │   │   ├── cart.html          # Корзина
@@ -193,9 +205,15 @@ coffee_shop/
 │   │   │   ├── dashboard.html     # Личный кабинет
 │   │   │   ├── profile.html       # Профиль
 │   │   │   ├── news.html          # Новости
-│   │   │   ├── about.html         # О кофейне
+│   │   │   ├── news_detail.html   # Детальная страница новости
+│   │   │   ├── promotions.html    # Список акций
 │   │   │   ├── emails/            # Email-шаблоны
-│   │   │   └── ...
+│   │   │   │   ├── order_confirmation.html
+│   │   │   │   └── order_status_changed.html
+│   │   │   └── users/             # Шаблоны пользователей
+│   │   │       ├── login.html
+│   │   │       ├── register.html
+│   │   │       └── personal_data_consent_text.html
 │   │   │
 │   │   └── migrations/            # Миграции БД
 │   │
@@ -215,8 +233,12 @@ coffee_shop/
 │   │   └── js/                    # JavaScript
 │   │       ├── base.js            # Общие утилиты
 │   │       ├── cart.js            # AJAX корзина
+│   │       ├── checkout.js        # Валидация чекаута
 │   │       ├── coffee_selector.js # Выбор параметров кофе
-│   │       └── checkout.js        # Валидация чекаута
+│   │       └── yandex_delivery_widget.js # Виджет Яндекс Доставки
+│   │
+│   │   └── img/                   # Изображения
+│   │       └── favicon.ico        # Фавикон
 │   │
 │   └── media/                     # Загружаемые файлы (изображения)
 │
@@ -225,10 +247,7 @@ coffee_shop/
 │   └── sites-available/
 │       └── coffee.conf            # Серверный блок
 │
-├── certbot/                       # SSL-сертификаты Let's Encrypt
-│   └── www/                       # Webroot для Certbot
-│
-└── requirements/                  # Зависимости Python
+└── requirements/                  # Зависимости Python (в корне проекта)
     ├── base.txt                   # Базовые пакеты
     ├── dev.txt                    # Dev-зависимости
     └── prod.txt                   # Production-зависимости
@@ -531,15 +550,32 @@ YOOKASSA_WEBHOOK_SECRET=your-webhook-secret
 YOOKASSA_RETURN_URL=https://yourdomain.com/pay/callback/
 YOOKASSA_TEST_MODE=true
 
-# Yandex Delivery
+# Legacy aliases (YooMoney) — backward compatibility
+YOOMONEY_SHOP_ID=
+YOOMONEY_SECRET_KEY_1=
+YOOMONEY_SECRET_KEY_2=
+
+# Yandex Delivery OAuth
 YANDEX_DELIVERY_CLIENT_ID=your-client-id
 YANDEX_DELIVERY_CLIENT_SECRET=your-client-secret
 YANDEX_REDIRECT_URI=https://yourdomain.com/delivery/callback/
+
+# Yandex Delivery from address
 YANDEX_FROM_CITY=moscow
+YANDEX_FROM_STREET=
+YANDEX_FROM_HOUSE=
+YANDEX_FROM_APT=
 
 # Yandex Metrika
 YANDEX_METRIKA_ID=your-metrika-id
 YANDEX_METRIKA_WEBVIEWER=0
+
+# Yandex Maps API (JavaScript API и HTTP Геокодер)
+YANDEX_MAPS_API_KEY=
+
+# Yandex OAuth 2.0 (авторизация пользователей)
+YANDEX_OAUTH_CLIENT_ID=
+YANDEX_OAUTH_CLIENT_SECRET=
 ```
 
 ⚠️ **Важно:** Никогда не коммитьте файл `.env` в репозиторий!
@@ -589,11 +625,18 @@ YANDEX_METRIKA_WEBVIEWER=0
 | Эндпоинт | Описание |
 |----------|----------|
 | `/cart/` | Корзина |
-| `/cart/add/` (POST) | Добавить товар в корзину |
-| `/promo/check/` (POST) | AJAX-валидация промокода |
+| `/cart/add/` (POST) | Добавить товар в корзину (AJAX) |
+| `/cart/remove/` (POST) | Удалить товар из корзины (AJAX) |
+| `/cart/promo/check/` (POST) | AJAX-валидация промокода |
 | `/checkout/` | Оформление заказа |
-| `/checkout/success/<order_id>/` | Страница успешного заказа |
+| `/checkout/calculate-delivery/` (POST) | Расчёт Яндекс Доставки (AJAX) |
+| `/checkout/pvz-locations/` (GET) | Получение точек самовывоза (PVZ) |
+| `/checkout/geocode-address/` (GET) | Геокодирование адреса (AJAX) |
+| `/success/<order_id>/` | Страница успешного заказа |
+| `/detail/<pk>/` | Детали заказа |
 | `/cart/webhook/` (POST) | ЮКасса webhook-обработчик |
+| `/delivery/auth/` | Яндекс Доставка OAuth |
+| `/delivery/callback/` | Яндекс Доставка OAuth callback |
 
 ### Пользователи
 | Эндпоинт | Описание |
@@ -604,36 +647,15 @@ YANDEX_METRIKA_WEBVIEWER=0
 | `/accounts/dashboard/` | Личный кабинет (история заказов) |
 | `/accounts/profile/` | Редактирование профиля + смена пароля |
 | `/accounts/personal-data-consent/` | Текст согласия на обработку персональных данных (152-ФЗ) |
+| `/accounts/oauth/` | Yandex OAuth авторизация |
 
 ### API и интеграции
 | Эндпоинт | Описание |
 |----------|----------|
 | `/health/` | Healthcheck (мониторинг) |
-| `/pay/webhook/` | ЮКасса webhook |
-| `/delivery/callback/` | Яндекс Доставка callback |
+| `/cart/webhook/` (POST) | ЮКасса webhook |
+| `/delivery/callback/` | Яндекс Доставка OAuth callback |
 | `/admin/` | Админ-панель |
-
-### REST API
-| Метод | Эндпоинт | Описание |
-|-------|----------|----------|
-| GET | `/api/catalog/categories/` | Список категорий |
-| GET | `/api/catalog/products/` | Список товаров (DRF ViewSet) |
-| GET | `/api/catalog/products/{id}/` | Детали товара |
-| GET | `/api/catalog/products/featured/` | Рекомендуемые товары (SCA ≥ 85) |
-| GET | `/api/catalog/products/{id}/reviews/` | Отзывы товара |
-| POST | `/api/catalog/reviews/` | Создать отзыв (авторизация) |
-| POST | `/api/catalog/reviews/{id}/approve/` | Одобрить отзыв |
-
-### REST API (`/api/news/`)
-| Метод | Эндпоинт | Описание |
-|-------|----------|----------|
-| GET | `/api/news/news/` | Список опубликованных новостей |
-| GET | `/api/news/news/{id}/` | Детали новости |
-| GET | `/api/news/promotions/` | Список активных акций |
-| GET | `/api/news/promotions/{id}/` | Детали акции |
-| GET | `/api/news/news/?search=keyword` | Поиск по заголовку/содержанию |
-| GET | `/api/news/news/?ordering=-published_at` | Сортировка |
-| GET | `/api/news/promotions/?is_active=true` | Фильтрация по активности |
 
 ---
 
@@ -687,34 +709,40 @@ tests/
 │   ├── test_order.py
 │   ├── test_order_item.py
 │   ├── test_promo_code.py
-│   └── test_review.py
+│   ├── test_review.py
+│   └── test_personal_data_consent.py
 ├── services/                            # Тесты сервисов
 │   ├── test_cart_service.py
 │   ├── test_coffee_service.py
 │   ├── test_delivery_service.py
 │   ├── test_pricing.py
-│   └── test_stock_service.py
+│   ├── test_stock_service.py
+│   ├── test_users.py                    # UserService тесты
+│   └── test_sync_delivery_task.py       # Celery task тесты
 ├── views/                               # Тесты view
 │   ├── test_catalog.py
 │   ├── test_checkout.py
-│   └── test_users.py                      # Тесты: login, register, profile, dashboard
+│   ├── test_checkout_delivery.py        # Тесты доставки
+│   └── test_users.py                    # Тесты: login, register, profile, dashboard
 ├── api/                                 # Тесты API
 │   ├── test_catalog_api.py              # Каталог API (Product, Category, Review)
 │   ├── test_serializers.py              # DRF сериализаторы
 │   ├── test_yandex_delivery_api.py
-│   ├── test_payment_gateway.py
-│   └── news/                              # Тесты news API
-│       ├── test_api.py                  # News API, Promotion API
+│   ├── test_delivery_api.py
+│   ├── test_delivery_debug.py
+│   ├── test_delivery_debug2.py
+│   └── test_payment_gateway.py
 ├── news/                                # Тесты news app
 │   ├── test_models.py                   # News, Promotion модели
 │   ├── test_services.py                 # NewsService, PromotionService
 │   ├── test_views.py                    # news_list, news_detail, promotions_list
-│   └── test_forms.py                    # NewsForm, PromotionForm
+│   ├── test_forms.py                    # NewsForm, PromotionForm
+│   └── test_api.py                      # News API, Promotion API
 └── forms/                               # Тесты форм
     ├── test_order_forms.py
     ├── test_coffee_form.py              # CoffeeForm: вес, помол, brewing_method
     ├── test_product_form.py             # ProductForm: фильтры каталога
-    └── test_users.py                      # Тесты: UserUpdateForm, UserRegistrationForm
+    └── test_users.py                    # Тесты: UserUpdateForm, UserRegistrationForm
 ```
 
 ### Ключевые сценарии тестирования
@@ -868,7 +896,7 @@ CELERY_BEAT_SCHEDULE = {
 |----------|-------|--------|
 | `/cart/add/` | 30 запросов | 60 секунд |
 | `/checkout/` | 10 запросов | 60 секунд |
-| `/pay/` | 5 запросов | 60 секунд |
+| `/cart/webhook/` | 5 запросов | 60 секунд |
 
 ### Best practices
 - Секреты только в `.env` / Docker secrets

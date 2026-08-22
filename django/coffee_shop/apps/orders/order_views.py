@@ -273,9 +273,19 @@ def checkout_view(request):
         
         return redirect('orders:order_success', order_id=order.pk)
     
+    # Автозаполнение контактных данных из профиля пользователя
+    user_data = {}
+    if request.user.is_authenticated:
+        user_data = {
+            'first_name': request.user.first_name,
+            'last_name': request.user.last_name,
+            'email': request.user.email,
+        }
+
     context = {
         'cart_items': list(cart.values()),
-        'form': OrderForm(),
+        'form': OrderForm(initial=user_data),
+        'user_data': user_data,
     }
     return render(request, 'checkout.html', context)
 

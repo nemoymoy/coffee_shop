@@ -45,6 +45,9 @@ backups/
 *.sql.gz
 *.tar.gz
 
-#ssh
+# SSH
 key_for_ubuntu
 key_for_ubuntu.pub
+
+# Gigacode
+.gigacode/
