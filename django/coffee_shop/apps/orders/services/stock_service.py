@@ -43,8 +43,7 @@ class StockService:
         reserved_items = (
             OrderItem.objects
             .filter(
-                order__status='awaiting_payment',
-                order__reserved_at__isnull=False,
+                order__status__in=['new', 'awaiting_payment', 'in_progress'],
                 product_id=product_id,
             )
             .select_related('order')
@@ -52,14 +51,12 @@ class StockService:
 
         reserved = 0
         for item in reserved_items:
-            if item.order.status != 'awaiting_payment':
-                continue
-            if item.order.reserved_at is None:
-                continue
-            if item.coffee_weight_grams:
-                reserved += item.coffee_weight_grams
-            else:
-                reserved += item.quantity
+            # Проверяем, что резерв ещё не списан (заказ не оплачен и не отменён)
+            if item.order.status in ['new', 'awaiting_payment', 'in_progress']:
+                if item.coffee_weight_grams:
+                    reserved += item.coffee_weight_grams
+                else:
+                    reserved += item.quantity
 
         return reserved
 
