@@ -39,3 +39,17 @@ class OrderForm(CheckoutForm):
         }),
         required=False
     )
+    yandex_delivery_type = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+
+    def clean(self):
+        cleaned_data = super().clean()
+        delivery_method = cleaned_data.get('delivery_method')
+        delivery_address = cleaned_data.get('delivery_address')
+
+        if delivery_method == 'delivery' and not delivery_address:
+            self.add_error('delivery_address', 'Необходимо указать адрес доставки')
+
+        return cleaned_data

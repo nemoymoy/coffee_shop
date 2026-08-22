@@ -68,7 +68,7 @@ class CoffeeService:
     ) -> tuple[bool, Optional[str]]:
         """Полная валидация параметров кофе."""
         # Валидация веса
-        is_valid, error = CoffeeService.validate_weight(weight, product.stock)
+        is_valid, error = CoffeeService.validate_weight(weight, product.available_stock)
         if not is_valid:
             return False, error
         
@@ -92,11 +92,12 @@ class CoffeeService:
 
     @staticmethod
     def get_available_weights(product: Product) -> list[int]:
-        """Доступные веса (кратность 50 г, не больше stock)."""
-        if product.stock <= 0:
+        """Доступные веса (кратность 50 г, не больше доступного stock)."""
+        available_stock = product.available_stock
+        if available_stock <= 0:
             return []
         
-        max_weight = product.stock
+        max_weight = available_stock
         # Ограничим максимум 1000 г (чтобы не было 10000 г для мелкого товара)
         max_weight = min(max_weight, 1000)
         

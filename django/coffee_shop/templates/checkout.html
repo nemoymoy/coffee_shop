@@ -75,13 +75,22 @@
                 </div>
             </div>
 
-            <!-- Summary блока доставки (показывается после выбора доставки) -->
-            <div id="deliverySummary" class="mb-3" style="display:none;">
-                <div class="alert alert-success">
-                    <strong>🚚 Способ доставки:</strong> <span id="summaryType"></span><br>
-                    <strong>📍 Адрес доставки:</strong> <span id="summaryAddress"></span><br>
-                    <strong>💰 Стоимость доставки:</strong> <span id="summaryCost"></span>
-                    <span id="summaryEta" class="text-muted ms-2"></span>
+            <!-- Инфо о выбранной доставке (появляется после выбора способа и типа доставки) -->
+            <div id="deliveryInfo" class="mb-3" style="display:none;">
+                <div class="alert alert-info">
+                    <div class="mb-2">
+                        <strong>📦 Тип доставки:</strong>
+                        <span id="selectedDeliveryType"></span>
+                    </div>
+                    <div class="mb-2">
+                        <strong>📍 Адрес доставки:</strong>
+                        <span id="selectedDeliveryAddress"></span>
+                    </div>
+                    <div class="mb-2">
+                        <strong>💰 Стоимость доставки:</strong>
+                        <span id="selectedDeliveryCost"></span>
+                        <span id="selectedDeliveryEta" class="text-muted ms-2"></span>
+                    </div>
                 </div>
             </div>
 
@@ -91,22 +100,12 @@
                     🚚 Выбрать способ доставки (Яндекс Доставка)
                 </button>
 
-                <!-- Скрытое поле для адреса -->
+                <!-- Скрытые поля для доставки -->
                 <input type="hidden" name="delivery_address" id="id_delivery_address" value="">
+                <input type="hidden" name="yandex_delivery_type" id="id_yandex_delivery_type" value="">
             </div>
 
-            <div class="mb-3" id="deliveryInfoBlock" style="display: none;">
-                <div class="alert alert-info d-flex align-items-center" role="alert">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="me-2 flex-shrink-0" viewBox="0 0 16 16">
-                        <path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/>
-                    </svg>
-                    <div>
-                        <strong>Доставка:</strong>
-                        <span id="deliveryCost">—</span>
-                        <span id="deliveryEta" class="text-muted ms-2">—</span>
-                    </div>
-                </div>
-            </div>
+
 
             <hr class="my-4">
 
@@ -140,7 +139,12 @@
                 {% for item in cart_items %}
                 <div class="d-flex justify-content-between mb-2" style="font-size: 0.9rem;">
                     <div>
-                        <strong>{{ item.product_id }}</strong>
+                        <strong>{{ forloop.counter }}.</strong>
+                        {% if item.product %}
+                            <strong>{{ item.product.name }}</strong>
+                        {% else %}
+                            <strong>{{ item.product_id }}</strong>
+                        {% endif %}
                         {% if item.weight %}
                         <br><small class="text-muted">{{ item.weight }} г</small>
                         {% endif %}
@@ -149,7 +153,18 @@
                 </div>
                 {% endfor %}
                 <hr>
-                <h5 class="mb-0">Итого: <span id="checkoutTotal" data-total="{{ total|default:'0' }}">{{ total|default:"0"|floatformat:2 }}</span> ₽</h5>
+                <div class="mb-2">
+                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
+                        <span>Стоимость товаров:</span>
+                        <span id="orderGoodsTotal">{{ total|default:"0"|floatformat:2 }} ₽</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
+                        <span>Стоимость доставки:</span>
+                        <span id="orderDeliveryCost">— ₽</span>
+                    </div>
+                    <hr>
+                    <h5 class="mb-0">Итого: <span id="checkoutTotal">{{ total|default:"0"|floatformat:2 }} ₽</span></h5>
+                </div>
             </div>
         </div>
     </div>

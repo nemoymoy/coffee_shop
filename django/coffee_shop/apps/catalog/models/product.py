@@ -149,9 +149,21 @@ class Product(models.Model):
             })
 
     @property
+    def available_stock(self):
+        """
+        Доступный остаток товара (stock - зарезервировано).
+        Используется в шаблонах как {{ product.available_stock }}.
+        """
+        try:
+            from coffee_shop.apps.orders.services.stock_service import StockService
+            return StockService.get_available_stock(self)
+        except Exception:
+            return self.stock
+
+    @property
     def is_in_stock(self):
-        return self.stock > 0
+        return self.available_stock > 0
 
     @property
     def max_weight_grams(self):
-        return self.stock
+        return self.available_stock

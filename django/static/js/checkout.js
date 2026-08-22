@@ -52,7 +52,11 @@ var Checkout = (function () {
             submitBtn: form.querySelector('button[type="submit"]')
         };
         _elements.deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
-        _elements.deliverySummary = document.getElementById('deliverySummary');
+        _elements.deliveryInfo = document.getElementById('deliveryInfo');
+        _elements.selectedDeliveryType = document.getElementById('selectedDeliveryType');
+        _elements.selectedDeliveryAddress = document.getElementById('selectedDeliveryAddress');
+        _elements.selectedDeliveryCost = document.getElementById('selectedDeliveryCost');
+        _elements.selectedDeliveryEta = document.getElementById('selectedDeliveryEta');
         _elements.addressBlock = document.getElementById('addressBlock');
         _elements.summaryType = document.getElementById('summaryType');
         _elements.summaryAddress = document.getElementById('summaryAddress');
@@ -61,6 +65,9 @@ var Checkout = (function () {
         _elements.deliveryCost = document.getElementById('deliveryCost');
         _elements.deliveryEta = document.getElementById('deliveryEta');
         _elements.total = document.getElementById('checkoutTotal');
+        _elements.orderGoodsTotal = document.getElementById('orderGoodsTotal');
+        _elements.orderDeliveryCost = document.getElementById('orderDeliveryCost');
+        _elements.yandexDeliveryTypeInput = document.getElementById('id_yandex_delivery_type');
     }
 
     /**
@@ -117,16 +124,15 @@ var Checkout = (function () {
      * Обновление сводки доставки.
      */
     function _updateDeliverySummary(selectedTypeOverride) {
-        var summary = _elements.deliverySummary;
-        if (!summary) return;
-
         var addressValue = _elements.address ? _elements.address.value.trim() : '';
         var isDeliveryChecked = _elements.form
             ? _elements.form.querySelector('input[name="delivery_method"][value="delivery"]:checked')
             : null;
 
         if (!addressValue || !isDeliveryChecked) {
-            summary.style.display = 'none';
+            if (_elements.deliveryInfo) {
+                _elements.deliveryInfo.style.display = 'none';
+            }
             return;
         }
 
@@ -136,13 +142,12 @@ var Checkout = (function () {
         }
 
         var typeLabel = CONFIG.DELIVERY_SUMMARY_TYPES[selectedType || 'courier'] || CONFIG.DELIVERY_SUMMARY_TYPES.courier;
+        var priceText = _elements.deliveryCost ? _elements.deliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
+        var etaText = _elements.deliveryEta ? _elements.deliveryEta.textContent : CONFIG.DEFAULT_DELIVERY_ETA;
 
-        _elements.summaryType.textContent = typeLabel;
-        _elements.summaryAddress.textContent = addressValue;
-        _elements.summaryCost.textContent = _elements.deliveryCost ? _elements.deliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
-        _elements.summaryEta.textContent = _elements.deliveryEta ? _elements.deliveryEta.textContent : '';
+        var price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.')) || CONFIG.DEFAULT_DELIVERY_PRICE;
 
-        summary.style.display = 'block';
+        _showDeliveryInfo(typeLabel, addressValue, price, etaText, selectedType || '');
     }
 
     /**
@@ -169,9 +174,6 @@ var Checkout = (function () {
         if (_elements.address) {
             _elements.address.setAttribute('required', 'required');
         }
-        if (_elements.deliveryInfoBlock) {
-            _elements.deliveryInfoBlock.style.display = 'block';
-        }
         if (_elements.address && _elements.address.value.trim()) {
             _calculateDeliveryPrice();
             _updateDeliverySummary();
@@ -186,17 +188,39 @@ var Checkout = (function () {
             _elements.address.removeAttribute('required');
             _elements.address.value = '';
         }
-        if (_elements.deliveryInfoBlock) {
-            _elements.deliveryInfoBlock.style.display = 'none';
-        }
-        if (_elements.deliverySummary) {
-            _elements.deliverySummary.style.display = 'none';
+        if (_elements.deliveryInfo) {
+            _elements.deliveryInfo.style.display = 'none';
         }
         _setDeliveryPlaceholder();
     }
 
+    function _showDeliveryInfo(typeLabel, address, price, eta, yandexType) {
+        if (!_elements.deliveryInfo) return;
+
+        if (_elements.selectedDeliveryType) {
+            _elements.selectedDeliveryType.textContent = typeLabel;
+        }
+        if (_elements.selectedDeliveryAddress) {
+            _elements.selectedDeliveryAddress.textContent = address;
+        }
+        if (_elements.selectedDeliveryCost) {
+            _elements.selectedDeliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
+        }
+        if (_elements.selectedDeliveryEta) {
+            _elements.selectedDeliveryEta.textContent = eta || '';
+        }
+
+        // Записываем тип Яндекс Доставки в скрытое поле формы
+        if (_elements.yandexDeliveryTypeInput && yandexType) {
+            _elements.yandexDeliveryTypeInput.value = yandexType;
+        }
+
+        _elements.deliveryInfo.style.display = 'block';
+    }
+
     function _setDeliveryPlaceholder() {
         if (_elements.deliveryCost) _elements.deliveryCost.textContent = '—';
+        if (_elements.orderDeliveryCost) _elements.orderDeliveryCost.textContent = '—';
         if (_elements.deliveryEta) _elements.deliveryEta.textContent = '—';
     }
 
@@ -209,9 +233,13 @@ var Checkout = (function () {
         if (_elements.deliveryCost) {
             _elements.deliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
         }
+        if (_elements.orderDeliveryCost) {
+            _elements.orderDeliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
+        }
         if (_elements.deliveryEta) {
             _elements.deliveryEta.textContent = eta || '';
         }
+        _updateOrderTotal(price);
         _updateDeliverySummary();
     }
 
@@ -219,10 +247,27 @@ var Checkout = (function () {
         if (_elements.deliveryCost) {
             _elements.deliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
         }
+        if (_elements.orderDeliveryCost) {
+            _elements.orderDeliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
+        }
         if (_elements.deliveryEta) {
             _elements.deliveryEta.textContent = CONFIG.DEFAULT_DELIVERY_ETA;
         }
+        _updateOrderTotal(CONFIG.DEFAULT_DELIVERY_PRICE);
         _updateDeliverySummary();
+    }
+
+    /**
+     * Обновление итоговой суммы заказа (товары + доставка).
+     */
+    function _updateOrderTotal(deliveryPrice) {
+        var goodsTotalText = _elements.orderGoodsTotal ? _elements.orderGoodsTotal.textContent.trim() : '0';
+        var goodsTotal = parseFloat(goodsTotalText.replace(/[^0-9.,]/g, '').replace(',', '.')) || 0;
+        var newTotal = goodsTotal + deliveryPrice;
+
+        if (_elements.total) {
+            _elements.total.textContent = CoffeeShop.formatPrice(newTotal);
+        }
     }
 
     /* ==================== Инициализация компонентов ==================== */
@@ -385,6 +430,20 @@ var Checkout = (function () {
                 }
             }
 
+            // Валидация адреса доставки
+            var isDeliveryChecked = _elements.form
+                ? _elements.form.querySelector('input[name="delivery_method"][value="delivery"]:checked')
+                : null;
+            if (isDeliveryChecked && _elements.address) {
+                var addressValue = _elements.address.value.trim();
+                if (!addressValue) {
+                    isValid = false;
+                    if (!firstInvalid) firstInvalid = _elements.address;
+                    CoffeeShop.showToast('Пожалуйста, выберите адрес доставки', 'warning');
+                    return;
+                }
+            }
+
             if (!isValid) {
                 e.preventDefault();
                 if (firstInvalid) firstInvalid.focus();
@@ -394,15 +453,16 @@ var Checkout = (function () {
     }
 
     /**
-     * Отображение итоговой суммы заказа.
+     * Инициализация итоговой суммы заказа.
      */
     function _initTotalDisplay() {
         var total = _elements.total;
         if (!total) return;
 
-        var rawTotal = total.getAttribute('data-total');
+        // Получаем начальную сумму из текста, убираем символ ₽ если есть
+        var rawTotal = total.textContent.replace(/[^0-9.,]/g, '').replace(',', '.').trim();
         if (rawTotal) {
-            total.textContent = CoffeeShop.formatPrice(rawTotal) + ' ₽';
+            total.textContent = CoffeeShop.formatPrice(rawTotal);
         }
     }
 
@@ -434,6 +494,10 @@ var Checkout = (function () {
         updateDeliverySummary: function (selectedType) {
             _cacheElements(document.querySelector('.checkout-form'));
             _updateDeliverySummary(selectedType);
+        },
+        updateOrderTotal: function (deliveryPrice) {
+            _cacheElements(document.querySelector('.checkout-form'));
+            _updateOrderTotal(deliveryPrice);
         }
     };
 

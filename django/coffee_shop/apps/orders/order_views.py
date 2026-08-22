@@ -1,4 +1,6 @@
 """Orders views."""
+from decimal import Decimal
+
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db import transaction
@@ -141,13 +143,30 @@ def checkout_view(request):
     
     if request.method == 'POST':
         form = OrderForm(request.POST)
+        # Расчёт стоимости товаров для отображения
+        total = 0
+        cart_items = []
+        brewing_labels = dict(Product.BREWING_CHOICES)
+        
+        for key, value in cart.items():
+            try:
+                product = Product.objects.get(pk=value['product_id'])
+                total += float(value.get('price', 0))
+                item = dict(value)
+                item['product'] = product
+                item['price'] = float(value.get('price', 0))
+                cart_items.append(item)
+            except Product.DoesNotExist:
+                pass
+        
         if not form.is_valid():
             for field, errors in form.errors.items():
                 for error in errors:
                     messages.error(request, f'{field}: {error}')
             return render(request, 'checkout.html', {
-                'cart_items': list(cart.values()),
+                'cart_items': cart_items,
                 'form': form,
+                'total': total,
             })
         
         cleaned = form.cleaned_data
@@ -160,13 +179,14 @@ def checkout_view(request):
             if not is_valid:
                 messages.error(request, error)
                 return render(request, 'checkout.html', {
-                    'cart_items': list(cart.values()),
+                    'cart_items': cart_items,
                     'form': form,
+                    'total': total,
                 })
             applied_promo = promo
         
         # Сохраняем тип Яндекс Доставки из формы (если передан)
-        yandex_delivery_type_raw = request.POST.get('yandex_delivery_type', '')
+        yandex_delivery_type_raw = cleaned.get('yandex_delivery_type', '') or request.POST.get('yandex_delivery_type', '')
         if yandex_delivery_type_raw not in dict(Order.YANDEX_DELIVERY_TYPE_CHOICES):
             yandex_delivery_type_raw = ''
         
@@ -191,15 +211,13 @@ def checkout_view(request):
                     product = Product.objects.get(pk=value['product_id'])
                     unit_price = value['price']
                     
-                    # Валидация через StockService
+                    # Валидация через доступный остаток
                     if product.product_type == 'coffee':
                         weight = int(value['weight'])
-                        available = StockService.get_available_stock(product)
-                        if weight > available:
-                            raise ValueError(f'На складе только {available} г')
+                        if weight > product.available_stock:
+                            raise ValueError(f'На складе только {product.available_stock} г')
                     else:
-                        available = StockService.get_available_stock(product)
-                        if available < 1:
+                        if product.available_stock < 1:
                             raise ValueError('Товар закончился')
                     
                     OrderItem.objects.create(
@@ -213,20 +231,25 @@ def checkout_view(request):
                     )
                     
                     total += unit_price
-                except Product.DoesNotExist:
+                except (Product.DoesNotExist, ValueError) as e:
+                    # Неблокирующая ошибка — продолжим создание заказа
+                    messages.warning(request, str(e))
                     continue
             
             # Применяем скидку промокода
             if applied_promo:
-                from decimal import Decimal
                 total = PromoService.apply_discount(Decimal(str(total)), applied_promo)
                 PromoService.record_promo_usage(applied_promo)
             
             order.total_amount = total
             order.save()
 
-            # Создаём заказ в Яндекс Доставке
+            # Устанавливаем стоимость доставки
+            delivery_price = Decimal('0')
             if cleaned['delivery_method'] == 'delivery':
+                # По умолчанию 299 ₽ если доставка не рассчитана
+                delivery_price = Decimal('299')
+
                 access_token = request.session.get(
                     'yandex_delivery_access_token'
                 )
@@ -242,6 +265,7 @@ def checkout_view(request):
                             },
                         )
                         if delivery_result.get('success'):
+                            delivery_price = delivery_result.get('price', 299)
                             order.yandex_access_token = access_token
                             order.yandex_order_id = delivery_result.get(
                                 'yandex_order_id', ''
@@ -250,18 +274,15 @@ def checkout_view(request):
                                 'tracking_number', ''
                             )
                             order.delivery_status = 'pending'
-                            order.delivery_cost = delivery_result.get(
-                                'price', 0
-                            )
                             order.status = 'in_progress'
-                            order.save(update_fields=[
-                                'yandex_access_token', 'yandex_order_id',
-                                'tracking_number', 'delivery_status',
-                                'delivery_cost', 'status',
-                            ])
                     except Exception:
                         # Fail silently — order still valid without Yandex delivery
                         pass
+
+            # Добавляем стоимость доставки к итогу
+            order.delivery_cost = delivery_price
+            order.total_amount = Decimal(str(total)) + delivery_price
+            order.save(update_fields=['delivery_cost', 'total_amount'])
 
         # Резервируем stock (не для доставки — там своя логика)
         if cleaned['delivery_method'] != 'delivery':
@@ -282,10 +303,37 @@ def checkout_view(request):
             'email': request.user.email,
         }
 
+    # Расчёт стоимости товаров и добавление product в cart_items
+    total = 0
+    cart_items = []
+    brewing_labels = dict(Product.BREWING_CHOICES)
+    
+    for key, value in cart.items():
+        try:
+            product = Product.objects.get(pk=value['product_id'])
+            total += float(value.get('price', 0))
+            item = dict(value)
+            if 'weight' in item:
+                item['coffee_weight_grams'] = item['weight']
+            if 'coffee_form' not in item:
+                item['coffee_form'] = value.get('coffee_form', 'beans')
+            brewing_method = value.get('brewing_method', '')
+            item['brewing_method'] = brewing_method
+            if brewing_method and brewing_method in brewing_labels:
+                item['brewing_method_label'] = brewing_labels[brewing_method]
+            else:
+                item['brewing_method_label'] = ''
+            item['product'] = product
+            item['price'] = float(value.get('price', 0))
+            cart_items.append(item)
+        except Product.DoesNotExist:
+            pass
+
     context = {
-        'cart_items': list(cart.values()),
+        'cart_items': cart_items,
         'form': OrderForm(initial=user_data),
         'user_data': user_data,
+        'total': total,
     }
     return render(request, 'checkout.html', context)
 
@@ -309,8 +357,15 @@ def promo_check(request):
 
 def order_success(request, order_id):
     """Страница успешного заказа."""
+    from decimal import Decimal
+    
     order = get_object_or_404(Order, pk=order_id)
-    context = {'order': order}
+    # Рассчитываем стоимость товаров (без доставки)
+    goods_total = sum((item.total_price for item in order.items.all()), Decimal('0'))
+    context = {
+        'order': order,
+        'goods_total': goods_total,
+    }
     return render(request, 'order_success.html', context)
 
 

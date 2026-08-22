@@ -805,6 +805,7 @@ var YandexDeliveryWidget = (function () {
 
         var addressField = document.getElementById('id_delivery_address');
         var deliveryCostSpan = document.getElementById('deliveryCost');
+        var orderDeliveryCostSpan = document.getElementById('orderDeliveryCost');
         var deliveryEtaSpan = document.getElementById('deliveryEta');
         var deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
         var addressBlock = document.getElementById('addressBlock');
@@ -827,7 +828,22 @@ var YandexDeliveryWidget = (function () {
 
         // Update delivery info block
         if (deliveryCostSpan) {
-            deliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' \u20BD';
+            deliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' ₽';
+        }
+
+        // Update order summary delivery cost
+        if (orderDeliveryCostSpan) {
+            orderDeliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' ₽';
+        }
+
+        // Пересчитываем итоговую сумму заказа
+        if (typeof Checkout !== 'undefined' && typeof Checkout.updateOrderTotal === 'function') {
+            Checkout.updateOrderTotal(selectedPrice);
+        }
+
+        // Отображаем тип доставки
+        if (typeof Checkout !== 'undefined' && typeof Checkout.showYandexDeliveryType === 'function') {
+            Checkout.showYandexDeliveryType(selectedType);
         }
 
         if (deliveryEtaSpan) {
@@ -841,10 +857,12 @@ var YandexDeliveryWidget = (function () {
         // Close modal first
         closeModal();
 
-        // Update delivery summary after modal is closed
+        // Update delivery info after modal is closed
         setTimeout(function() {
-            if (typeof Checkout !== 'undefined' && typeof Checkout.updateDeliverySummary === 'function') {
-                Checkout.updateDeliverySummary(selectedType);
+            if (typeof Checkout !== 'undefined') {
+                if (typeof Checkout.updateDeliverySummary === 'function') {
+                    Checkout.updateDeliverySummary(selectedType);
+                }
             }
         }, 300);
 

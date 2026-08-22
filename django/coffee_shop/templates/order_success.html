@@ -17,12 +17,22 @@
         <div class="card-body">
             <h5>Детали заказа</h5>
             <p><strong>Статус:</strong> {{ order.get_status_display }}</p>
-            <p><strong>Итого:</strong> {{ order.total_amount }} ₽</p>
-            <p><strong>Способ оплаты:</strong> {{ order.get_payment_method_display }}</p>
-            <p><strong>Способ получения:</strong> {{ order.get_delivery_method_display }}</p>
-            {% if order.delivery_address %}
-            <p><strong>Адрес:</strong> {{ order.delivery_address }}</p>
+            <div class="mb-3">
+                <p class="mb-1"><strong>Стоимость товаров:</strong> {{ goods_total|floatformat:2 }} ₽</p>
+                <p class="mb-1"><strong>Стоимость доставки:</strong> {{ order.delivery_cost|floatformat:2 }} ₽</p>
+                <hr>
+                <p class="mb-0 fs-5"><strong>Итого:</strong> {{ order.total_amount|floatformat:2 }} ₽</p>
+            </div>
+            <p><strong>Способ получения:</strong> {% if order.delivery_method == 'pickup' %}📦 Самовывоз{% else %}🚚 Доставка{% endif %}</p>
+            {% if order.delivery_method == 'delivery' %}
+                {% if order.yandex_delivery_type %}
+                <p><strong>Тип доставки:</strong> {% if order.yandex_delivery_type == 'courier' %}🚗 Курьер{% elif order.yandex_delivery_type == 'pvz' %}📦 Пункт выдачи (ПВЗ){% elif order.yandex_delivery_type == 'postomat' %}📮 Постомат{% endif %}</p>
+                {% endif %}
+                {% if order.delivery_address %}
+                <p><strong>Адрес доставки:</strong> {{ order.delivery_address }}</p>
+                {% endif %}
             {% endif %}
+            <p><strong>Способ оплаты:</strong> {{ order.get_payment_method_display }}</p>
             {% if order.tracking_number %}
             <div class="alert alert-secondary">
                 <strong>Трек-номер Яндекс Доставки:</strong>

@@ -91,7 +91,7 @@
                      data-is-coffee="1"
                      data-product-id="{{ product.pk }}"
                      data-price-per-50g="{{ product.price_per_50g }}"
-                     data-out-of-stock="{{ product.stock|yesno:'false,true' }}"
+                     data-out-of-stock="{{ product.available_stock|yesno:'false,true' }}"
                      data-weights='{{ available_weights|safe }}'>
 
                     <div class="coffee-option-group">
@@ -105,8 +105,8 @@
                             <option disabled>Нет в наличии</option>
                             {% endfor %}
                         </select>
-                        {% if product.stock > 0 %}
-                        <small class="text-muted mt-1 d-block">Остаток: {{ product.stock }} г</small>
+                        {% if product.available_stock > 0 %}
+                        <small class="text-muted mt-1 d-block">Остаток: {{ product.available_stock }} г</small>
                         {% else %}
                         <small class="text-danger mt-1 d-block">Товар закончился</small>
                         {% endif %}
@@ -168,7 +168,7 @@
         <div class="d-flex align-items-center gap-3 mb-3">
             <span class="price-highlight">{{ product.base_price|floatformat:2 }} ₽</span>
         </div>
-        {% if product.stock > 0 %}
+        {% if product.available_stock > 0 %}
         <button class="btn btn-coffee btn-lg js-add-to-cart"
                 data-form="nonCoffeeForm">
             В корзину
@@ -195,7 +195,7 @@
             {% else %}
             <div class="d-flex align-items-center justify-content-center h-100 bg-light">☕</div>
             {% endif %}
-            {% if related.stock <= 0 %}
+            {% if related.available_stock <= 0 %}
             <span class="stock-badge stock-out">Нет в наличии</span>
             {% else %}
             <span class="stock-badge stock-in">В наличии</span>

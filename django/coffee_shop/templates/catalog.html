@@ -55,8 +55,8 @@
                             <strong>{{ product.price_per_50g }} ₽ / 50 г</strong>
                         </p>
                         <p class="card-text">
-                            {% if product.stock > 0 %}
-                            <span class="text-success">В наличии: {{ product.stock }} г</span>
+                            {% if product.available_stock > 0 %}
+                            <span class="text-success">В наличии: {{ product.available_stock }} г</span>
                             {% else %}
                             <span class="text-danger">Нет в наличии</span>
                             {% endif %}
