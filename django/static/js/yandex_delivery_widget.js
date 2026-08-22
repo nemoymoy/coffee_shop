@@ -807,37 +807,49 @@ var YandexDeliveryWidget = (function () {
         var deliveryCostSpan = document.getElementById('deliveryCost');
         var deliveryEtaSpan = document.getElementById('deliveryEta');
         var deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
+        var addressBlock = document.getElementById('addressBlock');
 
-        if (addressField) {
-            addressField.value = state.selectedAddress;
+        // Store values before hiding address block
+        var selectedAddress = state.selectedAddress;
+        var selectedPrice = state.selectedPrice;
+        var selectedEta = state.selectedEta;
+        var selectedType = state.selectedType;
+
+        // Hide address block first
+        if (addressBlock) {
+            addressBlock.style.display = 'none';
         }
 
+        // Update hidden address field
+        if (addressField) {
+            addressField.value = selectedAddress;
+        }
+
+        // Update delivery info block
         if (deliveryCostSpan) {
-            deliveryCostSpan.textContent = CoffeeShop.formatPrice(state.selectedPrice) + ' \u20BD';
+            deliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' \u20BD';
         }
 
         if (deliveryEtaSpan) {
-            deliveryEtaSpan.textContent = state.selectedEta;
+            deliveryEtaSpan.textContent = selectedEta;
         }
 
         if (deliveryInfoBlock) {
             deliveryInfoBlock.style.display = 'block';
         }
 
-        // Update summary on checkout page
-        if (window.Checkout && typeof window.Checkout.updateDeliverySummary === 'function') {
-            window.Checkout.updateDeliverySummary();
-        }
-
-        var addressBlock = document.getElementById('addressBlock');
-        if (addressBlock) {
-            addressBlock.style.display = 'none';
-        }
-
+        // Close modal first
         closeModal();
 
+        // Update delivery summary after modal is closed
+        setTimeout(function() {
+            if (typeof Checkout !== 'undefined' && typeof Checkout.updateDeliverySummary === 'function') {
+                Checkout.updateDeliverySummary(selectedType);
+            }
+        }, 300);
+
         if (window.CoffeeShop && CoffeeShop.showToast) {
-            CoffeeShop.showToast('Delivery configured successfully', 'success');
+            CoffeeShop.showToast('Доставка успешно настроена', 'success');
         }
     }
 
@@ -848,6 +860,12 @@ var YandexDeliveryWidget = (function () {
         state.selectedAddress = null;
         state.selectedPrice = null;
         state.selectedEta = null;
+
+        // Hide delivery summary when resetting
+        var deliverySummary = document.getElementById('deliverySummary');
+        if (deliverySummary) {
+            deliverySummary.style.display = 'none';
+        }
 
         // Remove global click handler
         if (state.mapClickHandler) {

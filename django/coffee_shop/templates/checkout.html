@@ -67,21 +67,21 @@
                 </div>
             </div>
 
+            <!-- Summary блока доставки (показывается после выбора доставки) -->
+            <div id="deliverySummary" class="mb-3" style="display:none;">
+                <div class="alert alert-success">
+                    <strong>🚚 Способ доставки:</strong> <span id="summaryType"></span><br>
+                    <strong>📍 Адрес доставки:</strong> <span id="summaryAddress"></span><br>
+                    <strong>💰 Стоимость доставки:</strong> <span id="summaryCost"></span>
+                    <span id="summaryEta" class="text-muted ms-2"></span>
+                </div>
+            </div>
+
             <div class="mb-3" id="addressBlock" style="display: none;">
                 <!-- Кнопка для открытия виджета Яндекс Доставки -->
                 <button type="button" class="btn btn-coffee w-100 mb-2" id="openDeliveryModal">
                     🚚 Выбрать способ доставки (Яндекс Доставка)
                 </button>
-
-                <!-- Summary блок (показывается после закрытия модалки) -->
-                <div id="deliverySummary" style="display:none;">
-                    <div class="alert alert-success">
-                        <strong>🚚 Способ доставки:</strong> <span id="summaryType"></span><br>
-                        <strong>📍 Адрес:</strong> <span id="summaryAddress"></span><br>
-                        <strong>💰 Стоимость:</strong> <span id="summaryCost"></span>
-                        <span id="summaryEta" class="text-muted ms-2"></span>
-                    </div>
-                </div>
 
                 <!-- Скрытое поле для адреса -->
                 <input type="hidden" name="delivery_address" id="id_delivery_address" value="">

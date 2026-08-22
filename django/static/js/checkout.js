@@ -46,13 +46,17 @@ var Checkout = (function () {
 
     /* ==================== Delivery Summary ==================== */
 
-    function updateDeliverySummary() {
+    function updateDeliverySummary(selectedTypeOverride) {
+        var form = document.querySelector('.checkout-form');
         var deliverySummary = document.getElementById('deliverySummary');
         if (!deliverySummary) return;
 
         var addressInput = document.getElementById('id_delivery_address');
         var addressValue = addressInput ? addressInput.value.trim() : '';
-        if (!addressValue) {
+        var isDeliveryChecked = form ? form.querySelector('input[name="delivery_method"][value="delivery"]:checked') : null;
+
+        // Show summary only if delivery is selected and address is set
+        if (!addressValue || !isDeliveryChecked) {
             deliverySummary.style.display = 'none';
             return;
         }
@@ -64,19 +68,19 @@ var Checkout = (function () {
         var deliveryCostEl = document.getElementById('deliveryCost');
         var deliveryEtaEl = document.getElementById('deliveryEta');
 
-        var selectedType = null;
-        if (window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
+        var selectedType = selectedTypeOverride || null;
+        if (!selectedType && window.YandexDeliveryWidget && window.YandexDeliveryWidget.getSelectedType) {
             selectedType = window.YandexDeliveryWidget.getSelectedType();
         }
         var typeLabel = {
             courier: '🚗 Курьер',
             pvz: '📦 Пункт выдачи (ПВЗ)',
             postomat: '📮 Постомат'
-        }[selectedType || 'courier'] || 'Delivery';
+        }[selectedType || 'courier'] || '🚗 Курьер';
 
         if (summaryType) summaryType.textContent = typeLabel;
         if (summaryAddress) summaryAddress.textContent = addressValue;
-        if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '—';
+        if (summaryCost) summaryCost.textContent = deliveryCostEl ? deliveryCostEl.textContent : '299 ₽';
         if (summaryEta) summaryEta.textContent = deliveryEtaEl ? deliveryEtaEl.textContent : '';
 
         deliverySummary.style.display = 'block';
