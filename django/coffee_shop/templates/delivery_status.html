@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Статус Яндекс Доставки — Coffee Shop{% endblock %}
+
+{% block content %}
+<h2 class="section-title mb-4">Статус Яндекс Доставки</h2>
+
+<div class="row">
+    <!-- OAuth -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 {% if status_info.oauth_connected %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-header d-flex align-items-center">
+                <span class="me-2">{% if status_info.oauth_connected %}✅{% else %}❌{% endif %}</span>
+                <h5 class="mb-0">OAuth подключение</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    {% if status_info.oauth_connected %}
+                        <span class="text-success fw-bold">Подключено</span>
+                        <br><small class="text-muted">ID аккаунта: {{ status_info.yandex_account_id }}</small>
+                    {% else %}
+                        <span class="text-danger fw-bold">Не подключено</span>
+                        <p class="mt-2">Для работы доставки необходимо подключить аккаунт Яндекс Доставки.</p>
+                        {% if status_info.oauth_token_exists %}
+                            <small class="text-warning">Токен есть, но аккаунт не найден.</small>
+                        {% endif %}
+                        <div class="mt-3">
+                            <a href="{% url 'orders:yandex_delivery_auth' %}" class="btn btn-warning btn-sm">
+                                🔗 Подключить Яндекс Доставку
+                            </a>
+                        </div>
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Merchant ID -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100 {% if status_info.merchant_id_from_env or status_info.merchant_id_from_api %}border-success{% else %}border-danger{% endif %}">
+            <div class="card-header d-flex align-items-center">
+                <span class="me-2">{% if status_info.merchant_id_from_env or status_info.merchant_id_from_api %}✅{% else %}❌{% endif %}</span>
+                <h5 class="mb-0">Merchant ID</h5>
+            </div>
+            <div class="card-body">
+                <p class="card-text">
+                    {% if status_info.merchant_id_from_env %}
+                        <span class="text-success fw-bold">Получен и сохранён в .env</span>
+                        <br><code>{{ status_info.merchant_id_from_env }}</code>
+                    {% elif status_info.merchant_id_from_api %}
+                        <span class="text-success fw-bold">Получен из API</span>
+                        <br><code>{{ status_info.merchant_id_from_api }}</code>
+                        <br><small class="text-muted">Сохранён в .env</small>
+                    {% else %}
+                        <span class="text-danger fw-bold">Не получен</span>
+                        <p class="mt-2">Merchant ID не найден в .env и не удалось получить через API.</p>
+                        {% if status_info.merchant_api_error %}
+                            <small class="text-danger">Ошибка: {{ status_info.merchant_api_error }}</small>
+                        {% endif %}
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Доступные точки -->
+    <div class="col-md-12 mb-4">
+        <div class="card h-100 {% if status_info.locations %}border-success{% else %}border-warning{% endif %}">
+            <div class="card-header d-flex align-items-center">
+                <span class="me-2">📍</span>
+                <h5 class="mb-0">Доступные точки ({{ status_info.locations|length }} шт.)</h5>
+            </div>
+            <div class="card-body">
+                {% if status_info.locations %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead>
+                                <tr>
+                                    <th>platform_station_id</th>
+                                    <th>Название</th>
+                                    <th>Адрес</th>
+                                    <th>Тип</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for location in status_info.locations %}
+                                <tr>
+                                    <td><code>{{ location.platform_station_id }}</code></td>
+                                    <td>{{ location.name }}</td>
+                                    <td>{{ location.address }}</td>
+                                    <td><span class="badge bg-info">{{ location.type }}</span></td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted">
+                        {% if status_info.oauth_connected %}
+                            Точки не найдены. Проверьте geo_id или попробуйте другой тип точки.
+                        {% else %}
+                            Сначала подключите Яндекс Доставку.
+                        {% endif %}
+                    </p>
+                    {% if status_info.locations_error %}
+                        <small class="text-danger">Ошибка: {{ status_info.locations_error }}</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Настройки -->
+    <div class="col-md-12 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <span class="me-2">⚙️</span>
+                <h5 class="mb-0">Настройки</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Идентификатор города (geo_id)</h6>
+                        <code>{{ status_info.geo_id }}</code>
+                        <br><small class="text-muted">213 — Москва</small>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Адрес отправки</h6>
+                        <p class="mb-0">
+                            {% if status_info.from_address.city %}{{ status_info.from_address.city }},{% endif %}
+                            {% if status_info.from_address.street %}{{ status_info.from_address.street }}{% endif %}
+                            {% if status_info.from_address.house %}, д. {{ status_info.from_address.house }}{% endif %}
+                            {% if status_info.from_address.apt %}, кв. {{ status_info.from_address.apt }}{% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

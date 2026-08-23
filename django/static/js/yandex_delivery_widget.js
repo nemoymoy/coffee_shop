@@ -17,7 +17,6 @@ var YandexDeliveryWidget = (function () {
         selectedAddress: null,
         selectedPrice: null,
         selectedEta: null,
-        hasAccessToken: false,
         ymaps3: null,
         map: null,
         markerCollection: null,
@@ -73,7 +72,6 @@ var YandexDeliveryWidget = (function () {
             return;
         }
 
-        state.hasAccessToken = state.modal.getAttribute('data-has-token') === 'true';
         state.widgetInitialized = true;
         bindEvents();
     }
@@ -181,16 +179,6 @@ var YandexDeliveryWidget = (function () {
 
     function openModal() {
         resetWidget();
-
-        if (!state.hasAccessToken) {
-            var modalBody = document.querySelector('#deliveryModal .modal-body');
-            if (modalBody) {
-                var warningDiv = document.getElementById('yandexDeliveryWarning');
-                if (warningDiv) {
-                    warningDiv.style.display = 'block';
-                }
-            }
-        }
 
         if (state.bootstrapModal) {
             state.bootstrapModal.show();
@@ -735,6 +723,14 @@ var YandexDeliveryWidget = (function () {
                         document.getElementById('yandexAddressInput').value = state.selectedAddress;
                         state.selectedType = point.type || state.selectedType;
 
+                        // Сохраняем station_id и station_name в скрытые поля
+                        if (point.id) {
+                            var stationIdField = document.getElementById('id_yandex_station_id');
+                            var stationNameField = document.getElementById('id_yandex_station_name');
+                            if (stationIdField) stationIdField.value = point.id;
+                            if (stationNameField) stationNameField.value = point.name || '';
+                        }
+
                         calculateDelivery();
                     }
                 });
@@ -761,7 +757,7 @@ var YandexDeliveryWidget = (function () {
 
         if (!costEl || !etaEl) return;
 
-        costEl.textContent = 'Calculating...';
+        costEl.textContent = 'Расчёт...';
         etaEl.textContent = '';
         if (confirmBtn) confirmBtn.disabled = true;
 
@@ -772,28 +768,38 @@ var YandexDeliveryWidget = (function () {
         var address = CoffeeShop.parseAddress(addressValue);
         address.delivery_type = state.selectedType;
 
+        // Для ПВЗ и Постмат передаём station_id
+        if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+            var selectedMarker = state.markers[state.markers.length - 1];
+            // Получаем station_id из выбранной точки
+            var stationInput = document.getElementById('id_yandex_station_id');
+            if (stationInput && stationInput.value) {
+                address.station_id = stationInput.value;
+            }
+        }
+
         apiFetch('/checkout/calculate-delivery/', address)
         .then(function (response) { return response.json(); })
         .then(function (data) {
             if (data.success && data.price) {
                 state.selectedPrice = data.price;
-                state.selectedEta = data.eta || '30-45 min';
+                state.selectedEta = data.eta || '30-45 мин';
                 costEl.textContent = CoffeeShop.formatPrice(data.price) + ' \u20BD';
-                etaEl.textContent = data.eta || '30-45 min';
+                etaEl.textContent = data.eta || '30-45 мин';
                 updateConfirmButton();
             } else {
                 state.selectedPrice = 299;
-                state.selectedEta = '30-45 min';
+                state.selectedEta = '30-45 мин';
                 costEl.textContent = '299 \u20BD';
-                etaEl.textContent = '30-45 min';
+                etaEl.textContent = '30-45 мин';
                 updateConfirmButton();
             }
         })
         .catch(function () {
             state.selectedPrice = 299;
-            state.selectedEta = '30-45 min';
+            state.selectedEta = '30-45 мин';
             costEl.textContent = '299 \u20BD';
-            etaEl.textContent = '30-45 min';
+            etaEl.textContent = '30-45 мин';
             updateConfirmButton();
         });
     }
@@ -804,10 +810,13 @@ var YandexDeliveryWidget = (function () {
         }
 
         var addressField = document.getElementById('id_delivery_address');
-        var deliveryCostSpan = document.getElementById('deliveryCost');
+        var deliveryTypeField = document.getElementById('id_yandex_delivery_type');
+        var stationIdField = document.getElementById('id_yandex_station_id');
+        var stationNameField = document.getElementById('id_yandex_station_name');
+        var selectedDeliveryCost = document.getElementById('selectedDeliveryCost');
         var orderDeliveryCostSpan = document.getElementById('orderDeliveryCost');
-        var deliveryEtaSpan = document.getElementById('deliveryEta');
-        var deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
+        var selectedDeliveryEta = document.getElementById('selectedDeliveryEta');
+        var deliveryInfo = document.getElementById('deliveryInfo');
         var addressBlock = document.getElementById('addressBlock');
 
         // Store values before hiding address block
@@ -826,9 +835,14 @@ var YandexDeliveryWidget = (function () {
             addressField.value = selectedAddress;
         }
 
-        // Update delivery info block
-        if (deliveryCostSpan) {
-            deliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' ₽';
+        // Update delivery type hidden field
+        if (deliveryTypeField) {
+            deliveryTypeField.value = selectedType;
+        }
+
+        // Update delivery cost display in deliveryInfo block
+        if (selectedDeliveryCost) {
+            selectedDeliveryCost.textContent = CoffeeShop.formatPrice(selectedPrice) + ' ₽';
         }
 
         // Update order summary delivery cost
@@ -836,22 +850,29 @@ var YandexDeliveryWidget = (function () {
             orderDeliveryCostSpan.textContent = CoffeeShop.formatPrice(selectedPrice) + ' ₽';
         }
 
+        // Сохраняем delivery_cost в скрытое поле формы
+        var deliveryCostField = document.getElementById('id_yandex_delivery_cost');
+        if (deliveryCostField) {
+            deliveryCostField.value = selectedPrice;
+        }
+
+        // Обновляем ETA
+        if (selectedDeliveryEta) {
+            selectedDeliveryEta.textContent = selectedEta || '';
+        }
+
+        // Показываем блок deliveryInfo
+        if (deliveryInfo) {
+            deliveryInfo.style.display = 'block';
+        }
+
         // Пересчитываем итоговую сумму заказа
         if (typeof Checkout !== 'undefined' && typeof Checkout.updateOrderTotal === 'function') {
             Checkout.updateOrderTotal(selectedPrice);
         }
 
-        // Отображаем тип доставки
-        if (typeof Checkout !== 'undefined' && typeof Checkout.showYandexDeliveryType === 'function') {
-            Checkout.showYandexDeliveryType(selectedType);
-        }
-
-        if (deliveryEtaSpan) {
-            deliveryEtaSpan.textContent = selectedEta;
-        }
-
-        if (deliveryInfoBlock) {
-            deliveryInfoBlock.style.display = 'block';
+        if (window.CoffeeShop && CoffeeShop.showToast) {
+            CoffeeShop.showToast('Доставка успешно настроена', 'success');
         }
 
         // Close modal first
@@ -865,10 +886,6 @@ var YandexDeliveryWidget = (function () {
                 }
             }
         }, 300);
-
-        if (window.CoffeeShop && CoffeeShop.showToast) {
-            CoffeeShop.showToast('Доставка успешно настроена', 'success');
-        }
     }
 
     /* ==================== Reset ==================== */
@@ -913,6 +930,12 @@ var YandexDeliveryWidget = (function () {
             }
         }
 
+        // Reset station fields
+        var stationIdField = document.getElementById('id_yandex_station_id');
+        var stationNameField = document.getElementById('id_yandex_station_name');
+        if (stationIdField) stationIdField.value = '';
+        if (stationNameField) stationNameField.value = '';
+
         // Hide step 3
         var step3 = document.getElementById('deliveryStep3');
         if (step3) step3.style.display = 'none';
@@ -928,7 +951,7 @@ var YandexDeliveryWidget = (function () {
         // Reset cost and ETA
         var costEl = document.getElementById('widgetCost');
         var etaEl = document.getElementById('widgetEta');
-        if (costEl) costEl.textContent = 'Calculating...';
+        if (costEl) costEl.textContent = 'Расчёт...';
         if (etaEl) etaEl.textContent = '';
 
         // Disable confirm button
@@ -947,10 +970,6 @@ var YandexDeliveryWidget = (function () {
             clearTimeout(state.autocompleteTimeout);
             state.autocompleteTimeout = null;
         }
-
-        // Hide warning
-        var warningDiv = document.getElementById('yandexDeliveryWarning');
-        if (warningDiv) warningDiv.style.display = 'none';
     }
 
     /* ==================== Export ==================== */

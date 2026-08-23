@@ -51,19 +51,12 @@ var Checkout = (function () {
             deliveryRadios: form.querySelectorAll('input[name="delivery_method"]'),
             submitBtn: form.querySelector('button[type="submit"]')
         };
-        _elements.deliveryInfoBlock = document.getElementById('deliveryInfoBlock');
         _elements.deliveryInfo = document.getElementById('deliveryInfo');
         _elements.selectedDeliveryType = document.getElementById('selectedDeliveryType');
         _elements.selectedDeliveryAddress = document.getElementById('selectedDeliveryAddress');
         _elements.selectedDeliveryCost = document.getElementById('selectedDeliveryCost');
         _elements.selectedDeliveryEta = document.getElementById('selectedDeliveryEta');
         _elements.addressBlock = document.getElementById('addressBlock');
-        _elements.summaryType = document.getElementById('summaryType');
-        _elements.summaryAddress = document.getElementById('summaryAddress');
-        _elements.summaryCost = document.getElementById('summaryCost');
-        _elements.summaryEta = document.getElementById('summaryEta');
-        _elements.deliveryCost = document.getElementById('deliveryCost');
-        _elements.deliveryEta = document.getElementById('deliveryEta');
         _elements.total = document.getElementById('checkoutTotal');
         _elements.orderGoodsTotal = document.getElementById('orderGoodsTotal');
         _elements.orderDeliveryCost = document.getElementById('orderDeliveryCost');
@@ -142,8 +135,8 @@ var Checkout = (function () {
         }
 
         var typeLabel = CONFIG.DELIVERY_SUMMARY_TYPES[selectedType || 'courier'] || CONFIG.DELIVERY_SUMMARY_TYPES.courier;
-        var priceText = _elements.deliveryCost ? _elements.deliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
-        var etaText = _elements.deliveryEta ? _elements.deliveryEta.textContent : CONFIG.DEFAULT_DELIVERY_ETA;
+        var priceText = _elements.selectedDeliveryCost ? _elements.selectedDeliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
+        var etaText = _elements.selectedDeliveryEta ? _elements.selectedDeliveryEta.textContent : CONFIG.DEFAULT_DELIVERY_ETA;
 
         var price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.')) || CONFIG.DEFAULT_DELIVERY_PRICE;
 
@@ -219,39 +212,37 @@ var Checkout = (function () {
     }
 
     function _setDeliveryPlaceholder() {
-        if (_elements.deliveryCost) _elements.deliveryCost.textContent = '—';
+        if (_elements.selectedDeliveryCost) _elements.selectedDeliveryCost.textContent = '—';
         if (_elements.orderDeliveryCost) _elements.orderDeliveryCost.textContent = '—';
-        if (_elements.deliveryEta) _elements.deliveryEta.textContent = '—';
     }
 
     function _setDeliveryLoading() {
-        if (_elements.deliveryCost) _elements.deliveryCost.textContent = 'Расчёт...';
-        if (_elements.deliveryEta) _elements.deliveryEta.textContent = '';
+        if (_elements.selectedDeliveryCost) _elements.selectedDeliveryCost.textContent = 'Расчёт...';
     }
 
     function _setDeliveryResult(price, eta) {
-        if (_elements.deliveryCost) {
-            _elements.deliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
+        if (_elements.selectedDeliveryCost) {
+            _elements.selectedDeliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
         }
         if (_elements.orderDeliveryCost) {
             _elements.orderDeliveryCost.textContent = CoffeeShop.formatPrice(price) + ' ₽';
         }
-        if (_elements.deliveryEta) {
-            _elements.deliveryEta.textContent = eta || '';
+        if (_elements.selectedDeliveryEta) {
+            _elements.selectedDeliveryEta.textContent = eta || '';
         }
         _updateOrderTotal(price);
         _updateDeliverySummary();
     }
 
     function _setDeliveryFallback() {
-        if (_elements.deliveryCost) {
-            _elements.deliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
+        if (_elements.selectedDeliveryCost) {
+            _elements.selectedDeliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
         }
         if (_elements.orderDeliveryCost) {
             _elements.orderDeliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
         }
-        if (_elements.deliveryEta) {
-            _elements.deliveryEta.textContent = CONFIG.DEFAULT_DELIVERY_ETA;
+        if (_elements.selectedDeliveryEta) {
+            _elements.selectedDeliveryEta.textContent = CONFIG.DEFAULT_DELIVERY_ETA;
         }
         _updateOrderTotal(CONFIG.DEFAULT_DELIVERY_PRICE);
         _updateDeliverySummary();
