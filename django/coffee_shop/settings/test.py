@@ -3,6 +3,9 @@ Test settings for coffee_shop project.
 """
 from .dev import *
 
+# Enable rate limiting bypass for tests
+TESTING = True
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',

@@ -46,8 +46,24 @@
     background: #f8f9fa;
 }
 
+.autocomplete-item.selected {
+    background: var(--coffee-bg-alt);
+    color: var(--coffee-dark);
+    font-weight: 600;
+}
+
 .autocomplete-item:last-child {
     border-bottom: none;
+}
+
+/* Delivery price in modal step 2 */
+.modal-delivery-price {
+    margin-top: 8px;
+    padding: 10px 14px;
+    background: #e8f5e9;
+    border-radius: 0.375rem;
+    font-weight: 600;
+    color: #2e7d32;
 }
 
 #yandexMap {

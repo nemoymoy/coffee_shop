@@ -23,6 +23,22 @@ class OrderForm(CheckoutForm):
         widget=forms.RadioSelect(attrs={'class': 'btn-check'}),
         label='Способ получения'
     )
+    delivery_type = forms.ChoiceField(
+        choices=[
+            ('courier', 'Курьер'),
+            ('pickup', 'ПВЗ/Постомат'),
+        ],
+        widget=forms.HiddenInput(),
+        required=False,
+    )
+    pvz_id = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    destination_coords = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
     payment_method = forms.ChoiceField(
         choices=[
             ('online', 'Онлайн'),
@@ -39,9 +55,11 @@ class OrderForm(CheckoutForm):
         }),
         required=False
     )
-    yandex_delivery_type = forms.CharField(
+    delivery_cost = forms.DecimalField(
         required=False,
         widget=forms.HiddenInput(),
+        max_digits=10,
+        decimal_places=2,
     )
 
     def clean(self):
@@ -49,7 +67,9 @@ class OrderForm(CheckoutForm):
         delivery_method = cleaned_data.get('delivery_method')
         delivery_address = cleaned_data.get('delivery_address')
 
-        if delivery_method == 'delivery' and not delivery_address:
-            self.add_error('delivery_address', 'Необходимо указать адрес доставки')
+        if delivery_method == 'delivery':
+            # Для курьера нужен адрес
+            if not delivery_address:
+                self.add_error('delivery_address', 'Необходимо указать адрес доставки')
 
         return cleaned_data

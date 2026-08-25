@@ -1,6 +1,7 @@
 """Orders views."""
 from decimal import Decimal
 
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db import transaction
@@ -13,6 +14,7 @@ from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
 from coffee_shop.apps.orders.services.stock_service import StockService
 from coffee_shop.apps.orders.services.promo_service import PromoService
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
+
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem
 
@@ -185,10 +187,25 @@ def checkout_view(request):
                 })
             applied_promo = promo
         
-        # Сохраняем тип Яндекс Доставки из формы (если передан)
-        yandex_delivery_type_raw = cleaned.get('yandex_delivery_type', '') or request.POST.get('yandex_delivery_type', '')
-        if yandex_delivery_type_raw not in dict(Order.YANDEX_DELIVERY_TYPE_CHOICES):
-            yandex_delivery_type_raw = ''
+        # Сохраняем тип доставки и PVZ ID из формы (если передан)
+        delivery_type_raw = cleaned.get('delivery_type', '') or request.POST.get('delivery_type', '')
+        if delivery_type_raw not in dict(Order.DELIVERY_TYPE_CHOICES):
+            delivery_type_raw = 'courier'
+
+        pvz_id = cleaned.get('pvz_id', '') or request.POST.get('pvz_id', '')
+        destination_coords = cleaned.get('destination_coords', '') or request.POST.get('destination_coords', '')
+        
+        # Стоимость доставки (если выбрана через виджет)
+        delivery_cost = cleaned.get('delivery_cost', 0) or request.POST.get('delivery_cost', 0)
+
+        # Валидация: для доставки адрес обязателен
+        if cleaned['delivery_method'] == 'delivery' and not cleaned.get('delivery_address', ''):
+            messages.error(request, 'Необходимо указать адрес доставки')
+            return render(request, 'checkout.html', {
+                'cart_items': cart_items,
+                'form': form,
+                'total': total,
+            })
         
         with transaction.atomic():
             order = Order.objects.create(
@@ -199,9 +216,11 @@ def checkout_view(request):
                 email=cleaned['email'],
                 comment=cleaned.get('comment', ''),
                 delivery_method=cleaned['delivery_method'],
+                delivery_type=delivery_type_raw,
                 payment_method=cleaned['payment_method'],
                 delivery_address=cleaned.get('delivery_address', ''),
-                yandex_delivery_type=yandex_delivery_type_raw,
+                pvz_id=pvz_id or None,
+                destination_coords=destination_coords or None,
                 total_amount=0,
             )
             
@@ -220,6 +239,16 @@ def checkout_view(request):
                         if product.available_stock < 1:
                             raise ValueError('Товар закончился')
                     
+                    # Определяем вес и тара
+                    weight_grams = int(value.get('weight', 0)) if value.get('weight') else 0
+                    package = None
+                    if weight_grams > 0:
+                        from coffee_shop.apps.orders.models import Package
+                        try:
+                            package = Package.for_weight(weight_grams)
+                        except Package.DoesNotExist:
+                            package = None
+
                     OrderItem.objects.create(
                         order=order,
                         product=product,
@@ -228,6 +257,8 @@ def checkout_view(request):
                         coffee_weight_grams=value.get('weight'),
                         coffee_form=value.get('coffee_form'),
                         brewing_method=value.get('brewing_method'),
+                        package=package,
+                        weight_grams=weight_grams,
                     )
                     
                     total += unit_price
@@ -247,42 +278,68 @@ def checkout_view(request):
             # Устанавливаем стоимость доставки
             delivery_price = Decimal('0')
             if cleaned['delivery_method'] == 'delivery':
-                # По умолчанию 299 ₽ если доставка не рассчитана
-                delivery_price = Decimal('299')
-
-                access_token = request.session.get(
-                    'yandex_delivery_access_token'
-                )
-                if access_token:
+                # Используем стоимость из формы (если пользователь выбрал через виджет)
+                if delivery_cost and Decimal(str(delivery_cost)) > 0:
+                    delivery_price = Decimal(str(delivery_cost))
+                    # Пытаемся создать заказ в Яндекс Доставке
                     try:
-                        delivery_service = YandexDeliveryService(
-                            access_token=access_token
-                        )
-                        delivery_result = delivery_service.create_delivery_order(
-                            order_id=order.pk,
-                            address={
-                                'street': cleaned.get('delivery_address', ''),
-                            },
-                        )
-                        if delivery_result.get('success'):
-                            delivery_price = delivery_result.get('price', 299)
-                            order.yandex_access_token = access_token
-                            order.yandex_order_id = delivery_result.get(
-                                'yandex_order_id', ''
-                            )
-                            order.tracking_number = delivery_result.get(
-                                'tracking_number', ''
-                            )
-                            order.delivery_status = 'pending'
-                            order.status = 'in_progress'
-                    except Exception:
-                        # Fail silently — order still valid without Yandex delivery
-                        pass
+                        service = YandexDeliveryService()
+                        if service.is_configured():
+                            # Собираем items для API
+                            api_items = []
+                            for oi in order.items.all():
+                                wt = oi.weight_grams / 1000.0 if oi.weight_grams else 0.5
+                                sz = {}
+                                if oi.package:
+                                    sz = {
+                                        'length': float(oi.package.length),
+                                        'width': float(oi.package.width),
+                                        'height': float(oi.package.height),
+                                    }
+                                else:
+                                    sz = {'length': 0.20, 'width': 0.12, 'height': 0.12}
+                                api_items.append({
+                                    'quantity': oi.quantity,
+                                    'weight': round(wt, 3),
+                                    'size': sz,
+                                    'title': oi.product.name if oi.product else 'Product',
+                                })
 
-            # Добавляем стоимость доставки к итогу
+                            coords_list = []
+                            if destination_coords:
+                                coords_list = [float(c.strip()) for c in destination_coords.split(',')]
+                            else:
+                                coords_list = [49.35, 53.21]  # fallback
+
+                            create_result = service.create_order(
+                                items=api_items,
+                                client_order_id=order.pk,
+                                destination_coords=coords_list,
+                                destination_address=cleaned.get('delivery_address', ''),
+                                delivery_type=order.delivery_type,
+                                pvz_id=order.pvz_id,
+                            )
+
+                            if create_result.get('success'):
+                                order.yandex_order_id = create_result.get('order_id', '')
+                                order.tracking_number = create_result.get('tracking_number', '')
+                                order.delivery_status = 'pending'
+                                order.status = 'in_progress'
+                                messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                            else:
+                                messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
+                    except Exception as e:
+                        messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {e}')
+
+            # Добавляем стоимость доставки к итогу и сохраняем все изменения
             order.delivery_cost = delivery_price
             order.total_amount = Decimal(str(total)) + delivery_price
-            order.save(update_fields=['delivery_cost', 'total_amount'])
+
+            fields_to_save = ['delivery_cost', 'total_amount']
+            if order.yandex_order_id:
+                fields_to_save.extend(['yandex_order_id', 'tracking_number', 'delivery_status', 'status'])
+
+            order.save(update_fields=fields_to_save)
 
         # Резервируем stock (не для доставки — там своя логика)
         if cleaned['delivery_method'] != 'delivery':
@@ -329,11 +386,19 @@ def checkout_view(request):
         except Product.DoesNotExist:
             pass
 
+    from django.urls import reverse
+    from django.conf import settings
+
     context = {
         'cart_items': cart_items,
         'form': OrderForm(initial=user_data),
         'user_data': user_data,
         'total': total,
+        'YANDEX_GEOCODER_API_KEY': getattr(settings, 'YANDEX_GEOCODER_API_KEY', ''),
+        'YANDEX_JAVASCRIPT_API_KEY': getattr(settings, 'YANDEX_JAVASCRIPT_API_KEY', ''),
+        'YANDEX_DELIVERY_WEBHOOK_URL': reverse('orders:yandex_webhook'),
+        'YANDEX_SHOP_LAT': getattr(settings, 'YANDEX_SHOP_LAT', 53.1960),
+        'YANDEX_SHOP_LON': getattr(settings, 'YANDEX_SHOP_LON', 49.3782),
     }
     return render(request, 'checkout.html', context)
 

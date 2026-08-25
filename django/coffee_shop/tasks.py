@@ -68,7 +68,7 @@ def send_order_status_changed_email(order_id, new_status):
 
 @shared_task
 def sync_yandex_delivery_status():
-    """Периодическая синхронизация статусов Яндекс Доставки.
+    """Периодическая синхронизация статусов Яндекс Доставки (Cargo API).
     Запускается каждые 5 минут.
     """
     from coffee_shop.apps.orders.services.delivery_service import (
@@ -79,15 +79,12 @@ def sync_yandex_delivery_status():
         delivery_method='delivery',
         status__in=['in_progress', 'ready'],
         yandex_order_id__isnull=False,
-        yandex_access_token__isnull=False,
     )
 
     synced = 0
     for order in from_orders:
-        service = YandexDeliveryService(
-            access_token=order.yandex_access_token
-        )
-        result = service.get_delivery_status(order.tracking_number or '')
+        service = YandexDeliveryService()
+        result = service.get_order_status(order.yandex_order_id or '')
 
         if not result.get('success'):
             continue
@@ -175,3 +172,6 @@ def release_expired_reservations():
     """
     from .apps.orders.services.stock_service import StockService
     return StockService.release_expired_reservations()
+
+
+

@@ -75,6 +75,18 @@ class OrderItem(models.Model):
         verbose_name='Способ заваривания'
     )
 
+    package = models.ForeignKey(
+        'orders.Package',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        verbose_name='Тара'
+    )
+    weight_grams = models.IntegerField(
+        verbose_name='Вес содержимого (г)',
+        default=0
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создана')
 
     class Meta:

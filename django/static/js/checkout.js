@@ -14,8 +14,6 @@ var Checkout = (function () {
         YANDEX_WIDGET_OPEN_DELAY_MS: 200,
         MIN_NAME_LENGTH: 2,
         MIN_PHONE_DIGITS: 11,
-        DEFAULT_DELIVERY_PRICE: 299,
-        DEFAULT_DELIVERY_ETA: '30-45 мин',
         DELIVERY_SUMMARY_TYPES: {
             courier: '🚗 Курьер',
             pvz: '📦 Пункт выдачи (ПВЗ)',
@@ -104,11 +102,12 @@ var Checkout = (function () {
                 if (data.success && data.price) {
                     _setDeliveryResult(data.price, data.eta);
                 } else {
-                    _setDeliveryFallback();
+                    // Ошибка — показываем ошибку, не маскируем
+                    _setDeliveryError(data.error || 'Не удалось рассчитать стоимость доставки');
                 }
             })
             .catch(function () {
-                _setDeliveryFallback();
+                _setDeliveryError('Ошибка подключения к сервису расчёта доставки');
             });
         }, CONFIG.DELIVERY_CALCULATION_DEBOUNCE_MS);
     }
@@ -135,10 +134,14 @@ var Checkout = (function () {
         }
 
         var typeLabel = CONFIG.DELIVERY_SUMMARY_TYPES[selectedType || 'courier'] || CONFIG.DELIVERY_SUMMARY_TYPES.courier;
-        var priceText = _elements.selectedDeliveryCost ? _elements.selectedDeliveryCost.textContent : (CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽');
-        var etaText = _elements.selectedDeliveryEta ? _elements.selectedDeliveryEta.textContent : CONFIG.DEFAULT_DELIVERY_ETA;
+        var priceText = _elements.selectedDeliveryCost ? _elements.selectedDeliveryCost.textContent : '—';
+        var etaText = _elements.selectedDeliveryEta ? _elements.selectedDeliveryEta.textContent : '';
 
-        var price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.')) || CONFIG.DEFAULT_DELIVERY_PRICE;
+        var price = parseFloat(priceText.replace(/[^0-9.,]/g, '').replace(',', '.'));
+        if (!price || price <= 0) {
+            // Если цена не задана или это ошибка — не показываем сводку
+            return;
+        }
 
         _showDeliveryInfo(typeLabel, addressValue, price, etaText, selectedType || '');
     }
@@ -234,18 +237,21 @@ var Checkout = (function () {
         _updateDeliverySummary();
     }
 
-    function _setDeliveryFallback() {
+    function _setDeliveryError(message) {
         if (_elements.selectedDeliveryCost) {
-            _elements.selectedDeliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
+            _elements.selectedDeliveryCost.textContent = 'Ошибка: ' + message;
+            _elements.selectedDeliveryCost.style.color = 'red';
         }
         if (_elements.orderDeliveryCost) {
-            _elements.orderDeliveryCost.textContent = CONFIG.DEFAULT_DELIVERY_PRICE + ' ₽';
+            _elements.orderDeliveryCost.textContent = '—';
         }
         if (_elements.selectedDeliveryEta) {
-            _elements.selectedDeliveryEta.textContent = CONFIG.DEFAULT_DELIVERY_ETA;
+            _elements.selectedDeliveryEta.textContent = '';
         }
-        _updateOrderTotal(CONFIG.DEFAULT_DELIVERY_PRICE);
         _updateDeliverySummary();
+        if (typeof CoffeeShop !== 'undefined' && CoffeeShop.showToast) {
+            CoffeeShop.showToast(message, 'danger');
+        }
     }
 
     /**

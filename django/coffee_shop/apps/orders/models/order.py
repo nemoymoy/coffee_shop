@@ -24,10 +24,9 @@ class Order(models.Model):
         ('delivery', 'Доставка'),
     ]
 
-    YANDEX_DELIVERY_TYPE_CHOICES = [
+    DELIVERY_TYPE_CHOICES = [
         ('courier', 'Курьер'),
-        ('pvz', 'Пункт выдачи (ПВЗ)'),
-        ('postomat', 'Постомат'),
+        ('pickup', 'ПВЗ/Постомат'),
     ]
 
     user = models.ForeignKey(
@@ -89,24 +88,12 @@ class Order(models.Model):
         verbose_name='Время доставки'
     )
 
-    # Yandex Delivery integration
-    yandex_access_token = models.CharField(
-        max_length=500,
-        blank=True,
-        null=True,
-        verbose_name='OAuth токен Яндекс Доставки'
-    )
+    # Yandex Cargo API integration
     yandex_order_id = models.CharField(
         max_length=100,
         blank=True,
         null=True,
-        verbose_name='ID заказа в Яндекс Доставке'
-    )
-    yandex_delivery_type = models.CharField(
-        max_length=20,
-        choices=YANDEX_DELIVERY_TYPE_CHOICES,
-        blank=True,
-        verbose_name='Тип Яндекс Доставки'
+        verbose_name='ID заказа в Cargo API'
     )
     tracking_number = models.CharField(
         max_length=100,
@@ -125,6 +112,24 @@ class Order(models.Model):
         decimal_places=2,
         default=0,
         verbose_name='Стоимость доставки'
+    )
+    delivery_type = models.CharField(
+        max_length=20,
+        choices=DELIVERY_TYPE_CHOICES,
+        default='courier',
+        verbose_name='Тип доставки'
+    )
+    pvz_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='ID ПВЗ/постомата (Yandex)'
+    )
+    destination_coords = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name='Координаты доставки [lon,lat]'
     )
 
     reserved_at = models.DateTimeField(

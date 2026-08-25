@@ -123,7 +123,7 @@ var CoffeeShop = window.CoffeeShop || {};
 
     /**
      * Парсить адресную строку в структурированные данные.
-     * Формат: "Город, улица, дом-кв"
+     * Формат: "Город, улица, дом-кв" или "Страна, Город, Улица, Дом, Кв"
      */
     CoffeeShop.parseAddress = function (raw) {
         var result = {
@@ -134,10 +134,28 @@ var CoffeeShop = window.CoffeeShop || {};
         };
         var parts = raw.split(',').map(function (s) { return s.trim(); });
 
-        if (parts.length >= 1) result.city = parts[0];
-        if (parts.length >= 2) result.street = parts[1];
-        if (parts.length >= 3) {
-            var houseParts = parts[2].split('-');
+        // Определяем индекс города: если есть "Россия" или "Россия, " в начале — пропускаем
+        var cityIndex = 0;
+        var first = parts[0] ? parts[0].toLowerCase() : '';
+        if (first === 'россия' || first === 'russia') {
+            cityIndex = 1;
+        }
+
+        // Город
+        if (parts.length > cityIndex) {
+            result.city = parts[cityIndex];
+        }
+
+        // Улица — после города
+        var streetIndex = cityIndex + 1;
+        if (parts.length > streetIndex) {
+            result.street = parts[streetIndex];
+        }
+
+        // Дом и квартира — после улицы
+        var houseIndex = streetIndex + 1;
+        if (parts.length > houseIndex) {
+            var houseParts = parts[houseIndex].split('-');
             result.house = houseParts[0].trim();
             if (houseParts.length > 1) {
                 result.apartment = houseParts[1].trim();

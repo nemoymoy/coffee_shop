@@ -1,4 +1,4 @@
-"""Tests for Yandex Delivery sync task."""
+"""Tests for Yandex Delivery sync task (Cargo API)."""
 import pytest
 from unittest.mock import patch, MagicMock
 from decimal import Decimal
@@ -10,15 +10,15 @@ pytestmark = pytest.mark.django_db
 
 
 class TestSyncYandexDeliveryStatus:
-    """Тесты синхронизации статусов Яндекс Доставки."""
+    """Tests for Cargo API delivery status sync."""
 
     def test_sync_no_matching_orders(self):
-        """Нет заказов для синхронизации."""
+        """No orders to sync."""
         result = sync_yandex_delivery_status()
         assert 'Synced 0 of 0' in result
 
-    def test_sync_orders_without_token(self, user):
-        """Заказы без токена пропускаются."""
+    def test_sync_orders_filtered_by_yandex_order_id(self, user):
+        """Only orders with yandex_order_id are synced."""
         Order.objects.create(
             user=user,
             status='in_progress',
@@ -34,12 +34,23 @@ class TestSyncYandexDeliveryStatus:
             tracking_number='YA-TRACK-001',
         )
 
-        result = sync_yandex_delivery_status()
-        # Orders without token are filtered out, so 0 of 0
-        assert 'Synced 0 of 0' in result
+        with patch(
+            'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_order_status.return_value = {
+                'success': True,
+                'status': 'in_transit',
+                'tracking_number': 'YA-TRACK-001',
+            }
+            MockService.return_value = mock_instance
+
+            result = sync_yandex_delivery_status()
+
+        assert 'Synced 1 of 1' in result
 
     def test_sync_updates_status(self, user):
-        """Статусы заказов обновляются."""
+        """Order statuses are updated."""
         order = Order.objects.create(
             user=user,
             status='in_progress',
@@ -53,17 +64,16 @@ class TestSyncYandexDeliveryStatus:
             delivery_address='Москва, ул. Тестовая, 1',
             yandex_order_id='YDO-123',
             tracking_number='YA-TRACK-001',
-            yandex_access_token='ya2-test-token',
         )
 
         with patch(
             'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
         ) as MockService:
             mock_instance = MagicMock()
-            mock_instance.get_delivery_status.return_value = {
+            mock_instance.get_order_status.return_value = {
                 'success': True,
                 'status': 'in_transit',
-                'history': [],
+                'tracking_number': 'YA-TRACK-001',
             }
             MockService.return_value = mock_instance
 
@@ -72,11 +82,11 @@ class TestSyncYandexDeliveryStatus:
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
         assert order.delivery_status == 'in_transit'
-        # Status should remain 'in_progress'
+        # Status should remain 'in_progress' (not delivered yet)
         assert order.status == 'in_progress'
 
     def test_sync_delivered_status(self, user):
-        """Статус 'delivered' обновляет Order."""
+        """Delivered status updates Order status."""
         order = Order.objects.create(
             user=user,
             status='in_progress',
@@ -90,16 +100,16 @@ class TestSyncYandexDeliveryStatus:
             delivery_address='Москва, ул. Тестовая, 1',
             yandex_order_id='YDO-123',
             tracking_number='YA-TRACK-001',
-            yandex_access_token='ya2-test-token',
         )
 
         with patch(
             'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
         ) as MockService:
             mock_instance = MagicMock()
-            mock_instance.get_delivery_status.return_value = {
+            mock_instance.get_order_status.return_value = {
                 'success': True,
                 'status': 'delivered',
+                'tracking_number': 'YA-TRACK-001',
             }
             MockService.return_value = mock_instance
 
@@ -110,7 +120,7 @@ class TestSyncYandexDeliveryStatus:
         assert order.status == 'delivered'
 
     def test_sync_service_error(self, user):
-        """Ошибка сервиса — заказ не обновляется."""
+        """Service error — order is not updated."""
         Order.objects.create(
             user=user,
             status='in_progress',
@@ -124,14 +134,13 @@ class TestSyncYandexDeliveryStatus:
             delivery_address='Москва, ул. Тестовая, 1',
             yandex_order_id='YDO-123',
             tracking_number='YA-TRACK-001',
-            yandex_access_token='ya2-test-token',
         )
 
         with patch(
             'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
         ) as MockService:
             mock_instance = MagicMock()
-            mock_instance.get_delivery_status.return_value = {
+            mock_instance.get_order_status.return_value = {
                 'success': False,
                 'error': 'Rate limited',
             }

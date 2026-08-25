@@ -49,22 +49,54 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
     """Add security headers to responses."""
 
     def process_response(self, request, response):
+        # HSTS — только для production
         if settings.DEBUG is False:
-            # HSTS
             response['Strict-Transport-Security'] = (
                 'max-age=31536000; includeSubDomains'
             )
 
-            # CSP
-            response['Content-Security-Policy'] = (
-                "default-src 'self'; "
-                "script-src 'self' https://cdn.jsdelivr.net; "
-                "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; "
-                "img-src 'self' data: https:; "
-                "font-src 'self' https://cdn.jsdelivr.net; "
-                "connect-src 'self'; "
-                "frame-ancestors 'none';"
-            )
+        # CSP — всегда, чтобы работали сервисы Яндекса
+        response['Content-Security-Policy'] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+            "https://cdn.jsdelivr.net "
+            "https://api-maps.yandex.ru https://api-maps.yandex.com "
+            "https://yastatic.net "
+            "https://core-renderer-tiles.maps.yandex.net "
+            "https://tiles.maps.yandex.net "
+            "https://static.delivery.yandex.ru "
+            "https://cdn1.delivery.yandex.net "
+            "https://cdn2.delivery.yandex.net "
+            "https://cdn.delivery.yandex.ru "
+            "https://taxi.yandex.ru "
+            "https://yandex.ru "
+            "https://avatars.mds.yandex.net "
+            "https://smart-yandex.yandex.net; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' https://yastatic.net; "
+            "img-src 'self' data: https: https://avatars.mds.yandex.net https://smart-yandex.yandex.net https://core-renderer-tiles.maps.yandex.net https://tiles.maps.yandex.net; "
+            "font-src 'self' https://cdn.jsdelivr.net; "
+            "connect-src 'self' "
+            "https://mc.yandex.ru https://mc.yandex.md https://mc.yandex.kz https://mc.yandex.com "
+            "https://mc.admetrica.ru https://mc.admetrica.com "
+            "https://mc.webvisor.com https://mc.webvisor.org "
+            "https://yandex.ru https://autofill.yandex.ru https://passport.yandex.ru "
+            "https://api.yandex.ru https://api.passport.yandex.ru "
+            "https://b2b-authproxy.taxi.yandex.net "
+            "https://trust.yandex.ru https://trust.yandex.com "
+            "https://suggest-maps.yandex.net "
+            "https://log.api-maps.yandex.ru "
+            "https://maps-static.yandex.net "
+            "https://maps-api.yandex.com "
+            "https://*.disk.yandex.net "
+            "https://*.captcha.yandex.net "
+            "https://kards.fp.yandex.net "
+            "wss://mc.yandex.ru wss://mc.yandex.md wss://mc.yandex.kz wss://mc.yandex.com "
+            "wss://delivery.yandex.ru; "
+            "frame-src 'self' https://dostavka.yandex.ru https://delivery.yandex.ru https://yandex.ru https://mc.yandex.ru https://yandex.ru/maps; "
+            "frame-ancestors 'self' https://dostavka.yandex.ru https://delivery.yandex.ru;"
+        )
 
         # Hardened headers (also apply in dev for consistency)
         response['X-Frame-Options'] = 'DENY'
@@ -103,6 +135,12 @@ class RateLimitingMiddleware(MiddlewareMixin):
         return request.META.get('REMOTE_ADDR', 'unknown')
 
     def process_view(self, request, view_func, view_args, view_kwargs):
+        # Skip rate limiting for test environment and superusers
+        if getattr(settings, 'TESTING', False):
+            return None
+        if request.user.is_staff and request.user.is_authenticated:
+            return None
+
         path = request.path
 
         for pattern, (max_requests, window_seconds) in self.LIMITS.items():

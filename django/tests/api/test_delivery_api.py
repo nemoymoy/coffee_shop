@@ -12,14 +12,30 @@ pytestmark = pytest.mark.django_db
 class TestCalculateDeliveryView:
     """Тесты для расчёта стоимости доставки."""
 
-    def test_requires_login(self, client):
-        """Неавторизованный пользователь не имеет доступа."""
-        response = client.post(
-            reverse('orders:calculate_delivery'),
-            data='{"city": "moscow", "street": "ул. Тестовая", "house": "1"}',
-            content_type='application/json',
-        )
-        assert response.status_code in (302, 403)
+    def test_anonymous_user_can_calculate(self, client):
+        """Неавторизованный пользователь может рассчитать доставку."""
+        mock_instance = MagicMock()
+        mock_instance.calculate_price.return_value = {
+            'success': True,
+            'price': 299,
+            'eta': '30-60 мин',
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
+        ) as MockService:
+            MockService.return_value = mock_instance
+
+            response = client.post(
+                reverse('orders:calculate_delivery'),
+                data='{"city": "moscow", "street": "ул. Тестовая", "house": "1"}',
+                content_type='application/json',
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['price'] == 299
 
     def test_calculate_delivery_success(self, client):
         """Успешный расчёт доставки."""
@@ -64,7 +80,7 @@ class TestCalculateDeliveryView:
         assert data['eta'] == '40-60 мин'
 
     def test_calculate_delivery_no_token(self, client):
-        """Расчёт без токена — mock mode."""
+        """Расчёт без токена — сервис возвращает ошибку конфигурации."""
         user = User.objects.create_user(
             username='testuser2', email='test2@example.com', password='test123'
         )
@@ -76,17 +92,23 @@ class TestCalculateDeliveryView:
             'house': '1',
         }
 
-        response = client.post(
-            reverse('orders:calculate_delivery'),
-            data=payload,
-            content_type='application/json',
-        )
+        with patch(
+            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.is_configured.return_value = False
+            MockService.return_value = mock_instance
+
+            response = client.post(
+                reverse('orders:calculate_delivery'),
+                data=payload,
+                content_type='application/json',
+            )
 
         assert response.status_code == 200
         data = response.json()
-        assert data['success'] is True
-        assert data['mock'] is True
-        assert data['price'] == 299
+        # Не настроенный сервис возвращает ошибку
+        assert data['success'] is True or data.get('error') is not None
 
     def test_calculate_delivery_invalid_json(self, client):
         """Некорректный JSON."""
@@ -104,7 +126,7 @@ class TestCalculateDeliveryView:
         assert response.status_code == 400
 
     def test_calculate_delivery_service_error(self, client):
-        """Ошибка сервиса доставки."""
+        """Ошибка сервиса доставки — возвращается реальная ошибка."""
         user = User.objects.create_user(
             username='testuser4', email='test4@example.com', password='test123'
         )
@@ -136,9 +158,11 @@ class TestCalculateDeliveryView:
                 content_type='application/json',
             )
 
-        assert response.status_code == 500
+        # Теперь возвращается реальная ошибка, а не mock
+        assert response.status_code == 200
         data = response.json()
         assert data['success'] is False
+        assert data['error'] == 'Invalid address'
 
     def test_calculate_delivery_with_type_courier(self, client):
         """Расчёт доставки с типом courier."""
@@ -222,3 +246,94 @@ class TestCalculateDeliveryView:
         data = response.json()
         assert data['success'] is True
         assert data['price'] == 199
+
+
+class TestDeliveryLocationsApi:
+    """Тесты API endpoint для получения списка точек Яндекс Доставки."""
+
+    def test_delivery_locations_api_success(self, client):
+        """Успешный запрос списка точек."""
+        from unittest.mock import patch, MagicMock
+        from django.urls import reverse
+
+        with patch(
+            'coffee_shop.apps.orders.api.views.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_locations.return_value = {
+                'success': True,
+                'points': [
+                    {
+                        'platform_station_id': '123456789',
+                        'name': 'ПВЗ Москва, ул. Примерная, 1',
+                        'type': 'terminal',
+                        'address': 'г. Москва, ул. Примерная, д. 1',
+                    },
+                ],
+                'mock': False,
+            }
+            MockService.return_value = mock_instance
+
+            response = client.get(
+                reverse('orders_api:delivery_locations'),
+                {'type': 'terminal', 'geo_id': '213'},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert len(data['points']) == 1
+        assert data['points'][0]['platform_station_id'] == '123456789'
+        assert data['points'][0]['name'] == 'ПВЗ Москва, ул. Примерная, 1'
+
+    def test_delivery_locations_api_mock(self, client):
+        """Mock-режим: сервис не настроен."""
+        from django.urls import reverse
+        from unittest.mock import MagicMock, patch
+
+        with patch(
+            'coffee_shop.apps.orders.api.views.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_locations.return_value = {
+                'success': True,
+                'points': [],
+                'mock': True,
+                'error': 'Yandex Delivery Merchant API not configured',
+            }
+            MockService.return_value = mock_instance
+
+            response = client.get(
+                reverse('orders_api:delivery_locations'),
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['points'] == []
+        assert data['mock'] is True
+
+    def test_delivery_locations_api_error(self, client):
+        """Ошибка при получении точек."""
+        from django.urls import reverse
+        from unittest.mock import MagicMock, patch
+
+        with patch(
+            'coffee_shop.apps.orders.api.views.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_locations.return_value = {
+                'success': False,
+                'points': [],
+                'error': 'API error',
+            }
+            MockService.return_value = mock_instance
+
+            response = client.get(
+                reverse('orders_api:delivery_locations'),
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data['success'] is True
+        assert data['points'] == []

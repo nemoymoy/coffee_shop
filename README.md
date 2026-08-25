@@ -1,10 +1,10 @@
 # Coffee Shop — Кофейня с доставкой и онлайн-заказами
 
-[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
-[![Django 4.2 / 6.1](https://img.shields.io/badge/Django-4.2--6.1-092E20.svg)](https://djangoproject.com)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791.svg)](https://postgresql.org)
-[![Redis](https://img.shields.io/badge/Redis-Alpine-DC382D.svg)](https://redis.io)
-[![DRF](https://img.shields.io/badge/DRF-3.18+-092E20.svg)](https://www.django-rest-framework.org)
+[![Python 3.12](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
+[![Django 4.2](https://img.shields.io/badge/Django-4.2-092E20)](https://djangoproject.com)
+[![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-336791)](https://postgresql.org)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D)](https://redis.io)
+[![DRF 3.18](https://img.shields.io/badge/DRF-3.18-092E20)](https://www.django-rest-framework.org)
 
 ---
 
@@ -566,6 +566,13 @@ YANDEX_FROM_STREET=
 YANDEX_FROM_HOUSE=
 YANDEX_FROM_APT=
 
+# Yandex Delivery Merchant API
+# Опционально — merchant_id автоматически получает через API при первом заказе
+# и записывает в .env. Если API недоступен, используется это значение.
+YANDEX_DELIVERY_MERCHANT_ID=
+# Идентификатор города для получения списка точек (213 — Москва)
+YANDEX_DELIVERY_GEO_ID=213
+
 # Yandex Metrika
 YANDEX_METRIKA_ID=your-metrika-id
 YANDEX_METRIKA_WEBVIEWER=0
@@ -615,6 +622,33 @@ YANDEX_OAUTH_CLIENT_SECRET=
 | `/api/news/news/{id}/` | GET | Детали новости |
 | `/api/news/promotions/` | GET | Список активных акций |
 | `/api/news/promotions/{id}/` | GET | Детали акции |
+
+### REST API (`/api/orders/`)
+| Эндпоинт | Метод | Описание |
+|----------|-------|----------|
+| `/api/orders/delivery/locations/` | GET | Список точек Яндекс Доставки (ПВЗ/склады) |
+
+**Ответ `/api/orders/delivery/locations/`:**
+```json
+{
+    "success": true,
+    "points": [
+        {
+            "platform_station_id": "123456789",
+            "name": "ПВЗ Москва, ул. Примерная, 1",
+            "type": "terminal",
+            "address": "г. Москва, ул. Примерная, д. 1"
+        }
+    ],
+    "mock": false
+}
+```
+
+**Параметры:**
+- `type` — тип точки: `terminal` (ПВЗ), `self_pickup` (самовывоз), `warehouse` (склад). По умолчанию `terminal`.
+- `geo_id` — идентификатор города. По умолчанию `213` (Москва).
+
+**Кэширование:** ответы кэшируются на 1 час.
 
 **Фильтрация и поиск:**
 - `?search=keyword` — поиск по заголовку и содержанию
@@ -907,6 +941,58 @@ CELERY_BEAT_SCHEDULE = {
 
 ---
 
+## ☕ Яндекс Доставка (Merchant API)
+
+### Настройка
+
+Для работы через Merchant API Яндекс Доставки необходимо:
+
+1. **Получить OAuth-токен** в личном кабинете мерчанта (раздел «Интеграция» / «API»)
+2. **Добавить в `.env`:**
+   ```bash
+   YANDEX_DELIVERY_CLIENT_ID=...
+   YANDEX_DELIVERY_CLIENT_SECRET=...
+   YANDEX_DELIVERY_GEO_ID=213  # 213 — Москва
+   ```
+
+### Автополучение merchant_id
+
+`merchant_id` **не нужно** настраивать вручную:
+
+1. При первом создании заказа сервис вызывает `GET /api/v1/merchant/info`
+2. Полученный `merchant_id` **автоматически записывается в `.env`**
+3. Последующие запросы используют значение из `.env`
+
+Если API недоступен — используется fallback из `YANDEX_DELIVERY_MERCHANT_ID` в `.env`.
+
+### Получение platform_station_id
+
+Точки (ПВЗ/склады) получаются через API:
+```
+GET /api/v1/locations/points?geo_id=213&type=terminal
+Host: delivery.yandex.net
+Authorization: OAuth AgAAAA...
+```
+
+### Выбор точки доставки
+
+При оформлении заказа клиент **обязан** выбрать пункт выдачи из списка:
+```
+GET /api/orders/delivery/locations/?type=terminal&geo_id=213
+```
+
+Выбранная точка сохраняется в заказе как `yandex_station_id` и `yandex_station_name`.
+
+### Эндпоинты Merchant API
+
+| Эндпоинт | Метод | Описание |
+|----------|-------|----------|
+| `/api/v1/merchant/info` | GET | Информация о мерчанте |
+| `/api/v1/locations/points` | GET | Список точек (ПВЗ/склады) |
+| `/api/v1/orders` | POST | Создание заказа на доставку |
+
+---
+
 ## 🔒 Соответствие 152-ФЗ "О персональных данных"
 
 ### Реализованные меры
@@ -925,6 +1011,7 @@ CELERY_BEAT_SCHEDULE = {
 При регистрации собираются следующие ПД:
 - **username** — имя пользователя
 - **email** — адрес электронной почты
+- **phone** — номер телефона
 - **first_name** — имя
 - **last_name** — фамилия
 - **IP-адрес** — автоматически фиксируется при регистрации

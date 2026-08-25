@@ -15,7 +15,6 @@ class TestCheckoutWithDelivery:
 
     def _setup_session(self, client, coffee_beans, token=None):
         """Устанавливает cart и token в сессию client."""
-        # Создаём сессию и сохраняем данные
         session = client.session
         session['cart'] = {
             f"{coffee_beans.id}:200:beans:espresso": {
@@ -47,6 +46,8 @@ class TestCheckoutWithDelivery:
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
             'comment': 'Быстрее',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         mock_instance = MagicMock()
@@ -79,7 +80,6 @@ class TestCheckoutWithDelivery:
 
     def test_checkout_with_delivery_no_token(self, client, coffee_beans):
         """Checkout с доставкой без токена — Yandex не создаётся."""
-        # Устанавливаем cart напрямую в сессию
         session = client.session
         session['cart'] = {
             f"{coffee_beans.id}:200:beans:espresso": {
@@ -101,6 +101,8 @@ class TestCheckoutWithDelivery:
             'delivery_method': 'delivery',
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         with patch(
@@ -132,6 +134,8 @@ class TestCheckoutWithDelivery:
             'delivery_method': 'delivery',
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         mock_instance = MagicMock()
@@ -189,6 +193,8 @@ class TestCheckoutWithDeliveryType:
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
             'yandex_delivery_type': 'courier',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         with patch(
@@ -222,6 +228,8 @@ class TestCheckoutWithDeliveryType:
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
             'yandex_delivery_type': 'pvz',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         with patch(
@@ -255,6 +263,8 @@ class TestCheckoutWithDeliveryType:
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
             'yandex_delivery_type': 'postomat',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         with patch(
@@ -288,6 +298,8 @@ class TestCheckoutWithDeliveryType:
             'payment_method': 'online',
             'delivery_address': 'Москва, ул. Тестовая, 1, 10',
             'yandex_delivery_type': 'invalid_type',
+            'station_id': '123456789',
+            'station_name': 'ПВЗ Тестовый',
         }
 
         with patch(

@@ -186,6 +186,7 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'coffee_shop.tasks.release_expired_reservations',
         'schedule': crontab(minute=0),
     },
+
 }
 
 # Redis
@@ -215,14 +216,15 @@ YOOMONEY_SHOP_ID = YOOKASSA_MERCHANT_ID
 YOOMONEY_SECRET_KEY_1 = YOOKASSA_API_KEY
 YOOMONEY_SECRET_KEY_2 = YOOKASSA_WEBHOOK_SECRET
 
-# Yandex Delivery
-YANDEX_DELIVERY_CLIENT_ID = os.environ.get('YANDEX_DELIVERY_CLIENT_ID', '')
-YANDEX_DELIVERY_CLIENT_SECRET = os.environ.get('YANDEX_DELIVERY_CLIENT_SECRET', '')
-YANDEX_REDIRECT_URI = os.environ.get('YANDEX_REDIRECT_URI', 'http://localhost:8000/delivery/callback/')
-YANDEX_FROM_CITY = os.environ.get('YANDEX_FROM_CITY', 'moscow')
-YANDEX_FROM_STREET = os.environ.get('YANDEX_FROM_STREET', '')
-YANDEX_FROM_HOUSE = os.environ.get('YANDEX_FROM_HOUSE', '')
-YANDEX_FROM_APT = os.environ.get('YANDEX_FROM_APT', '')
+# Yandex Cargo Delivery API settings
+# Точка отправления (магазин)
+# Самара, ул. Революционная, д. 3
+YANDEX_SHOP_LAT = float(os.environ.get('YANDEX_SHOP_LAT', '53.216940239129094'))
+YANDEX_SHOP_LON = float(os.environ.get('YANDEX_SHOP_LON', '50.162688008923745'))
+YANDEX_SHOP_ADDRESS = os.environ.get('YANDEX_SHOP_ADDRESS', 'Самара, ул. Революционная, д. 3')
+
+# Токен для Cargo API
+YANDEX_DELIVERY_TOKEN = os.environ.get('YANDEX_DELIVERY_TOKEN', '')
 
 # Yandex Metrika
 YANDEX_METRIKA_ID = os.environ.get('YANDEX_METRIKA_ID', '')

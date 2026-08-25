@@ -96,7 +96,8 @@ class TestOrderForm:
             'phone': '+79991234567',
             'email': 'test@example.com',
             'delivery_method': 'delivery',
-            'payment_method': 'cash'
+            'payment_method': 'cash',
+            'delivery_address': 'Москва, ул. Тестовая, 1',
         }
         form = OrderForm(data=data)
         assert form.is_valid() is True
@@ -110,7 +111,8 @@ class TestOrderForm:
             'phone': '+79991234567',
             'email': 'test@example.com',
             'delivery_method': 'delivery',
-            'payment_method': 'online'
+            'payment_method': 'online',
+            'delivery_address': 'Москва, ул. Тестовая, 1',
         }
         form = OrderForm(data=data)
         assert form.is_valid() is True  # адрес опционален в форме
