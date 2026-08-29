@@ -198,8 +198,10 @@ def pvz_locations_view(request):
         "count": 42
     }
     """
+    # Всегда запрашиваем все точки (pickup_point), фильтрация по type=terminal для постоматов
+    # происходит на клиенте
     delivery_type = request.GET.get('type', 'pvz')
-    point_type = 'pickup_point' if delivery_type == 'pvz' else 'postat'
+    point_type = 'pickup_point'  # Всегда запрашиваем pickup_point, фильтруем на клиенте
 
     service = YandexDeliveryService()
     result = service.get_pickup_points(

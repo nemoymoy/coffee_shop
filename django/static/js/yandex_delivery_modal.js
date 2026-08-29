@@ -248,12 +248,26 @@ const YandexDeliveryWidget = (() => {
 
     async function loadPvzPoints(type) {
         try {
-            const pointType = type === 'postomat' ? 'postomat' : 'pvz';
-            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=${pointType}`);
+            // Всегда запрашиваем все точки (pickup_point), фильтруем на клиенте
+            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
             if (!data.success || !data.points?.length) {
                 return { success: false };
             }
-            return { success: true, points: data.points };
+
+            // Фильтруем точки по типу
+            let filteredPoints = data.points;
+            if (type === 'postomat') {
+                // Для постоматов фильтруем по type=terminal
+                filteredPoints = data.points.filter(p => p.type === 'terminal');
+                console.log('[YandexDelivery] loadPvzPoints: all points=', data.points.length, 'terminal points=', filteredPoints.length);
+            }
+
+            if (!filteredPoints.length) {
+                console.warn('[YandexDelivery] No points found for type:', type);
+                return { success: false };
+            }
+
+            return { success: true, points: filteredPoints };
         } catch (err) {
             console.error('[YandexDelivery] Load PVZ error:', err);
             return { success: false };
@@ -887,13 +901,15 @@ const YandexDeliveryWidget = (() => {
         const pointType = state.selectedType === 'postomat' ? 'postomat' : 'pvz';
         const pointLabel = state.selectedType === 'postomat' ? 'Постоматы' : 'ПВЗ';
 
+        console.log('[YandexDelivery] loadPvzOnMap: selectedType=', state.selectedType, 'pointType=', pointType);
+
         if (costEl) costEl.textContent = `Загрузка ${pointLabel}...`;
 
         const data = await loadPvzPoints(pointType);
         if (costEl) costEl.textContent = originalText;
 
         if (!data.success || !data.points?.length) {
-            console.warn('[YandexDelivery] No', pointLabel);
+            console.warn('[YandexDelivery] No', pointLabel, '(selectedType:', state.selectedType + ')');
             showMapError(`${pointLabel} временно недоступны`);
             return;
         }
