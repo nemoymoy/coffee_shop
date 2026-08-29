@@ -413,33 +413,45 @@ class YandexDeliveryService:
     def _fetch_postamats(self, operator_ids, center_lat, center_lon,
                          radius_km, max_results, cache_key) -> dict:
         """
-        Fetch postamats from Yandex API with pagination support.
+        Fetch postamats from Yandex API.
 
-        Handles offset-based pagination to fetch all points if there are
-        more than the initial page size.
+        Note: Yandex API uses 'terminal' type for postamats (not 'postamat').
+        Requesting 'pickup_point' returns only PVZ points. Use 'terminal' to get postamats directly.
 
-        Note: Yandex API uses 'postamat' type for terminals (not 'terminal').
-        We request 'postamat' type directly to avoid fetching 100k+ PVZ points.
+        Optimization: We only fetch the first page (limit=100) and filter by radius on our side.
+        The API ignores center+radius params, so pagination would fetch 22k+ points across Russia.
         """
-        all_points = []
-        offset = 0
         page_size = 100  # API page size
-        has_more = True
-        total_fetched = 0
 
-        while has_more:
-            payload = {
-                'operator_ids': operator_ids,
-                'type': 'terminal',  # Terminal/postamat type (not 'pickup_point')
-                'offset': offset,
-                'limit': page_size,
+        payload = {
+            'operator_ids': operator_ids,
+            'type': 'terminal',  # Terminal/postamat type (not 'pickup_point')
+            'limit': page_size,
+        }
+
+        headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.api_key}',
+        }
+
+        try:
+            response = requests.post(
+                self.PICKUP_POINTS_URL,
+                json=payload,
+                headers=headers,
+                timeout=15,
+            )
+        except requests.exceptions.Timeout:
+            logger.error('_fetch_postamats: timeout')
+            return {
+                'success': False,
+                'error': 'Таймаут запроса к API',
             }
 
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {self.api_key}',
-            }
-
+        # Handle 429 Too Many Requests with retry
+        if response.status_code == 429:
+            logger.warning('Rate limited, retrying after 60s')
+            time.sleep(60)
             try:
                 response = requests.post(
                     self.PICKUP_POINTS_URL,
@@ -448,88 +460,50 @@ class YandexDeliveryService:
                     timeout=15,
                 )
             except requests.exceptions.Timeout:
-                logger.error('_fetch_postamats: timeout at offset=%d', offset)
                 return {
                     'success': False,
-                    'error': 'Таймаут запроса к API',
+                    'error': 'Таймаут при повторном запросе',
                 }
 
-            # Handle 429 Too Many Requests with retry
-            if response.status_code == 429:
-                logger.warning('Rate limited at offset=%d, retrying after 60s', offset)
-                time.sleep(60)
-                try:
-                    response = requests.post(
-                        self.PICKUP_POINTS_URL,
-                        json=payload,
-                        headers=headers,
-                        timeout=15,
-                    )
-                except requests.exceptions.Timeout:
-                    return {
-                        'success': False,
-                        'error': 'Таймаут при повторном запросе',
-                    }
+        if response.status_code == 401:
+            logger.error('_fetch_postamats: 401 Unauthorized — invalid token')
+            return {
+                'success': False,
+                'error': 'Невалидный OAuth-токен. Проверьте YANDEX_DELIVERY_TOKEN',
+            }
 
-            if response.status_code == 401:
-                logger.error('_fetch_postamats: 401 Unauthorized — invalid token')
-                return {
-                    'success': False,
-                    'error': 'Невалидный OAuth-токен. Проверьте YANDEX_DELIVERY_TOKEN',
-                }
-
-            if response.status_code != 200:
-                logger.error(
-                    '_fetch_postamats failed: status=%s body=%s',
-                    response.status_code, response.text[:500],
-                )
-                return {
-                    'success': False,
-                    'error': f'Ошибка API: {response.status_code}',
-                }
-
-            try:
-                data = response.json()
-            except ValueError:
-                logger.error('_fetch_postamats: invalid JSON response')
-                return {
-                    'success': False,
-                    'error': 'Некорректный ответ от API',
-                }
-
-            page_points = data.get('points', [])
-            all_points.extend(page_points)
-            total_fetched += len(page_points)
-
-            logger.info(
-                '_fetch_postamats: page offset=%d fetched=%d total_all=%d',
-                offset, len(page_points), total_fetched,
+        if response.status_code != 200:
+            logger.error(
+                '_fetch_postamats failed: status=%s body=%s',
+                response.status_code, response.text[:500],
             )
+            return {
+                'success': False,
+                'error': f'Ошибка API: {response.status_code}',
+            }
 
-            # Log types distribution for debugging
-            types_count = {}
-            for p in page_points:
-                t = p.get('type', 'unknown')
-                types_count[t] = types_count.get(t, 0) + 1
-            logger.info('_fetch_postamats: page types=%s', types_count)
+        try:
+            data = response.json()
+        except ValueError:
+            logger.error('_fetch_postamats: invalid JSON response')
+            return {
+                'success': False,
+                'error': 'Некорректный ответ от API',
+            }
 
-            # Check if there are more pages
-            if len(page_points) < page_size:
-                has_more = False
-            else:
-                offset += page_size
-                # Safety limit: max 10 pages
-                if offset >= page_size * 10:
-                    logger.warning('_fetch_postamats: max pages reached')
-                    has_more = False
+        page_points = data.get('points', [])
+        logger.info('_fetch_postamats: fetched=%d', len(page_points))
 
-        logger.info(
-            '_fetch_postamats: total points fetched=%d', total_fetched,
-        )
+        # Log types distribution for debugging
+        types_count = {}
+        for p in page_points:
+            t = p.get('type', 'unknown')
+            types_count[t] = types_count.get(t, 0) + 1
+        logger.info('_fetch_postamats: page types=%s', types_count)
 
         # Фильтруем только постоматы (type=terminal)
-        postamats = [p for p in all_points if p.get('type') == 'terminal']
-        logger.info('get_postamats: terminals found=%d out of %d total', len(postamats), total_fetched)
+        postamats = [p for p in page_points if p.get('type') == 'terminal']
+        logger.info('get_postamats: terminals found=%d out of %d total', len(postamats), len(page_points))
 
         if not postamats:
             result = {
