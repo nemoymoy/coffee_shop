@@ -57,11 +57,9 @@ class OrderForm(CheckoutForm):
         }),
         required=False
     )
-    delivery_cost = forms.DecimalField(
+    delivery_cost = forms.CharField(
         required=False,
         widget=forms.HiddenInput(),
-        max_digits=10,
-        decimal_places=2,
     )
 
     def clean_delivery_cost(self):
