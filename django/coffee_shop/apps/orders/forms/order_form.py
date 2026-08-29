@@ -1,4 +1,6 @@
 """Order form."""
+from decimal import Decimal
+
 from django import forms
 from .checkout_form import CheckoutForm
 
@@ -61,6 +63,16 @@ class OrderForm(CheckoutForm):
         max_digits=10,
         decimal_places=2,
     )
+
+    def clean_delivery_cost(self):
+        """Clean delivery_cost: convert comma to dot for DecimalField."""
+        value = self.cleaned_data.get('delivery_cost', '')
+        if not value:
+            return Decimal('0')
+        # Convert comma to dot (JS formats prices as '350,00' in Russian locale)
+        if isinstance(value, str):
+            value = value.replace(',', '.')
+        return value
 
     def clean(self):
         cleaned_data = super().clean()
