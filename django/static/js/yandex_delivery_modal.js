@@ -1000,7 +1000,7 @@ const YandexDeliveryWidget = (() => {
             const placemark = new ymaps.Placemark([point.latitude, point.longitude], {
                 hintContent: point.name,
                 balloonContent: balloonContent,
-            }, { preset: state.selectedType === 'postomat' ? 'islands#darkBlueCircleIcon' : 'islands#darkGreenCircleIcon' });
+            }, { preset: state.selectedType === 'postomat' ? 'islands#redCircleIcon' : 'islands#darkGreenShoppingIcon' });
 
             placemark.events.add('click', () => {
                 console.log('[YandexDelivery] Point clicked:', point.name);
