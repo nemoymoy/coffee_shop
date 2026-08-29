@@ -246,9 +246,10 @@ const YandexDeliveryWidget = (() => {
         }
     }
 
-    async function loadPvzPoints() {
+    async function loadPvzPoints(type) {
         try {
-            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
+            const pointType = type === 'postomat' ? 'postomat' : 'pvz';
+            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=${pointType}`);
             if (!data.success || !data.points?.length) {
                 return { success: false };
             }
@@ -881,39 +882,44 @@ const YandexDeliveryWidget = (() => {
     async function loadPvzOnMap() {
         const costEl = $('#widgetCost');
         const originalText = costEl?.textContent || '';
-        if (costEl) costEl.textContent = 'Загрузка ПВЗ...';
 
-        const data = await loadPvzPoints();
+        // Определяем тип точек для загрузки
+        const pointType = state.selectedType === 'postomat' ? 'postomat' : 'pvz';
+        const pointLabel = state.selectedType === 'postomat' ? 'Постоматы' : 'ПВЗ';
+
+        if (costEl) costEl.textContent = `Загрузка ${pointLabel}...`;
+
+        const data = await loadPvzPoints(pointType);
         if (costEl) costEl.textContent = originalText;
 
         if (!data.success || !data.points?.length) {
-            console.warn('[YandexDelivery] No PVZs');
-            showMapError('Пункты выдачи временно недоступны');
+            console.warn('[YandexDelivery] No', pointLabel);
+            showMapError(`${pointLabel} временно недоступны`);
             return;
         }
 
-        console.log('[YandexDelivery] Loaded', data.points.length, 'PVZs');
+        console.log('[YandexDelivery] Loaded', data.points.length, pointLabel);
 
         state.pvzPlacemarks = [];
 
-        data.points.forEach((pvz) => {
-            if (!pvz.latitude || !pvz.longitude) return;
+        data.points.forEach((point) => {
+            if (!point.latitude || !point.longitude) return;
 
-            const placemark = new ymaps.Placemark([pvz.latitude, pvz.longitude], {
-                hintContent: pvz.name,
-                balloonContent: `<strong>${YandexDeliveryUtils.escapeHtml(pvz.name)}</strong><br>${YandexDeliveryUtils.escapeHtml(pvz.address)}`,
-            }, { preset: 'islands#darkGreenCircleIcon' });
+            const placemark = new ymaps.Placemark([point.latitude, point.longitude], {
+                hintContent: point.name,
+                balloonContent: `<strong>${YandexDeliveryUtils.escapeHtml(point.name)}</strong><br>${YandexDeliveryUtils.escapeHtml(point.address)}`,
+            }, { preset: state.selectedType === 'postomat' ? 'islands#darkBlueCircleIcon' : 'islands#darkGreenCircleIcon' });
 
             placemark.events.add('click', () => {
-                console.log('[YandexDelivery] PVZ clicked:', pvz.name);
-                // Используем полное описание адреса ПВЗ
-                const pvzLabel = pvz.name + (pvz.address ? ' — ' + pvz.address : '');
+                console.log('[YandexDelivery] Point clicked:', point.name);
+                // Используем полное описание адреса
+                const pointLabelFull = point.name + (point.address ? ' — ' + point.address : '');
                 handlePointSelected({
-                    id: pvz.id,
-                    name: pvz.name,
-                    address: pvz.address || pvzLabel,
-                    fullAddress: pvzLabel,
-                    coordinates: [pvz.longitude, pvz.latitude],
+                    id: point.id,
+                    name: point.name,
+                    address: point.address || pointLabelFull,
+                    fullAddress: pointLabelFull,
+                    coordinates: [point.longitude, point.latitude],
                 });
             });
 
