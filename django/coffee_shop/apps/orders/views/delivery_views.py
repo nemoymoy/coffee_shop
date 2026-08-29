@@ -236,26 +236,29 @@ def pvz_locations_view(request):
         "count": 42
     }
     """
-    # Всегда запрашиваем все точки (pickup_point), фильтрация по type=terminal для постоматов
-    # происходит на клиенте
     delivery_type = request.GET.get('type', 'pvz')
-    point_type = 'pickup_point'  # Всегда запрашиваем pickup_point, фильтруем на клиенте
+    # Фильтруем на бэкенде: для ПВЗ — только pickup_point, для постоматов — отдельный endpoint
 
     service = YandexDeliveryService()
     result = service.get_pickup_points(
         operator_ids=['market_l4g'],
-        point_type=point_type,
+        point_type='pickup_point',
         center_lat=getattr(settings, 'YANDEX_SHOP_LAT', 53.216940239129094),
         center_lon=getattr(settings, 'YANDEX_SHOP_LON', 50.162688008923745),
         radius_km=50,
         max_results=500,
     )
 
+    # Фильтруем точки по типу
+    points = result.get('points', [])
+    if delivery_type == 'pvz':
+        points = [p for p in points if p.get('type') == 'pickup_point']
+
     if result.get('success'):
         return JsonResponse({
             'success': True,
-            'points': result.get('points', []),
-            'count': result.get('count', 0),
+            'points': points,
+            'count': len(points),
         })
     else:
         logger.warning('pvz_locations: %s', result.get('error'))
