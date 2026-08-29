@@ -86,11 +86,12 @@ const YandexDeliveryUtils = (() => {
 
     /**
      * Устанавливает value поля формы.
-     * @param {string} fieldId
+     * @param {string} fieldId - ID поля (с # или без)
      * @param {string} value
      */
     function setFieldValue(fieldId, value) {
-        const field = $(fieldId);
+        const selector = fieldId.startsWith('#') ? fieldId : '#' + fieldId;
+        const field = $(selector);
         if (field) field.value = value;
     }
 
