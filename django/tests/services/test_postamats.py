@@ -323,18 +323,18 @@ class TestGetPostamats:
         assert len(result['points']) <= 5
 
 
-class TestFetchPostamatsPagination:
-    """Tests for pagination handling in _fetch_postamats."""
+class TestFetchPostamatsSinglePage:
+    """Tests for single-page fetch (pagination removed for performance)."""
 
-    def test_pagination_fetches_all_pages(self, settings):
-        """Fetches multiple pages when there are more points than page_size.
+    def test_single_page_fetch(self, settings):
+        """Only one page is fetched (pagination removed for performance).
 
-        Note: API uses type='terminal' for postamats.
+        Note: API ignores center+radius, so pagination would fetch 22k+ points.
+        We now fetch only the first page (limit=100) and filter by radius.
         """
         settings.YANDEX_DELIVERY_TOKEN = 'dev-token-test'
 
-        # Page 1: 100 points (page_size) - all terminal type
-        page1_points = [
+        page_points = [
             {
                 'id': f'terminal-{i}',
                 'name': f'Постомат {i}',
@@ -347,31 +347,13 @@ class TestFetchPostamatsPagination:
             for i in range(100)
         ]
 
-        # Page 2: 50 points (remaining)
-        page2_points = [
-            {
-                'id': f'terminal-{i}',
-                'name': f'Постомат {i}',
-                'type': 'terminal',
-                'operator_id': 'market_l4g',
-                'position': {'latitude': 53.21, 'longitude': 50.16},
-                'address': {'full_address': f'Адрес {i}'},
-                'work_schedule': {},
-            }
-            for i in range(100, 150)
-        ]
-
         call_count = [0]
 
         def side_effect(*args, **kwargs):
             call_count[0] += 1
             mock = MagicMock()
-            if call_count[0] == 1:
-                mock.status_code = 200
-                mock.json.return_value = {'points': page1_points}
-            else:
-                mock.status_code = 200
-                mock.json.return_value = {'points': page2_points}
+            mock.status_code = 200
+            mock.json.return_value = {'points': page_points}
             return mock
 
         with patch('requests.post', side_effect=side_effect):
@@ -379,8 +361,8 @@ class TestFetchPostamatsPagination:
             result = service.get_postamats()
 
         assert result['success'] is True
-        # All 150 terminals should be fetched (before geo-filter)
-        assert call_count[0] == 2  # Two pages fetched
+        # Only one request should be made (no pagination)
+        assert call_count[0] == 1
 
 
 class TestHaversineDistance:
