@@ -205,13 +205,32 @@ const YandexDeliveryWidget = (() => {
                 await loadPackagesFromAPI();
             }
 
-            const data = await apiPost(CONFIG.CALCULATE_DELIVERY_URL, {
+            const payload = {
                 destination_coords: coords,
                 destination_address: address,
                 pvz_id: pvzId || null,
                 delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
                 cart_items: cartState.items,
+            };
+
+            // Логирование данных для отладки расчета доставки
+            console.log('[YandexDelivery] === Данные для расчета доставки ===');
+            console.log('[YandexDelivery] Тип доставки:', payload.delivery_type);
+            console.log('[YandexDelivery] Координаты:', payload.destination_coords);
+            console.log('[YandexDelivery] Адрес:', payload.destination_address);
+            console.log('[YandexDelivery] ПВЗ ID:', payload.pvz_id);
+            console.log('[YandexDelivery] Товары в корзине:');
+            cartState.items.forEach((item, i) => {
+                console.log(`  Товар №${i + 1}: ${item.weight}г`);
             });
+            const summary = getCartSummary();
+            const totalProductWeight = cartState.items.reduce((sum, item) => sum + item.weight * item.quantity, 0);
+            const tare = findPackageForWeight(totalProductWeight);
+            const tareWeightGrams = tare ? parseFloat(tare.tare_weight) * 1000 : 0;
+            console.log('[YandexDelivery] Вес тары:', tareWeightGrams, 'г');
+            console.log('[YandexDelivery] ==========================================');
+
+            const data = await apiPost(CONFIG.CALCULATE_DELIVERY_URL, payload);
             if (data.success && data.price != null) {
                 return { success: true, price: data.price, delivery_days: data.delivery_days };
             }
