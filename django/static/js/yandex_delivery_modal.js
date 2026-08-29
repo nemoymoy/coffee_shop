@@ -1003,18 +1003,24 @@ const YandexDeliveryWidget = (() => {
             }, { preset: state.selectedType === 'postomat' ? 'islands#redShoppingIcon' : 'islands#darkGreenShoppingIcon' });
 
             placemark.events.add('click', () => {
-                console.log('[YandexDelivery] Point clicked:', point.name);
-                // Используем полное описание адреса
-                const pointLabelFull = point.name + (point.address ? ' — ' + point.address : '');
-                handlePointSelected({
-                    id: point.id,
-                    name: point.name,
-                    address: point.address || pointLabelFull,
-                    fullAddress: pointLabelFull,
-                    coordinates: [point.longitude, point.latitude],
-                    work_schedule: point.work_schedule || {},
-                    distance_km: point.distance_km,
-                });
+                try {
+                    console.log('[YandexDelivery] Point clicked:', point.name);
+                    // Используем полное описание адреса
+                    const pointLabelFull = point.name + (point.address ? ' — ' + point.address : '');
+                    handlePointSelected({
+                        id: point.id,
+                        name: point.name,
+                        address: point.address || pointLabelFull,
+                        fullAddress: pointLabelFull,
+                        coordinates: [point.longitude, point.latitude],
+                        work_schedule: point.work_schedule || {},
+                        distance_km: point.distance_km,
+                    });
+                } catch (err) {
+                    console.error('[YandexDelivery] Point click error:', err);
+                    // Показываем подсказку вместо ошибки
+                    showPointSelectionHint();
+                }
             });
 
             state.pvzPlacemarks.push(placemark);
