@@ -216,7 +216,13 @@ class TestYandexDeliveryService:
         assert len(items) == 1
         assert items[0]['quantity'] == order_item.quantity
         assert items[0]['title'] == order_item.product.name
-        assert items[0]['weight'] == 0.25  # 250g in kg
+        # Вес = вес товара (0.25 кг) + вес тары (0.050 кг)
+        assert items[0]['weight'] == pytest.approx(0.30, abs=0.001)
+        assert items[0]['size'] == {
+            'length': 0.20,
+            'width': 0.12,
+            'height': 0.12,
+        }
 
     def test_build_items_payload_without_package(self, coffee_beans, user):
         # Test building items payload without package
@@ -244,8 +250,10 @@ class TestYandexDeliveryService:
         items = service.build_items_payload([order_item])
 
         assert len(items) == 1
-        assert items[0]['weight'] == 0.5  # default weight
-        assert items[0]['size']['length'] == 0.20  # default size
+        # weight_grams=0, Package.for_weight(0) returns 'light' (tare=0.023kg)
+        # weight_kg=0.0 + tare=0.023 = 0.023
+        assert items[0]['weight'] == pytest.approx(0.023, abs=0.001)
+        assert items[0]['size']['length'] == pytest.approx(0.12, abs=0.001)
 
 
 class TestRateLimiting:

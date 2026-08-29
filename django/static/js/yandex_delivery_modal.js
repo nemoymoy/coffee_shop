@@ -1,1085 +1,1048 @@
 /**
- * Coffee Shop — Yandex Delivery Modal Widget.
+ * Coffee Shop — Yandex Delivery Modal Widget (Refactored).
  *
- * Управляет модальным окном выбора доставки:
- * 1. Открытие модального окна по кнопке #openDeliveryModal
- * 2. Выбор типа доставки (courier / pvz / postomat)
- * 3. Ввод адреса и расчёт стоимости
- * 4. Подтверждение выбора и обновление полей формы
+ * Чистая архитектура с разделением ответственности:
+ * - state: централизованное управление состоянием
+ * - config: константы
+ * - api: все HTTP запросы
+ * - ui: DOM манипуляции, навигация по шагам, управление модалкой
+ * - map: инициализация Яндекс Карт, метки, события
+ * - autocomplete: автокомплит адреса
+ * - validation: валидация формы
+ * - delivery: обновление сводки доставки
  */
-var YandexDeliveryWidget = (function () {
+const YandexDeliveryWidget = (() => {
 
     /* ==================== State ==================== */
-
-    var state = {
-        selectedType: null,
+    const state = {
+        selectedType: null,       // 'courier' | 'pvz' | 'postomat'
         selectedAddress: '',
-        selectedCoords: '',
+        selectedCoords: [],
         selectedPvzId: '',
         selectedPvzName: '',
         estimatedCost: 0,
-        modalInstance: null,
         step: 1,
-        yandexWidgetLoaded: false,
-        yandexWidgetInitialized: false,
+        ymapsLoaded: false,
+        ymapsReady: false,
+        mapInstance: null,
         selectedPlacemark: null,
-        mapInstance: null
+        pvzPoints: [],
+        bootstrapModal: null,
+        visible: false,
+        debounceTimer: null,
+        autocompleteIndex: -1,
+        suggestions: [],
     };
 
     /* ==================== Config ==================== */
-
-    var CONFIG = {
+    const CONFIG = {
         CALCULATE_DELIVERY_URL: '/checkout/calculate-delivery/',
         GEOCODE_URL: '/checkout/geocode-address/',
-        GEOCODE_DEBOUNCE_MS: 800
+        PVZ_LOCATIONS_URL: '/checkout/pvz-locations/',
+        DEBOUNCE_MS: 600,
+        SHOP_LAT: window.YANDEX_SHOP_LAT ?? 53.216940239129094,
+        SHOP_LON: window.YANDEX_SHOP_LON ?? 50.162688008923745,
     };
 
+    /* ==================== Cart State ==================== */
+    const cartState = {
+        items: [],  // [{product_id, weight, quantity, price}]
+        packages: [],  // [{weight_range, length, width, height, tare_weight}]
+        packagesLoaded: false,
+    };
+
+    /* ==================== Tare Package Management ==================== */
+    async function loadPackagesFromAPI() {
+        if (cartState.packagesLoaded) return;
+        try {
+            const result = await apiGet('/checkout/packages/');
+            if (result.success && result.packages?.length) {
+                cartState.packages = result.packages;
+                cartState.packagesLoaded = true;
+                console.log('[YandexDelivery] Packages loaded from API:', cartState.packages);
+            }
+        } catch (err) {
+            console.error('[YandexDelivery] Failed to load packages:', err);
+        }
+    }
+
+    /**
+     * Определяет тара по весу товара используя данные из БД.
+     */
+    function findPackageForWeight(weightGrams) {
+        if (weightGrams <= 100) {
+            return cartState.packages.find(p => p.weight_range === 'light');
+        } else if (weightGrams <= 500) {
+            return cartState.packages.find(p => p.weight_range === 'medium');
+        } else if (weightGrams <= 2000) {
+            return cartState.packages.find(p => p.weight_range === 'heavy');
+        } else if (weightGrams <= 5000) {
+            return cartState.packages.find(p => p.weight_range === 'xl');
+        } else {
+            return cartState.packages.find(p => p.weight_range === 'xxl');
+        }
+    }
+
+    /* ==================== Cart from Page ==================== */
+    function loadCartFromPage() {
+        cartState.items = [];
+
+        // Ищем элементы корзины в правой колонке (карточка "Ваш заказ")
+        const orderCard = document.querySelector('.col-md-4 .card-body');
+        if (!orderCard) {
+            console.warn('[YandexDelivery] Order card not found');
+            return cartState.items;
+        }
+
+        // Пропускаем первую строку (итого за товары), берём элементы товаров
+        const rows = orderCard.querySelectorAll('.d-flex.justify-content-between');
+        let itemIndex = 0;
+
+        rows.forEach((row, index) => {
+            // Пропускаем заголовок "Ваш заказ" и строки итогов (Стоимость товаров, Доставка, Итого)
+            // Строки товаров содержат <strong>название товара</strong> и <small>вес г</small>
+            const strongEl = row.querySelector('strong');
+            const smallEl = row.querySelector('small');
+
+            if (!strongEl) return; // Это не строка товара (заголовок или итого)
+
+            const weightMatch = smallEl ? smallEl.textContent.match(/(\d+)/) : null;
+            const weight = weightMatch ? parseInt(weightMatch[1]) : 250;
+
+            const priceText = row.querySelector('span:last-child')?.textContent || '0';
+            const price = parseFloat(priceText.replace(/[\s₽]/g, '').replace(',', '.')) || 0;
+
+            cartState.items.push({
+                product_id: 'temp_' + itemIndex,
+                weight: weight,
+                quantity: 1,
+                price: price,
+            });
+            itemIndex++;
+        });
+
+        console.log('[YandexDelivery] Cart loaded from page:', cartState.items);
+        return cartState.items;
+    }
+
+    /**
+     * Рассчитывает общее количество товаров и общий вес для отображения в карточке расчета.
+     * Сначала суммирует вес всех товаров, затем выбирает ОДНУ тару для суммарного веса.
+     */
+    function getCartSummary() {
+        const totalItems = cartState.items.reduce((sum, item) => sum + item.quantity, 0);
+        
+        // 1. Суммируем вес всех товаров
+        let totalProductWeightGrams = 0;
+        for (const item of cartState.items) {
+            totalProductWeightGrams += item.weight * item.quantity;
+        }
+        
+        // 2. Выбираем ОДНУ тару для суммарного веса
+        const package = findPackageForWeight(totalProductWeightGrams);
+        const tareWeightGrams = package ? parseFloat(package.tare_weight) * 1000 : 0;
+        
+        // 3. Общий вес = вес товаров + вес тары
+        return { totalItems, totalWeight: totalProductWeightGrams + tareWeightGrams };
+    }
+
+    /* ==================== API Layer ==================== */
+
+    async function apiPost(url, body) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': YandexDeliveryUtils.getCsrfToken(),
+            },
+            body: JSON.stringify(body),
+        });
+        const text = await response.text();
+        try {
+            return JSON.parse(text);
+        } catch {
+            console.error('[YandexDelivery] Server returned non-JSON:', text.substring(0, 200));
+            return { success: false, error: 'Ошибка сервера' };
+        }
+    }
+
+    async function apiGet(url) {
+        const response = await fetch(url, {
+            headers: {
+                'X-CSRFToken': YandexDeliveryUtils.getCsrfToken(),
+            },
+        });
+        return response.json();
+    }
+
+    async function geocodeAddress(query) {
+        if (!query || query.length < 3) {
+            return { success: false, error: 'Слишком короткий запрос' };
+        }
+        try {
+            const data = await apiPost(CONFIG.GEOCODE_URL, { query });
+            if (data.rate_limited || data.api_error) {
+                return { success: false, error: 'Сервис геокодинга временно недоступен' };
+            }
+            if (!data.success || !data.features?.length) {
+                return { success: false, error: 'Адрес не найден' };
+            }
+            return { success: true, features: data.features };
+        } catch (err) {
+            console.error('[YandexDelivery] Geocode error:', err);
+            return { success: false, error: 'Сетевая ошибка' };
+        }
+    }
+
+    async function calculateDelivery(coords, address, deliveryType, pvzId) {
+        try {
+            // Load cart items from DOM if not already loaded
+            if (cartState.items.length === 0) {
+                loadCartFromPage();
+            }
+            // Load packages from API if not already loaded
+            if (!cartState.packagesLoaded) {
+                await loadPackagesFromAPI();
+            }
+
+            const data = await apiPost(CONFIG.CALCULATE_DELIVERY_URL, {
+                destination_coords: coords,
+                destination_address: address,
+                pvz_id: pvzId || null,
+                delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
+                cart_items: cartState.items,
+            });
+            if (data.success && data.price != null) {
+                return { success: true, price: data.price, delivery_days: data.delivery_days };
+            }
+            return { success: false, error: data.error || 'Не удалось рассчитать стоимость' };
+        } catch (err) {
+            console.error('[YandexDelivery] Calculate error:', err);
+            return { success: false, error: 'Сетевая ошибка' };
+        }
+    }
+
+    async function loadPvzPoints() {
+        try {
+            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
+            if (!data.success || !data.points?.length) {
+                return { success: false };
+            }
+            return { success: true, points: data.points };
+        } catch (err) {
+            console.error('[YandexDelivery] Load PVZ error:', err);
+            return { success: false };
+        }
+    }
+
     /* ==================== DOM Helpers ==================== */
-
-    function $(selector) {
-        return document.querySelector(selector);
-    }
-
-    function $$(selector) {
-        return document.querySelectorAll(selector);
-    }
-
-    function showElement(el) {
-        if (el) el.style.display = 'block';
-    }
-
-    function hideElement(el) {
-        if (el) el.style.display = 'none';
-    }
+    const $ = (selector) => document.querySelector(selector);
+    const $$ = (selector) => document.querySelectorAll(selector);
+    const show = (el) => el?.classList.remove('d-none');
+    const hide = (el) => el?.classList.add('d-none');
 
     /* ==================== Modal Management ==================== */
-
     function initModal() {
-        var modalEl = document.getElementById('deliveryModal');
+        const modalEl = $('#deliveryModal');
         if (!modalEl) {
-            console.error('[YandexDeliveryModal] Modal #deliveryModal not found');
+            console.log('[YandexDelivery] No modal found, skipping (only needed on checkout page)');
             return;
         }
 
-        if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-            state.modalInstance = new bootstrap.Modal(modalEl, {
-                backdrop: true,
-                keyboard: true
-            });
-        } else {
-            console.warn('[YandexDeliveryModal] Bootstrap Modal not available');
+        if (typeof bootstrap === 'undefined' || !bootstrap.Modal) {
+            console.warn('[YandexDelivery] Bootstrap Modal not available');
             return;
         }
 
-        // Сброс шагов при открытии
-        modalEl.addEventListener('show.bs.modal', function () {
-            resetModal();
-            showStep(1);
+        state.bootstrapModal = new bootstrap.Modal(modalEl, { backdrop: true, keyboard: true });
+
+        modalEl.addEventListener('show.bs.modal', () => {
+            resetState();
+            goToStep(1);
         });
 
-        // Подтверждение выбора
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-        if (confirmBtn) {
-            confirmBtn.addEventListener('click', handleConfirm);
-        }
-
-        // Выбор типа доставки → переход к шагу 2
-        var typeRadios = $$('.form-check input[name="yandex_delivery_type"]');
-        for (var i = 0; i < typeRadios.length; i++) {
-            (function (radio) {
-                radio.addEventListener('change', function () {
-                    state.selectedType = this.value;
-                    // Разблокируем кнопку только если уже есть расчёт (шаг 3)
-                    updateConfirmButtonState();
-                    // Переходим к шагу ввода адреса
-                    showStep(2);
-                });
-            })(typeRadios[i]);
-        }
-
-        // Слушатель закрытия модалки (крестик/отмена)
-        modalEl.addEventListener('hidden.bs.modal', function () {
-            // Сбрасываем поля формы если пользователь отменил
-            resetModal();
+        modalEl.addEventListener('hidden.bs.modal', () => {
+            resetState();
+            state.visible = false;
         });
 
-        // Обработка ввода адреса для расчёта
-        initAddressHandling();
+        // Выбор типа доставки (делегирование на модальное окно)
+        const step1Container = modalEl.querySelector('#deliveryStep1');
+        step1Container?.addEventListener('change', (e) => {
+            if (e.target.matches('input[name="yandex_delivery_type"]')) {
+                state.selectedType = e.target.value;
+                goToStep(2);
+                updateConfirmButton();
+            }
+        });
+
+        // Автокомплит
+        initAutocomplete();
+
+        // Подтверждение
+        $('#confirmDeliveryBtn')?.addEventListener('click', handleConfirm);
+
+        // Кнопка открытия
+        $('#openDeliveryModal')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            openModal();
+        });
+
+        state.visible = true;
     }
 
-    /* ==================== Step Navigation ==================== */
+    function openModal() {
+        state.bootstrapModal?.show();
+    }
 
-    function showStep(stepNumber) {
+    function closeModal() {
+        state.bootstrapModal?.hide();
+    }
+
+    function goToStep(stepNumber) {
         state.step = stepNumber;
+        const step1 = $('#deliveryStep1');
+        const step2 = $('#deliveryStep2');
+        const step3 = $('#deliveryStep3');
+        const widgetContainer = $('#yandexDeliveryWidgetContainer');
+        const addressInputWrap = $('#yandexAddressInputWrap');
+        const mapWarning = $('#mapUnavailableWarning');
 
-        var step1 = document.getElementById('deliveryStep1');
-        var step2 = document.getElementById('deliveryStep2');
-        var step3 = document.getElementById('deliveryStep3');
-        var widgetContainer = document.getElementById('yandexDeliveryWidgetContainer');
-        var addressInputWrap = document.getElementById('yandexAddressInputWrap');
-        var mapWarning = document.getElementById('mapUnavailableWarning');
+        hide(step1);
+        hide(step2);
+        hide(step3);
 
-        // Скрываем все шаги
-        hideElement(step1);
-        hideElement(step2);
-        hideElement(step3);
-
-        switch (stepNumber) {
-            case 1:
-                showElement(step1);
-                break;
-            case 2:
-                showElement(step2);
+        if (stepNumber === 1) {
+            show(step1);
+        } else if (stepNumber === 2) {
+            show(step2);
+            if (state.selectedType === 'courier') {
+                hide(widgetContainer);
+                hide(mapWarning);
+                hide($('#selectedPvzInfo'));
+                show(addressInputWrap);
+            } else {
+                hide(addressInputWrap);
+                hide(mapWarning);
+                show(widgetContainer);
+                hide($('#selectedPvzInfo'));
+                loadYmaps();
+            }
+        } else if (stepNumber === 3) {
+            if (state.selectedType === 'courier') {
+                show(step2);
+                hide(widgetContainer);
+                show(addressInputWrap);
+                hide($('#selectedPvzInfo'));
+            } else {
+                show(step3);
+                // Карта остается видимой из шага 2 — не скрываем widgetContainer
                 
-                // Для курьера — ручной ввод адреса без виджета
-                if (state.selectedType === 'courier') {
-                    hideElement(widgetContainer);
-                    hideElement(mapWarning);
-                    showElement(addressInputWrap);
-                    break;
+                // Заполняем детали расчета
+                const calcAddress = $('#calcAddress');
+                const calcPvzBlock = $('#calcPvzBlock');
+                const calcPvzName = $('#calcPvzName');
+                const calcDeliveryType = $('#calcDeliveryType');
+                const calcItemDetails = $('#calcItemDetails');
+                
+                if (calcAddress) calcAddress.textContent = state.selectedAddress;
+                
+                if (calcDeliveryType) {
+                    const typeLabels = {
+                        pvz: '📦 Пункт выдачи (ПВЗ)',
+                        postomat: '📮 Постомат',
+                    };
+                    calcDeliveryType.textContent = typeLabels[state.selectedType] || typeLabels.pvz;
                 }
                 
-                // Для ПВЗ/Постомата — загружаем виджет Яндекс Доставки
-                hideElement(addressInputWrap);
-                hideElement(mapWarning);
-                showElement(widgetContainer);
-                
-                // Всегда пересоздаём iframe для корректной инициализации
-                loadYandexWidget();
-                break;
-            case 3:
-                // Шаг 3 показываем только для ПВЗ/Постомат
-                if (state.selectedType === 'courier') {
-                    // Для курьера — остаёмся на шаге 2 с ценой
-                    showElement(step2);
-                    hideElement(widgetContainer);
-                    showElement(addressInputWrap);
-                } else {
-                    showElement(step3);
+                if (calcItemDetails) {
+                    if (cartState.packagesLoaded) {
+                        const summary = getCartSummary();
+                        calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
+                    } else {
+                        // Fallback: show only product weight if packages not loaded
+                        const summary = getCartSummary();
+                        calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
+                    }
                 }
-                break;
+                
+                if (state.selectedPvzName && calcPvzName) {
+                    calcPvzName.textContent = state.selectedPvzName + (state.selectedAddress ? ' — ' + state.selectedAddress : '');
+                    if (calcPvzBlock) show(calcPvzBlock);
+                } else if (calcPvzBlock) {
+                    hide(calcPvzBlock);
+                }
+            }
         }
     }
 
-    /* ==================== Confirm Button State ==================== */
-
-    function updateConfirmButtonState() {
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-        if (!confirmBtn) return;
-        // Кнопка активна только если выбран тип И есть расчёт стоимости
-        confirmBtn.disabled = !(state.selectedType && state.estimatedCost > 0);
-    }
-
-    function resetModal() {
+    function resetState() {
         state.selectedType = null;
         state.selectedAddress = '';
-        state.selectedCoords = '';
+        state.selectedCoords = [];
         state.selectedPvzId = '';
         state.selectedPvzName = '';
         state.estimatedCost = 0;
         state.step = 1;
-        resetYandexWidget();
+        destroyMap();
 
-        // Сбрасываем radio-кнопки
-        var typeRadios = $$('.form-check input[name="yandex_delivery_type"]');
-        for (var i = 0; i < typeRadios.length; i++) {
-            typeRadios[i].checked = false;
-        }
+        $$('.form-check input[name="yandex_delivery_type"]').forEach(r => r.checked = false);
 
-        // Сбрасываем поле адреса
-        var addressInput = document.getElementById('yandexAddressInput');
-        if (addressInput) {
-            addressInput.value = '';
-        }
+        const addressInput = $('#yandexAddressInput');
+        if (addressInput) addressInput.value = '';
 
-        // Скрываем автокомплит
-        var autocompleteList = document.getElementById('yandexAutocompleteList');
+        const autocompleteList = $('#yandexAutocompleteList');
         if (autocompleteList) {
             autocompleteList.innerHTML = '';
-            hideElement(autocompleteList);
+            hide(autocompleteList);
         }
 
-        // Скрываем блок цены для курьера
-        var courierPriceBlock = document.getElementById('courierPriceBlock');
+        const courierPriceBlock = $('#courierPriceBlock');
         if (courierPriceBlock) {
-            courierPriceBlock.style.display = 'none';
-            courierPriceBlock.style.background = '';
-            courierPriceBlock.style.color = '';
             courierPriceBlock.innerHTML = '';
+            courierPriceBlock.style.display = 'none';
+            courierPriceBlock.classList.remove('border-danger');
         }
 
-        // Сбрасываем стоимость
-        var costEl = document.getElementById('widgetCost');
-        if (costEl) {
-            costEl.textContent = 'Расчёт...';
-        }
+        const costEl = $('#widgetCost');
+        if (costEl) costEl.textContent = 'Расчёт...';
 
-        // Отключаем кнопку подтверждения
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-        if (confirmBtn) {
-            confirmBtn.disabled = true;
-        }
+        const confirmBtn = $('#confirmDeliveryBtn');
+        if (confirmBtn) confirmBtn.disabled = true;
 
-        var etaEl = document.getElementById('widgetEta');
-        if (etaEl) etaEl.textContent = '';
-        var etaLabelEl = document.getElementById('widgetEtaLabel');
-        if (etaLabelEl) etaLabelEl.textContent = ' ETA: ';
+        hide($('#deliveryModalError'));
     }
 
-    /* ==================== Address Handling ==================== */
-
-    function initAddressHandling() {
-        var addressInput = document.getElementById('yandexAddressInput');
-        var autocompleteList = document.getElementById('yandexAutocompleteList');
+    /* ==================== Autocomplete ==================== */
+    function initAutocomplete() {
+        const addressInput = $('#yandexAddressInput');
+        const autocompleteList = $('#yandexAutocompleteList');
         if (!addressInput) return;
 
-        var autocompleteTimeout = null;
-        var suggestions = [];
+        addressInput.addEventListener('input', () => {
+            state.autocompleteIndex = -1;
+            const query = addressInput.value.trim();
 
-        // Обработка ввода для автокомплита
-        addressInput.addEventListener('input', function () {
-            var query = this.value.trim();
-            
-            if (autocompleteTimeout) {
-                clearTimeout(autocompleteTimeout);
-            }
+            if (state.debounceTimer) clearTimeout(state.debounceTimer);
 
-            // Скрываем автокомплит если мало символов
             if (query.length < 3) {
-                hideElement(autocompleteList);
+                hide(autocompleteList);
+                state.suggestions = [];
                 return;
             }
 
-            autocompleteTimeout = setTimeout(function () {
-                fetchSuggestions(query);
-            }, 600);
+            state.debounceTimer = setTimeout(() => fetchSuggestions(query), CONFIG.DEBOUNCE_MS);
         });
 
-        // Обработка клавиш
-        addressInput.addEventListener('keydown', function (e) {
-            if (!suggestions.length) return;
-            
-            var visibleItems = autocompleteList.querySelectorAll('.autocomplete-item');
-            if (!visibleItems.length) return;
+        addressInput.addEventListener('keydown', (e) => {
+            const items = autocompleteList?.querySelectorAll('.autocomplete-item');
+            if (!items?.length) return;
 
-            var highlighted = autocompleteList.querySelector('.autocomplete-item.selected');
-            var currentIndex = Array.from(visibleItems).indexOf(highlighted);
-
-            if (e.key === 'ArrowDown') {
-                e.preventDefault();
-                if (highlighted) highlighted.classList.remove('selected');
-                var nextIndex = (currentIndex + 1) % visibleItems.length;
-                visibleItems[nextIndex].classList.add('selected');
-            } else if (e.key === 'ArrowUp') {
-                e.preventDefault();
-                if (highlighted) highlighted.classList.remove('selected');
-                var prevIndex = (currentIndex - 1 + visibleItems.length) % visibleItems.length;
-                visibleItems[prevIndex].classList.add('selected');
-            } else if (e.key === 'Enter') {
-                e.preventDefault();
-                var selectedItem = autocompleteList.querySelector('.autocomplete-item.selected') || visibleItems[0];
-                if (selectedItem) {
-                    selectedItem.click();
-                }
-            } else if (e.key === 'Escape') {
-                hideElement(autocompleteList);
+            switch (e.key) {
+                case 'ArrowDown':
+                    e.preventDefault();
+                    state.autocompleteIndex = Math.min(state.autocompleteIndex + 1, items.length - 1);
+                    updateSelection(items);
+                    break;
+                case 'ArrowUp':
+                    e.preventDefault();
+                    state.autocompleteIndex = Math.max(state.autocompleteIndex - 1, 0);
+                    updateSelection(items);
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    const idx = state.autocompleteIndex >= 0 ? state.autocompleteIndex : 0;
+                    if (items[idx]) items[idx].click();
+                    break;
+                case 'Escape':
+                    hide(autocompleteList);
+                    break;
             }
         });
 
-        // Клик вне автокомплита закрывает его
-        document.addEventListener('click', function (e) {
-            if (!autocompleteList.contains(e.target) && e.target !== addressInput) {
-                hideElement(autocompleteList);
+        autocompleteList?.addEventListener('click', (e) => {
+            const item = e.target.closest('.autocomplete-item');
+            if (item?.dataset.index !== undefined) {
+                const feature = state.suggestions[+item.dataset.index];
+                if (feature) selectAutocompleteItem(feature);
+            }
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!autocompleteList?.contains(e.target) && e.target !== addressInput) {
+                hide(autocompleteList);
             }
         });
     }
 
-    function fetchSuggestions(query) {
-        var autocompleteList = document.getElementById('yandexAutocompleteList');
+    function updateSelection(items) {
+        items.forEach((item, i) => {
+            item.classList.toggle('selected', i === state.autocompleteIndex);
+        });
+    }
+
+    async function fetchSuggestions(query) {
+        const autocompleteList = $('#yandexAutocompleteList');
         if (!autocompleteList) return;
 
-        autocompleteList.innerHTML = '<div class="autocomplete-item">Поиск...</div>';
-        showElement(autocompleteList);
+        autocompleteList.innerHTML = '<div class="autocomplete-item text-muted">Поиск...</div>';
+        show(autocompleteList);
 
-        fetch(CONFIG.GEOCODE_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ query: query })
-        })
-        .then(function (response) { return response.json(); })
-        .then(function (geoData) {
-            if (geoData.rate_limited || geoData.api_error) {
-                autocompleteList.innerHTML = '<div class="autocomplete-item text-warning">⚠️ Сервис подсказок временно недоступен. Введите адрес вручную.</div>';
-                showElement(autocompleteList);
-                suggestions = [];
-                return;
-            }
+        const result = await geocodeAddress(query);
 
-            if (!geoData.success || !geoData.features || !geoData.features.length) {
-                autocompleteList.innerHTML = '<div class="autocomplete-item text-muted">Ничего не найдено</div>';
-                showElement(autocompleteList);
-                suggestions = [];
-                return;
-            }
+        if (!result.success) {
+            autocompleteList.innerHTML = `<div class="autocomplete-item text-warning">⚠️ ${result.error}. Введите вручную.</div>`;
+            state.suggestions = [];
+            return;
+        }
 
-            suggestions = geoData.features;
-            autocompleteList.innerHTML = '';
+        state.suggestions = result.features;
+        autocompleteList.innerHTML = '';
 
-            for (var i = 0; i < geoData.features.length; i++) {
-                (function (feature) {
-                    var item = document.createElement('div');
-                    item.className = 'autocomplete-item';
-                    item.textContent = feature.text;
-                    item.addEventListener('click', function () {
-                        var addressInput = document.getElementById('yandexAddressInput');
-                        if (addressInput) {
-                            addressInput.value = feature.text;
-                            state.selectedAddress = feature.text;
-                            state.selectedCoords = feature.coords ? feature.coords.join(',') : '';
-                        }
-                        hideElement(autocompleteList);
-                        suggestions = [];
-                        // Рассчитываем доставку
-                        geocodeAndCalculate(feature.text);
-                    });
-                    autocompleteList.appendChild(item);
-                })(geoData.features[i]);
-            }
-        })
-        .catch(function (err) {
-            console.error('[YandexDeliveryModal] Fetch suggestions error:', err);
-            autocompleteList.innerHTML = '<div class="autocomplete-item text-warning">Сетевая ошибка. Введите адрес вручную.</div>';
-            showElement(autocompleteList);
-        })
-        .then(function () {
-            // Убираем подсветку «Поиск...» после завершения
-            var spinner = autocompleteList.querySelector('.spinner-border');
-            if (spinner) {
-                var parent = spinner.parentElement;
-                if (parent) parent.remove();
-            }
+        state.suggestions.forEach((feature, i) => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = feature.text;
+            item.dataset.index = i;
+            autocompleteList.appendChild(item);
         });
     }
 
-    /* ==================== Manual Address Geocode ==================== */
+    function selectAutocompleteItem(feature) {
+        const addressInput = $('#yandexAddressInput');
+        if (addressInput) addressInput.value = feature.text;
+        state.selectedAddress = feature.text;
 
-    function geocodeAndCalculate(address) {
-        var costEl = document.getElementById('widgetCost');
-        var etaEl = document.getElementById('widgetEta');
-        var etaLabelEl = document.getElementById('widgetEtaLabel');
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-        var courierPriceBlock = document.getElementById('courierPriceBlock');
+        hide($('#yandexAutocompleteList'));
+        state.suggestions = [];
+        state.autocompleteIndex = -1;
 
-        // Показываем блок цены для курьера
+        geocodeAndCalculate(feature.text, feature.coords);
+    }
+    /* ==================== Geocode & Calculate ==================== */
+    async function geocodeAndCalculate(address, initialCoords) {
+        const costEl = $('#widgetCost');
+        const etaEl = $('#widgetEta');
+        const etaLabelEl = $('#widgetEtaLabel');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const courierPriceBlock = $('#courierPriceBlock');
+
         if (state.selectedType === 'courier' && courierPriceBlock) {
-            courierPriceBlock.style.display = 'block';
-            courierPriceBlock.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Расчёт стоимости...';
+            show(courierPriceBlock);
+            courierPriceBlock.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Расчёт...';
         } else if (costEl) {
-            costEl.textContent = 'Геокодинг...';
+            YandexDeliveryUtils.showLoading(costEl);
         }
 
-        // Шаг 1: геокодирование адреса для получения координат
-        fetch(CONFIG.GEOCODE_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({ query: address })
-        })
-        .then(function (response) { return response.json(); })
-        .then(function (geoData) {
-            if (!geoData.success || !geoData.features || geoData.features.length === 0) {
-                throw new Error(geoData.rate_limited ? 'Сервис геокодинга временно недоступен (rate limit)' : 'Адрес не найден. Проверьте правильность ввода.');
-            }
+        let result = await geocodeAddress(address);
+        if (!result.success) {
+            showAddrError(costEl, confirmBtn, courierPriceBlock, result.error);
+            return;
+        }
 
-            var firstResult = geoData.features[0];
-            var coords = firstResult.coords;
-            var formattedAddress = firstResult.text || address;
+        const feature = result.features[0];
+        let coords = feature.coords || initialCoords;
+        const addr = feature.text || address;
 
-            if (!coords || coords.length < 2) {
-                throw new Error('Сервер верёл адрес без координат. Попробуйте указать адрес подробнее.');
-            }
+        if (!coords || coords.length < 2) {
+            showAddrError(costEl, confirmBtn, courierPriceBlock, 'Нет координат. Укажите адрес подробнее.');
+            return;
+        }
 
-            // Шаг 2: расчёт стоимости с координатами
-            if (costEl) {
-                costEl.textContent = 'Расчёт...';
-            }
+        state.selectedCoords = coords;
+        state.selectedAddress = addr;
 
-            return fetch(CONFIG.CALCULATE_DELIVERY_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-CSRFToken': getCsrfToken()
-                },
-                body: JSON.stringify({
-                    destination_coords: coords.join(','),
-                    destination_address: formattedAddress,
-                    delivery_type: state.selectedType || 'courier'
-                })
-            }).then(function (r) { return r.json(); }).then(function (calcData) {
-                return {
-                    calcData: calcData,
-                    address: formattedAddress,
-                    coords: coords
-                };
-            });
-        })
-        .then(function (result) {
-            var calcData = result.calcData;
+        YandexDeliveryUtils.showLoading(costEl);
+        const calc = await calculateDelivery(coords.join(','), addr, state.selectedType, state.selectedPvzId);
 
-            if (calcData.success && calcData.price) {
-                state.estimatedCost = calcData.price;
-                state.selectedAddress = result.address;
-                state.selectedCoords = result.coords.join(',');
+        if (calc.success && calc.price != null) {
+            state.estimatedCost = calc.price;
+            renderCalcResult(costEl, etaEl, etaLabelEl, courierPriceBlock, confirmBtn, calc);
+        } else {
+            showDeliveryError(costEl, courierPriceBlock, calc.error);
+        }
+    }
 
-                // Для курьера — показываем цену в блоке под полем ввода
-                if (state.selectedType === 'courier' && courierPriceBlock) {
-                    var etaText = calcData.delivery_days ? ('  • ' + calcData.delivery_days + ' дн.') : '';
-                    courierPriceBlock.innerHTML = '✅ Стоимость доставки: <strong>' + formatPrice(calcData.price) + ' ₽</strong>' + etaText;
-                    courierPriceBlock.style.background = '';
-                    courierPriceBlock.style.color = '';
-                } else {
-                    if (costEl) {
-                        costEl.textContent = formatPrice(calcData.price) + ' ₽';
-                    }
-                    if (etaEl) {
-                        etaEl.textContent = calcData.delivery_days ? ('(' + calcData.delivery_days + ' дн.)') : '';
-                    }
-                    if (etaLabelEl) {
-                        etaLabelEl.textContent = calcData.delivery_days ? (' ETA: ' + calcData.delivery_days + ' дн.') : ' ETA: ';
-                    }
-                }
-                updateConfirmButtonState();
+    function renderCalcResult(costEl, etaEl, etaLabelEl, courierPriceBlock, confirmBtn, calc) {
+        if (state.selectedType === 'courier' && courierPriceBlock) {
+            const etaText = YandexDeliveryUtils.showEtaText(calc.delivery_days);
+            courierPriceBlock.innerHTML = `✅ Стоимость доставки: <strong>${YandexDeliveryUtils.formatPrice(calc.price)} ₽</strong>${etaText}`;
+            courierPriceBlock.classList.remove('border-danger');
+        } else {
+            YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
+            YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
+            YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
+        }
+        updateConfirmButton();
+        if (state.selectedType !== 'courier') goToStep(3);
+    }
 
-                // Для курьера не переходим к шагу 3 — остаёмся на шаге 2
-                if (state.selectedType !== 'courier') {
-                    showStep(3);
-                }
-            } else {
-                // Показываем реальную ошибку с бэкенда
-                var errorMsg = calcData.error || 'Не удалось рассчитать стоимость доставки';
-                console.error('[YandexDeliveryModal] Delivery error:', errorMsg, calcData);
+    function showAddrError(costEl, confirmBtn, courierPriceBlock, msg) {
+        const html = `<span class="text-danger">❌ ${msg}</span>`;
+        if (state.selectedType === 'courier' && courierPriceBlock) {
+            courierPriceBlock.innerHTML = html;
+            courierPriceBlock.classList.add('border-danger');
+        } else if (costEl) {
+            costEl.innerHTML = html;
+        }
+        if (confirmBtn) confirmBtn.disabled = true;
+    }
 
-                if (state.selectedType === 'courier' && courierPriceBlock) {
-                    courierPriceBlock.innerHTML = '❌ ' + errorMsg;
-                    courierPriceBlock.style.background = '#ffebee';
-                    courierPriceBlock.style.color = '#c62828';
-                } else {
-                    if (costEl) {
-                        costEl.textContent = '❌ ' + errorMsg;
-                        costEl.style.color = 'red';
-                    }
-                }
-                if (confirmBtn) {
-                    confirmBtn.disabled = true;
-                }
-            }
-        })
-        .catch(function (err) {
-            console.error('[YandexDeliveryModal] Error:', err);
-            var errorMsg = err.message || 'Неизвестная ошибка';
-
-            if (state.selectedType === 'courier' && courierPriceBlock) {
-                courierPriceBlock.innerHTML = '❌ ' + errorMsg;
-                courierPriceBlock.style.background = '#ffebee';
-                courierPriceBlock.style.color = '#c62828';
-            } else {
-                if (costEl) {
-                    costEl.textContent = '❌ ' + errorMsg;
-                    costEl.style.color = 'red';
-                }
-            }
-            if (confirmBtn) {
-                confirmBtn.disabled = true;
-            }
-        });
+    function showDeliveryError(costEl, courierPriceBlock, msg) {
+        console.error('[YandexDelivery] Delivery error:', msg);
+        const html = `<span class="text-danger">❌ ${msg}</span>`;
+        if (state.selectedType === 'courier' && courierPriceBlock) {
+            courierPriceBlock.innerHTML = html;
+            courierPriceBlock.classList.add('border-danger');
+        } else if (costEl) {
+            costEl.innerHTML = html;
+        }
     }
 
     /* ==================== Confirm Selection ==================== */
-
     function handleConfirm() {
-        if (!state.selectedType) {
-            alert('Пожалуйста, выберите способ доставки');
+        const errors = [];
+        if (!state.selectedType) errors.push('Выберите способ доставки');
+        if (state.selectedType !== 'courier' && !state.selectedPvzId) errors.push('Выберите пункт выдачи или постомат');
+        if (!state.selectedCoords.length) errors.push('Координаты не получены');
+        if (!state.selectedAddress) errors.push('Введите адрес доставки');
+        if (state.estimatedCost <= 0) errors.push('Не удалось рассчитать стоимость');
+
+        if (errors.length) {
+            showError(errors.join(' '));
             return;
         }
 
-        // Для ПВЗ/Постомат — проверим, что есть координаты от виджета
-        if (state.selectedType !== 'courier') {
-            if (!state.selectedPvzId) {
-                alert('Пожалуйста, выберите пункт выдачи или постомат');
-                return;
-            }
-            if (!state.selectedCoords) {
-                alert('Не удалось получить координаты. Попробуйте выбрать пункт заново.');
-                return;
-            }
-        }
+        clearError();
 
-        if (!state.selectedAddress) {
-            alert('Пожалуйста, введите адрес доставки');
-            return;
-        }
+        YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
+        YandexDeliveryUtils.setFieldValue('id_yandex_delivery_type', state.selectedType);
+        YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
+        YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
+        YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
 
-        if (state.estimatedCost <= 0) {
-            alert('Не удалось рассчитать стоимость доставки');
-            return;
-        }
+        const checkoutAddr = $('#id_delivery_address');
+        if (checkoutAddr) checkoutAddr.value = state.selectedAddress;
 
-        // Обновляем скрытые поля формы
-        setFormField('id_delivery_address', state.selectedAddress);
-        setFormField('id_yandex_delivery_type', state.selectedType);
-        setFormField('id_yandex_station_id', state.selectedPvzId);
-        setFormField('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
-        setFormField('id_yandex_delivery_cost', state.estimatedCost);
-
-        // Обновляем видимое поле delivery_address в checkout.js
-        var checkoutAddress = document.getElementById('id_delivery_address');
-        if (checkoutAddress) {
-            checkoutAddress.value = state.selectedAddress;
-        }
-
-        // Обновляем сводку доставки
         updateDeliverySummary();
-
-        // Закрываем модальное окно
         closeModal();
     }
 
-    /* ==================== Delivery Summary Update ==================== */
+    function showError(msg) {
+        const el = $('#deliveryModalError');
+        if (el) {
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+    }
 
+    function clearError() {
+        const el = $('#deliveryModalError');
+        if (el) {
+            el.textContent = '';
+            el.style.display = 'none';
+        }
+    }
+
+    /* ==================== Delivery Summary ==================== */
     function updateDeliverySummary() {
-        var deliveryInfo = document.getElementById('deliveryInfo');
-        var typeEl = document.getElementById('selectedDeliveryType');
-        var addressEl = document.getElementById('selectedDeliveryAddress');
-        var costEl = document.getElementById('selectedDeliveryCost');
-        var etaEl = document.getElementById('selectedDeliveryEta');
-        var orderGoodsTotal = document.getElementById('orderGoodsTotal');
-        var orderDeliveryCost = document.getElementById('orderDeliveryCost');
-        var checkoutTotal = document.getElementById('checkoutTotal');
-
+        const deliveryInfo = $('#deliveryInfo');
         if (!deliveryInfo) return;
 
-        var typeLabel = getConfiguredTypeLabel(state.selectedType);
+        const typeLabels = {
+            courier: '🚗 Курьер',
+            pvz: '📦 Пункт выдачи (ПВЗ)',
+            postomat: '📮 Постомат',
+        };
 
-        if (typeEl) typeEl.textContent = typeLabel;
-        if (addressEl) addressEl.textContent = state.selectedAddress;
-        if (costEl) costEl.textContent = formatPrice(state.estimatedCost) + ' ₽';
+        const typeEl = $('#selectedDeliveryType');
+        const addrEl = $('#selectedDeliveryAddress');
+        const costEl = $('#selectedDeliveryCost');
+        const etaEl = $('#selectedDeliveryEta');
+        const orderCost = $('#orderDeliveryCost');
+        const goodsTotal = $('#orderGoodsTotal');
+        const checkoutTotal = $('#checkoutTotal');
+
+        if (typeEl) typeEl.textContent = typeLabels[state.selectedType] || typeLabels.courier;
+        if (addrEl) addrEl.textContent = state.selectedAddress;
+        if (costEl) costEl.textContent = `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽`;
         if (etaEl) etaEl.textContent = '';
 
-        deliveryInfo.style.display = 'block';
+        show(deliveryInfo);
 
-        // Обновляем стоимость доставки в карточке заказа
-        if (orderDeliveryCost) {
-            orderDeliveryCost.textContent = state.estimatedCost ? (formatPrice(state.estimatedCost) + ' ₽') : '— ₽';
+        if (orderCost) {
+            orderCost.textContent = state.estimatedCost
+                ? `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽`
+                : '— ₽';
         }
 
-        // Пересчитываем итог
-        if (orderGoodsTotal && checkoutTotal && state.estimatedCost > 0) {
-            var goodsText = orderGoodsTotal.textContent.replace(/[^0-9.,]/g, '').replace(',', '.');
-            var goodsTotal = parseFloat(goodsText) || 0;
-            var newTotal = goodsTotal + state.estimatedCost;
-            checkoutTotal.textContent = formatPrice(newTotal) + ' ₽';
-        }
-    }
+        if (goodsTotal && checkoutTotal && state.estimatedCost > 0) {
+            // Парсим стоимость товаров из текста (может быть в формате '150,00 ₽' или '150.00 ₽')
+            const goodsText = goodsTotal.textContent
+                .replace(/[^0-9.,]/g, '')           // оставляем только цифры, точки и запятые
+                .replace(/\./g, '')                  // убираем разделитель тысяч
+                .replace(',', '.');                  // запятую заменяем на точку
+            const goods = parseFloat(goodsText) || 0;
 
-    function getConfiguredTypeLabel(type) {
-        var labels = {
-            'courier': '🚗 Курьер',
-            'pvz': '📦 Пункт выдачи (ПВЗ)',
-            'postomat': '📮 Постомат'
-        };
-        return labels[type] || labels['courier'];
-    }
+            // Гарантируем что estimatedCost — число
+            const deliveryCost = typeof state.estimatedCost === 'string'
+                ? parseFloat(state.estimatedCost) || 0
+                : state.estimatedCost;
 
-    /* ==================== Form Field Helpers ==================== */
-
-    function setFormField(fieldId, value) {
-        var field = document.getElementById(fieldId);
-        if (field) {
-            field.value = value;
+            const newTotal = goods + deliveryCost;
+            checkoutTotal.textContent = `${YandexDeliveryUtils.formatPrice(newTotal)} ₽`;
         }
     }
 
-    function getCsrfToken() {
-        var tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
-        if (tokenInput) {
-            return tokenInput.value;
-        }
-        var name = 'csrftoken';
-        var cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            var cookies = document.cookie.split(';');
-            for (var i = 0; i < cookies.length; i++) {
-                var cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue || '';
+    function updateConfirmButton() {
+        const btn = $('#confirmDeliveryBtn');
+        if (btn) btn.disabled = !(state.selectedType && state.estimatedCost > 0);
     }
-
-    /* ==================== Cost Calculation ==================== */
-
-    function calculateDeliveryCost(coords, address) {
-        var costEl = document.getElementById('widgetCost');
-        var etaEl = document.getElementById('widgetEta');
-        var etaLabelEl = document.getElementById('widgetEtaLabel');
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-
-        if (!coords || coords.length === 0) {
-            if (costEl) costEl.textContent = 'Координаты не получены';
+    /* ==================== YMaps Integration ==================== */
+    function loadYmaps() {
+        if (state.ymapsLoaded) {
+            initMap();
             return;
         }
 
-        if (costEl) {
-            costEl.textContent = 'Расчёт...';
-        }
-
-        fetch(CONFIG.CALCULATE_DELIVERY_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify({
-                destination_coords: coords,
-                destination_address: address || state.selectedAddress,
-                pvz_id: state.selectedPvzId,
-                delivery_type: state.selectedType === 'pvz' ? 'pickup' : 'courier'
-            })
-        })
-        .then(function (response) { return response.json(); })
-        .then(function (data) {
-            if (data.success && data.price) {
-                state.estimatedCost = data.price;
-
-                if (costEl) {
-                    costEl.textContent = formatPrice(data.price) + ' ₽';
-                }
-                if (etaEl) {
-                    etaEl.textContent = data.delivery_days ? '(' + data.delivery_days + ' дн.)' : '';
-                }
-                if (etaLabelEl) {
-                    etaLabelEl.textContent = data.delivery_days ? (' ETA: ' + data.delivery_days + ' дн.') : ' ETA: ';
-                }
-                updateConfirmButtonState();
-
-                // Автопереход к шагу 3
-                showStep(3);
-            } else {
-                if (costEl) {
-                    costEl.textContent = data.error || 'Не удалось рассчитать';
-                }
-                if (confirmBtn) {
-                    confirmBtn.disabled = true;
-                }
+        // Check if already loaded via base.html
+        if (window.ymaps) {
+            console.log('[YandexDelivery] ymaps already loaded');
+            state.ymapsLoaded = true;
+            // Wait for container to be visible
+            const widgetContainer = $('#yandexDeliveryWidgetContainer');
+            if (widgetContainer && widgetContainer.classList.contains('d-none')) {
+                console.warn('[YandexDelivery] Widget container is hidden, waiting for visibility');
+                setTimeout(loadYmaps, 200);
+                return;
             }
-        })
-        .catch(function (err) {
-            console.error('[YandexDeliveryModal] Calculate cost error:', err);
-            if (costEl) {
-                costEl.textContent = 'Ошибка подключения';
-            }
-            if (confirmBtn) {
-                confirmBtn.disabled = true;
-            }
-        });
-    }
-
-    /* ==================== Yandex Widget Loading ==================== */
-
-    function loadYandexWidget() {
-        // Используем Яндекс Карты API для поиска ПВЗ и постоматов
-        if (state.yandexWidgetLoaded) {
-            initYandexMap();
+            setTimeout(initMap, 100);
             return;
         }
 
-        var existing = document.getElementById('yandex-maps-api-script');
-        if (existing) {
-            console.warn('[YandexDeliveryModal] Yandex Maps API already loaded');
-            state.yandexWidgetLoaded = true;
-            setTimeout(initYandexMap, 100);
-            return;
-        }
-
-        var apiKey = window.YANDEX_JAVASCRIPT_API_KEY || window.YANDEX_GEOCODER_API_KEY;
+        const apiKey = window.YANDEX_JAVASCRIPT_API_KEY;
         if (!apiKey) {
-            console.error('[YandexDeliveryModal] No YMaps API key found');
-            state.yandexWidgetLoaded = false;
-            showErrorInModal('Не настроен API-ключ Яндекс Карт. Попробуйте ввести адрес вручную.');
-            showManualAddressFallback();
+            console.error('[YandexDelivery] No API key');
+            showMapError('Не настроен API-ключ Яндекс Карт');
             return;
         }
 
-        console.log('[YandexDeliveryModal] Loading Yandex Maps API...');
-        var script = document.createElement('script');
+        console.log('[YandexDelivery] Loading YMaps API 2.1...');
+        const script = document.createElement('script');
         script.id = 'yandex-maps-api-script';
-        script.src = 'https://api-maps.yandex.ru/2.1/?apikey=' + apiKey + '&lang=ru_RU';
+        script.src = `https://api-maps.yandex.ru/2.1/?apikey=${apiKey}&lang=ru_RU`;
         script.async = true;
 
-        script.onload = function () {
-            console.log('[YandexDeliveryModal] Yandex Maps API loaded');
-            state.yandexWidgetLoaded = true;
-            // Ждём готовности ymaps
+        script.onload = () => {
+            console.log('[YandexDelivery] YMaps API 2.1 loaded');
+            state.ymapsLoaded = true;
+            const widgetContainer = $('#yandexDeliveryWidgetContainer');
+            if (widgetContainer && widgetContainer.classList.contains('d-none')) {
+                console.warn('[YandexDelivery] Widget container is hidden, waiting for visibility');
+                setTimeout(loadYmaps, 200);
+                return;
+            }
             if (typeof ymaps !== 'undefined' && ymaps.ready) {
-                ymaps.ready(initYandexMap);
+                ymaps.ready(initMap);
             } else {
-                setTimeout(initYandexMap, 500);
+                setTimeout(initMap, 500);
             }
         };
 
-        script.onerror = function () {
-            console.error('[YandexDeliveryModal] Failed to load Yandex Maps API');
-            state.yandexWidgetLoaded = false;
-            showErrorInModal('Не удалось загрузить Яндекс Карты. Попробуйте ввести адрес вручную.');
-            showManualAddressFallback();
+        script.onerror = () => {
+            console.error('[YandexDelivery] Failed to load YMaps API');
+            showMapError('Не удалось загрузить Яндекс Карты. Введите адрес вручную.');
         };
 
         document.head.appendChild(script);
     }
 
-    function initPostMessageListener() {
-        window.addEventListener('message', function (event) {
-            // Яндекс Доставка отправляет данные только с своих доменов
-            if (event.origin !== 'https://dostavka.yandex.ru' &&
-                event.origin !== 'https://delivery.yandex.ru' &&
-                event.origin !== 'https://www.yandex.ru') {
-                return;
-            }
-
-            var data = event.data;
-            if (!data) return;
-
-            // Обрабатываем выбранный пункт
-            if (data.type === 'point_selected' || data.pointId || data.point_id) {
-                var point = {
-                    id: data.pointId || data.point_id || data.id || '',
-                    name: data.name || data.title || data.pointName || '',
-                    address: data.address || data.full_address || '',
-                    coordinates: data.coordinates || data.coords || data.center || '',
-                };
-
-                if (point.id) {
-                    console.log('[YandexDeliveryModal] Point selected via postMessage:', point);
-                    handleYandexPointSelected(point);
-                }
-            }
-        });
-    }
-
-    function initYandexMap() {
-        console.log('[YandexDeliveryModal] initYandexMap called');
-        console.log('[YandexDeliveryModal] ymaps available:', typeof ymaps);
-
+    function initMap() {
         if (typeof ymaps === 'undefined') {
-            console.warn('[YandexDeliveryModal] ymaps not ready yet, retrying...');
-            setTimeout(initYandexMap, 200);
+            setTimeout(initMap, 200);
             return;
         }
 
-        var container = document.getElementById('delivery-widget');
+        const container = $('#delivery-widget');
         if (!container) {
-            console.error('[YandexDeliveryModal] Container #delivery-widget not found');
+            console.error('[YandexDelivery] #delivery-widget not found');
             return;
         }
 
-        // Очищаем предыдущую карту если есть
-        if (state.mapInstance) {
-            state.mapInstance.destroy();
-            state.mapInstance = null;
-        }
+        destroyMap();
 
         try {
-            // Определяем тип точек для поиска
-            var searchType = state.selectedType === 'pvz' ? 'shop' : 'store';
-            // Ищем широко — все пункты выдачи и постоматы в Самаре
-            var query = state.selectedType === 'pvz' 
-                ? 'пункт выдачи выдачи Самара OzON Wildberries Yandex Market' 
-                : 'постомат выдачи Самбер Яндекс Ozon Wildberries';
+            const lat = CONFIG.SHOP_LAT;
+            const lon = CONFIG.SHOP_LON;
+            console.log('[YandexDelivery] Creating map at', [lat, lon]);
 
-            console.log('[YandexDeliveryModal] Creating map, searchType:', searchType);
+            state.mapInstance = new ymaps.Map(container, {
+                center: [lat, lon],
+                zoom: 14,
+                controls: ['zoomControl', 'fullscreenControl'],
+            }, { suppressMapOpenBlock: true });
 
-            // Загружаем координаты магазина из конфигурации
-            var shopLat = window.YANDEX_SHOP_LAT !== undefined ? window.YANDEX_SHOP_LAT : 53.216940239129094;
-            var shopLon = window.YANDEX_SHOP_LON !== undefined ? window.YANDEX_SHOP_LON : 50.162688008923745;
+            // Метка магазина
+            const shop = new ymaps.Placemark([lat, lon], {
+                hintContent: 'Магазин: ул. Революционная, д. 3',
+                balloonContent: '📍 Магазин',
+            }, { preset: 'islands#darkOrangeCircleIcon' });
+            state.mapInstance.geoObjects.add(shop);
 
-            // Создаём карту
-            ymaps.ready(function () {
-                state.mapInstance = new ymaps.Map('delivery-widget', {
-                    center: [shopLat, shopLon], // Координаты магазина
-                    zoom: 14,
-                    controls: ['zoomControl', 'fullscreenControl']
-                }, {
-                    suppressMapOpenBlock: true // Отключаем блоки кнопок по умолчанию
-                });
+            // Клик по карте
+            state.mapInstance.events.add('click', onMapClick);
 
-                // Добавляем метку магазина
-                var shopPlacemark = new ymaps.Placemark([shopLat, shopLon], {
-                    hintContent: 'Магазин: ул. Революционная, д. 3',
-                    balloonContent: '📍 ул. Революционная, д. 3<br>Самара'
-                }, {
-                    preset: 'islands#blueCoffeeIcon'
-                });
-                state.mapInstance.geoObjects.add(shopPlacemark);
+            // Загружаем ПВЗ
+            loadPvzOnMap();
 
-                // Клик по карте — выбор адреса
-                state.mapInstance.events.add('click', function (e) {
-                    var coords = e.get('coords');
-                    console.log('[YandexDeliveryModal] Map clicked at:', coords);
-                    
-                    // Геокодинг обратный — получаем адрес по координатам
-                    ymaps.geocode(coords, {
-                        results: 1,
-                        kind: 'house'
-                    }).then(function (res) {
-                        var firstObject = res.geoObjects.get(0);
-                        if (firstObject) {
-                            var address = firstObject.properties.get('fullName') || firstObject.properties.get('text');
-                            var placemarkCoords = firstObject.geometry.getCoordinates();
-                            
-                            // Добавляем метку выбранного адреса
-                            var selectedPlacemark = new ymaps.Placemark(placemarkCoords, {
-                                hintContent: address,
-                                balloonContent: '✅ Выберите этот адрес'
-                            }, {
-                                preset: 'islands#redDeliveryIcon'
-                            });
-                            
-                            // Удаляем предыдущую метку выбора если есть
-                            if (state.selectedPlacemark) {
-                                state.mapInstance.geoObjects.remove(state.selectedPlacemark);
-                            }
-                            state.mapInstance.geoObjects.add(selectedPlacemark);
-                            state.selectedPlacemark = selectedPlacemark;
-                            
-                            // Автоматически выбираем этот адрес
-                            var pointData = {
-                                id: '',
-                                name: 'Выбранный адрес',
-                                address: address,
-                                coordinates: placemarkCoords
-                            };
-                            handleYandexPointSelected(pointData);
-                            
-                            // Закрываем балун метки магазина
-                            shopPlacemark.balloon.close();
-                        }
-                    }).catch(function (err) {
-                        console.error('[YandexDeliveryModal] Reverse geocode error:', err);
-                    });
-                });
-
-                // Поиск точек доставки после готовности карты
-                searchDeliveryPoints(searchType, query);
-
-                state.yandexWidgetInitialized = true;
-                console.log('[YandexDeliveryModal] Map created successfully at shop coords:', [shopLat, shopLon]);
-            });
+            state.ymapsReady = true;
+            console.log('[YandexDelivery] Map created');
         } catch (e) {
-            console.error('[YandexDeliveryModal] Failed to create map:', e);
-            showErrorInModal('Не удалось инициализировать карту. Попробуйте ввести адрес вручную.');
-            showManualAddressFallback();
+            console.error('[YandexDelivery] Map creation failed:', e);
+            showMapError('Не удалось инициализировать карту');
         }
     }
 
-    function searchDeliveryPoints(type, query) {
-        if (!state.mapInstance) {
-            console.error('[YandexDeliveryModal] Map not initialized');
-            return;
-        }
+    function createMapPlacemark(lat, lon, options) {
+        return new ymaps.Placemark([lat, lon], {
+            hintContent: options.hintContent || '',
+            balloonContent: options.balloonContent || '',
+        }, { preset: options.preset || 'islands#darkOrangeIcon' });
+    }
 
-        console.log('[YandexDeliveryModal] Searching delivery points:', query);
-
-        // Используем геопоиск для поиска точек
-        ymaps.geocode(query, {
-            results: 30,
-            resultsPerRegion: 30
-        }).then(function (res) {
-            var geoObjects = res.geoObjects;
-            var count = 0;
-
-            // Считаем объекты правильно
-            geoObjects.each(function () {
-                count++;
-            });
-
-            console.log('[YandexDeliveryModal] Found ' + count + ' delivery points');
-
-            geoObjects.each(function (geoObject) {
-                var name = geoObject.properties.get('name') || geoObject.properties.get('fullName') || '';
-                var desc = geoObject.properties.get('description') || geoObject.properties.get('text') || '';
-                var coords = geoObject.geometry.getCoordinates();
-
-                // Ставим метки на карты
-                var iconCaption = name ? name.substring(0, 30) : 'ПВЗ';
-                geoObject.options.set('preset', 'islands#blueDeliveryIcon');
-                geoObject.properties.set('iconCaption', iconCaption);
-
-                geoObject.events.add('click', function (e) {
-                    var pointData = {
-                        id: geoObject.properties.get('id') || '',
-                        name: name,
-                        address: desc,
-                        coordinates: coords
-                    };
-
-                    console.log('[YandexDeliveryModal] Point clicked:', pointData);
-                    handleYandexPointSelected(pointData);
-                    e.stopPropagation();
-                });
-            });
-
-            // Если точки найдены — центрируем карту на них
-            if (count > 0) {
-                var bounds = geoObjects.getBounds();
-                if (bounds) {
-                    state.mapInstance.setBounds(bounds, { checkZoomRange: true });
-                }
-            } else {
-                console.warn('[YandexDeliveryModal] No delivery points found, showing manual input fallback');
+    function destroyMap() {
+        if (state.mapInstance) {
+            try {
+                // YMaps 2.1 uses destroy(), 3.0 uses dispose()
+                state.mapInstance.destroy ? state.mapInstance.destroy() : state.mapInstance.dispose();
+            } catch (e) {
+                console.warn('[YandexDelivery] Map destroy error:', e);
             }
-        }).catch(function (err) {
-            console.error('[YandexDeliveryModal] Geocode error:', err);
-            // Если геопоиск не нашёл, показываем ручной ввод
-            showErrorInModal('Точки доставки не найдены. Попробуйте ввести адрес вручную.');
-        });
+            state.mapInstance = null;
+        }
     }
 
-    function handleYandexPointSelected(point) {
-        console.log('[YandexDeliveryModal] Point selected:', point);
-        
-        state.selectedPvzId = point.id || '';
-        state.selectedPvzName = point.name || point.address || '';
-        state.selectedAddress = point.address || state.selectedPvzName;
-        
-        // Координаты из Яндекс Карт уже массив [lat, lon]
-        var coords = point.coordinates;
-        if (Array.isArray(coords)) {
-            state.selectedCoords = coords.join(',');
-        } else if (typeof coords === 'string') {
-            state.selectedCoords = coords;
-        } else {
-            state.selectedCoords = '';
-        }
+    function onMapClick(e) {
+        const coords = e.get('coords');
+        if (!coords || !Array.isArray(coords) || coords.length < 2) return;
+        console.log('[YandexDelivery] Map clicked at', coords);
 
-        var costEl = document.getElementById('widgetCost');
-        var confirmBtn = document.getElementById('confirmDeliveryBtn');
-
-        if (costEl) {
-            costEl.textContent = 'Расчёт...';
-        }
-        if (confirmBtn) {
-            confirmBtn.disabled = true;
-        }
-
-        // Рассчитываем стоимость доставки
-        calculateDeliveryCost(state.selectedCoords, state.selectedAddress);
+        ymaps.geocode(coords.join(',')).then((res) => {
+            const first = res.geoObjects.get(0);
+            if (!first) return;
+            const address = first.properties.get('fullName') || first.properties.get('text');
+            onReverseGeocode(address, coords);
+        }).catch((err) => console.error('[YandexDelivery] Reverse geocode error:', err));
     }
 
-    function showErrorInModal(message) {
-        var mapWarning = document.getElementById('mapUnavailableWarning');
-        if (mapWarning) {
-            mapWarning.querySelector('p').textContent = message + ' Введите адрес вручную для расчёта доставки.';
-            showElement(mapWarning);
-        }
-        showManualAddressFallback();
-    }
-
-    function showManualAddressFallback() {
-        hideElement(document.getElementById('yandexDeliveryWidgetContainer'));
-        showElement(document.getElementById('yandexAddressInputWrap'));
-        state.yandexWidgetLoaded = false;
-        state.yandexWidgetInitialized = false;
-    }
-
-    function resetYandexWidget() {
-        state.yandexWidgetLoaded = false;
-        state.yandexWidgetInitialized = false;
-        
-        // Удаляем метку выбранного адреса
+    function onReverseGeocode(address, coords) {
         if (state.selectedPlacemark && state.mapInstance) {
             state.mapInstance.geoObjects.remove(state.selectedPlacemark);
         }
-        state.selectedPlacemark = null;
-        
-        // Очищаем карту
-        if (state.mapInstance) {
-            state.mapInstance.destroy();
-            state.mapInstance = null;
+
+        state.selectedPlacemark = new ymaps.Placemark(coords, {
+            hintContent: address,
+            balloonContent: '✅ Выберите этот адрес',
+        }, { preset: 'islands#orangeCircleDotIcon' });
+        state.mapInstance.geoObjects.add(state.selectedPlacemark);
+
+        handlePointSelected({
+            id: '',
+            name: 'Выбранный адрес',
+            address: address,
+            coordinates: coords,
+        });
+    }
+
+    async function loadPvzOnMap() {
+        const costEl = $('#widgetCost');
+        const originalText = costEl?.textContent || '';
+        if (costEl) costEl.textContent = 'Загрузка ПВЗ...';
+
+        const data = await loadPvzPoints();
+        if (costEl) costEl.textContent = originalText;
+
+        if (!data.success || !data.points?.length) {
+            console.warn('[YandexDelivery] No PVZs');
+            showMapError('Пункты выдачи временно недоступны');
+            return;
         }
-        
-        var container = document.getElementById('delivery-widget');
-        if (container) {
-            container.innerHTML = '';
+
+        console.log('[YandexDelivery] Loaded', data.points.length, 'PVZs');
+
+        state.pvzPlacemarks = [];
+
+        data.points.forEach((pvz) => {
+            if (!pvz.latitude || !pvz.longitude) return;
+
+            const placemark = new ymaps.Placemark([pvz.latitude, pvz.longitude], {
+                hintContent: pvz.name,
+                balloonContent: `<strong>${YandexDeliveryUtils.escapeHtml(pvz.name)}</strong><br>${YandexDeliveryUtils.escapeHtml(pvz.address)}`,
+            }, { preset: 'islands#darkGreenCircleIcon' });
+
+            placemark.events.add('click', () => {
+                console.log('[YandexDelivery] PVZ clicked:', pvz.name);
+                // Используем полное описание адреса ПВЗ
+                const pvzLabel = pvz.name + (pvz.address ? ' — ' + pvz.address : '');
+                handlePointSelected({
+                    id: pvz.id,
+                    name: pvz.name,
+                    address: pvz.address || pvzLabel,
+                    fullAddress: pvzLabel,
+                    coordinates: [pvz.longitude, pvz.latitude],
+                });
+            });
+
+            state.pvzPlacemarks.push(placemark);
+            if (state.mapInstance) {
+                state.mapInstance.geoObjects.add(placemark);
+            }
+        });
+
+        try {
+            // Центрируем карту по магазину без анимации
+            state.mapInstance.options.set('center', [CONFIG.SHOP_LON, CONFIG.SHOP_LAT]);
+            state.mapInstance.options.set('zoom', 16);
+        } catch (e) {
+            console.warn('[YandexDelivery] setCenter error:', e);
         }
     }
 
-    /* ==================== Modal Control ==================== */
+    function showMapError(message) {
+        const warning = $('#mapUnavailableWarning');
+        if (warning) {
+            const p = warning.querySelector('p');
+            if (p) p.textContent = message + ' Введите адрес вручную.';
+            show(warning);
+        }
+        hide($('#yandexDeliveryWidgetContainer'));
+        show($('#yandexAddressInputWrap'));
+    }
+    /* ==================== Point Selection ==================== */
+    function handlePointSelected(point) {
+        console.log('[YandexDelivery] Point selected:', point);
 
-    function openModal() {
-        if (state.modalInstance) {
-            state.modalInstance.show();
+        state.selectedPvzId = point.id || '';
+        state.selectedPvzName = point.name || '';
+        // Используем fullAddress если доступен (для ПВЗ), иначе address
+        state.selectedAddress = point.fullAddress || point.address || state.selectedPvzName;
+
+        const coords = point.coordinates;
+        state.selectedCoords = Array.isArray(coords)
+            ? coords
+            : (typeof coords === 'string' ? coords.split(',').map(Number) : []);
+
+        const costEl = $('#widgetCost');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const addressInput = $('#yandexAddressInput');
+        const pvzNameEl = $('#selectedPvzNameDisplay');
+        const pvzInfoBlock = $('#selectedPvzInfo');
+
+        YandexDeliveryUtils.showLoading(costEl);
+        if (confirmBtn) confirmBtn.disabled = true;
+
+        // Заполняем строку поиска адресом ПВЗ
+        if (addressInput) {
+            addressInput.value = state.selectedAddress;
+        }
+
+        // Показываем блок с информацией о выбранном ПВЗ
+        if (pvzNameEl) {
+            pvzNameEl.textContent = state.selectedAddress;
+        }
+
+        // Запускаем расчет стоимости доставки
+        calculateDeliveryCost(state.selectedCoords.join(','), state.selectedAddress);
+    }
+
+    async function calculateDeliveryCost(coords, address) {
+        const costEl = $('#widgetCost');
+        const etaEl = $('#widgetEta');
+        const etaLabelEl = $('#widgetEtaLabel');
+        const confirmBtn = $('#confirmDeliveryBtn');
+
+        const calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
+
+        if (calc.success && calc.price != null) {
+            state.estimatedCost = calc.price;
+            YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
+            YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
+            YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
+            updateConfirmButton();
+            
+            // Показываем блок с информацией о выбранном ПВЗ
+            if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+                const pvzInfo = $('#selectedPvzInfo');
+                const pvzNameEl = $('#selectedPvzNameDisplay');
+                if (pvzInfo && pvzNameEl && state.selectedPvzName) {
+                    pvzNameEl.textContent = state.selectedAddress;
+                    show(pvzInfo);
+                }
+            }
+            
+            goToStep(3);
         } else {
-            console.error('[YandexDeliveryModal] Modal not initialized');
+            YandexDeliveryUtils.setTextContent(costEl, calc.error || 'Не удалось рассчитать');
+            if (confirmBtn) confirmBtn.disabled = true;
         }
     }
 
-    function closeModal() {
-        if (state.modalInstance) {
-            state.modalInstance.hide();
+    /* ==================== PostMessage Listener ==================== */
+    function initPostMessage() {
+        window.addEventListener('message', (e) => {
+            const TRUSTED_ORIGINS = [
+                'https://dostavka.yandex.ru',
+                'https://delivery.yandex.ru',
+                'https://www.yandex.ru',
+            ];
+
+            if (!TRUSTED_ORIGINS.includes(e.origin)) return;
+
+            const data = e.data;
+            if (!data) return;
+
+            const point = {
+                id: data.pointId || data.point_id || data.id || '',
+                name: data.name || data.title || data.pointName || '',
+                address: data.address || data.full_address || '',
+                coordinates: data.coordinates || data.coords || data.center || '',
+            };
+
+            if (point.id) {
+                console.log('[YandexDelivery] Point via postMessage:', point);
+                handlePointSelected(point);
+            }
+        });
+    }
+
+
+
+    /* ==================== Init ==================== */
+    function init() {
+        initModal();
+        initPostMessage();
+        
+        // Load cart items and packages when modal opens
+        const modalEl = document.getElementById('deliveryModal');
+        if (modalEl) {
+            modalEl.addEventListener('show.bs.modal', () => {
+                if (cartState.items.length === 0) {
+                    loadCartFromPage();
+                }
+                loadPackagesFromAPI();
+            });
         }
     }
 
     /* ==================== Public API ==================== */
-
-    function init() {
-        initModal();
-        initPostMessageListener();
-
-        // Подключаем кнопку открытия модального окна
-        var openBtn = document.getElementById('openDeliveryModal');
-        if (openBtn) {
-            openBtn.addEventListener('click', function (e) {
-                e.preventDefault();
-                openModal();
-            });
-        }
-    }
-
-    function getSelectedType() {
-        return state.selectedType;
-    }
-
-    function getSelectedAddress() {
-        return state.selectedAddress;
-    }
-
-    function getEstimatedCost() {
-        return state.estimatedCost;
-    }
-
-    function formatPrice(price) {
-        return parseFloat(price).toLocaleString('ru-RU', {
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 2
-        });
-    }
-
     return {
-        init: init,
-        openModal: openModal,
-        closeModal: closeModal,
-        getSelectedType: getSelectedType,
-        getSelectedAddress: getSelectedAddress,
-        getEstimatedCost: getEstimatedCost,
-        _handlePointSelected: handleYandexPointSelected,
+        init,
+        openModal,
+        closeModal,
+        getSelectedType: () => state.selectedType,
+        getSelectedAddress: () => state.selectedAddress,
+        getEstimatedCost: () => state.estimatedCost,
+        _handlePointSelected: handlePointSelected,
     };
 
 })();
@@ -1087,26 +1050,16 @@ var YandexDeliveryWidget = (function () {
 document.addEventListener('DOMContentLoaded', YandexDeliveryWidget.init);
 
 /**
- * Глобальный callback для Yandex Delivery widget.
- * Вызывается виджетом при выборе пункта выдачи/постомата.
+ * Callback for Yandex Delivery widget (postMessage fallback).
  */
 window.YandexDeliveryCallback = function (pointData) {
-    console.log('[YandexDeliveryModal] YandexDeliveryCallback:', pointData);
-
-    var pointId = pointData.pointId || pointData.id || '';
-    var pointType = pointData.pointType || pointData.type || '';
-    var pointName = pointData.name || pointData.title || '';
-    var pointAddress = pointData.address || pointData.full_address || '';
-
-    if (!pointId) {
-        console.warn('[YandexDeliveryModal] No point ID in callback data');
-        return;
+    console.log('[YandexDelivery] Callback:', pointData);
+    const point = {
+        id: pointData.pointId || pointData.id || '',
+        name: pointData.name || pointData.title || '',
+        address: pointData.address || pointData.full_address || '',
+    };
+    if (point.id) {
+        YandexDeliveryWidget._handlePointSelected(point);
     }
-
-    // Обновляем состояние модуля
-    YandexDeliveryWidget._handlePointSelected({
-        id: pointId,
-        name: pointName,
-        address: pointAddress,
-    });
 };

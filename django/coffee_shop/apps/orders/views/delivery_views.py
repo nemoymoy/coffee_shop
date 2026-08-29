@@ -1,16 +1,16 @@
 """Yandex Delivery views — Cargo API integration."""
-import logging
 import json
-import hashlib
-import requests as http_requests
+import logging
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
-from django.conf import settings
-from django.core.cache import cache
+from django.utils import timezone
 
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
+from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
+from coffee_shop.apps.orders.models import Package
 
 logger = logging.getLogger(__name__)
 
@@ -18,175 +18,220 @@ logger = logging.getLogger(__name__)
 @csrf_exempt
 @require_POST
 def calculate_delivery_view(request):
-    """
-    Calculate delivery price and ETA via Cargo API.
-
-    POST JSON:
-    {
-        "destination_coords": [49.35, 53.21],
-        "destination_address": "ул. Примерная, д. 10",
-        "pvz_id": "12345",
-        "delivery_type": "pickup"
-    }
-
-    Returns JSON:
-    {
-        "success": true,
-        "price": 299,
-        "currency": "RUB",
-        "mock": false
-    }
-    """
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
-        return JsonResponse({
-            'success': False,
-            'error': 'Некорректные данные',
-        }, status=400)
+        return JsonResponse({'success': False, 'error': 'Некорректные данные'}, status=400)
 
     destination_coords = data.get('destination_coords')
     destination_address = data.get('destination_address', '')
     pvz_id = data.get('pvz_id')
     delivery_type = data.get('delivery_type', 'courier')
 
-    # Parse coordinates from string "lon,lat" to array [lon, lat]
-    if destination_coords and isinstance(destination_coords, str):
-        parts = destination_coords.split(',')
-        if len(parts) == 2:
-            try:
-                destination_coords = [float(parts[0].strip()), float(parts[1].strip())]
-            except (ValueError, IndexError):
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Некорректный формат координат',
-                }, status=400)
-
-    # Fallback: if no coordinates but city/street/house provided, try to geocode
-    city = data.get('city', '')
-    street = data.get('street', '')
-    house = data.get('house', '')
-    apartment = data.get('apartment', '')
-
-    if not destination_coords and city and street and house:
-        # Try geocoding (cached for 5 min)
-        cache_key = f'geocode_{city}_{street}_{house}_{apartment}'
-        cached_coords = cache.get(cache_key)
-        if cached_coords:
-            destination_coords = cached_coords['coords']
-            destination_address = cached_coords['address']
-        else:
-            geocoder_api_key = getattr(settings, 'YANDEX_GEOCODER_API_KEY', '')
-            if geocoder_api_key:
-                try:
-                    geocode_query = f'{city} {street} {house}'
-                    if apartment:
-                        geocode_query += f' {apartment}'
-
-                    geocode_params = {
-                        'apikey': geocoder_api_key,
-                        'geocode': geocode_query,
-                        'format': 'json',
-                        'lang': 'ru_RU',
-                        'results': '1',
-                    }
-
-                    geocode_response = http_requests.get(
-                        'https://geocode-maps.yandex.ru/1.x/',
-                        params=geocode_params,
-                        timeout=5,
-                    )
-
-                    if geocode_response.status_code == 200:
-                        geo_data = geocode_response.json()
-                        features = geo_data.get('response', {}).get('GeoObjectCollection', {}).get('featureMember', [])
-                        if features:
-                            point = features[0].get('GeoObject', {}).get('Point', {})
-                            if point and 'pos' in point:
-                                coords = point['pos'].split()
-                                destination_coords = [float(coords[0]), float(coords[1])]
-                                destination_address = features[0].get('GeoObject', {}).get('metaDataProperty', {}).get('GeocoderMetaData', {}).get('text', geocode_query)
-                                cache.set(cache_key, {
-                                    'coords': destination_coords,
-                                    'address': destination_address,
-                                }, 300)
-                except http_requests.exceptions.HTTPError as e:
-                    if e.response and e.response.status_code == 429:
-                        logger.warning('Geocoding rate limited')
-                except Exception as e:
-                    logger.warning('Geocoding failed: %s', e)
+    # Parse coordinates from string "lon,lat" to list [lon, lat]
+    if isinstance(destination_coords, str):
+        geocoder = YandexGeocoderService()
+        parsed = geocoder.parse_coords(destination_coords)
+        if parsed is None:
+            return JsonResponse({'success': False, 'error': 'Некорректный формат координат'}, status=400)
+        destination_coords = parsed
 
     if not destination_coords:
-        return JsonResponse({
-            'success': False,
-            'error': 'Не удалось определить координаты доставки',
-        }, status=400)
+        return JsonResponse({'success': False, 'error': 'Не удалось определить координаты доставки'}, status=400)
 
     service = YandexDeliveryService()
 
     if not service.is_configured():
-        logger.warning('calculate_delivery: Yandex Delivery не настроен (нет токена)')
-        return JsonResponse({
-            'success': False,
-            'error': 'Яндекс Доставка не настроена. Обратитесь к администратору.',
-        }, status=200)
+        logger.warning('calculate_delivery: Yandex Delivery not configured')
+        return JsonResponse({'success': False, 'error': 'Яндекс Доставка не настроена'}, status=200)
 
-    # Build items payload
-    items = [
-        {
-            'quantity': 1,
-            'weight': 0.5,
-            'size': {'length': 0.3, 'width': 0.2, 'height': 0.1},
-        }
-    ]
+    try:
+        # Получаем товары из POST (от фронтенда) или из session (резерв)
+        data = json.loads(request.body)
+        cart_items_from_frontend = data.get('cart_items', [])
+        session_cart = request.session.get('cart', {})
 
-    result = service.calculate_price(
-        items=items,
-        destination_coords=destination_coords,
-        destination_address=destination_address,
-        delivery_type=delivery_type,
-    )
+        if not cart_items_from_frontend and not session_cart:
+            return JsonResponse({'success': False, 'error': 'Корзина пуста'}, status=200)
 
-    if result.get('success'):
-        response_data = {
-            'success': True,
-            'price': result.get('price', 0),
-            'currency': 'RUB',
-            'delivery_days': result.get('delivery_days'),
-            'eta': result.get('eta'),
-        }
-        return JsonResponse(response_data)
-    else:
-        logger.warning('Ошибка расчёта доставки (возврат ошибки клиенту): %s', result.get('error'))
-        return JsonResponse({
-            'success': False,
-            'error': result.get('error', 'Не удалось рассчитать стоимость доставки'),
-        }, status=200)
+        items_payload = []
+        if cart_items_from_frontend:
+            # Используем товары из фронтенда
+            # Сначала суммируем вес всех товаров
+            total_weight_grams = 0
+            total_quantity = 0
+            for item in cart_items_from_frontend:
+                try:
+                    weight_grams = int(item.get('weight', 0))
+                    quantity = int(item.get('quantity', 1))
+                    total_weight_grams += weight_grams * quantity
+                    total_quantity += quantity
+                except (ValueError, TypeError):
+                    continue
+
+            # Теперь выбираем ОДНУ тару для суммарного веса
+            if total_weight_grams > 0:
+                package = Package.for_weight(total_weight_grams)
+                total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+
+                items_payload.append({
+                    'quantity': total_quantity,
+                    'weight': round(total_weight_kg, 3),
+                    'size': {
+                        'length': float(package.length),
+                        'width': float(package.width),
+                        'height': float(package.height),
+                    },
+                    'title': 'Товар',
+                })
+        else:
+            # Резерв: берем из session
+            total_weight_grams = 0
+            total_quantity = 0
+            session_items = []
+            for key, value in session_cart.items():
+                try:
+                    from coffee_shop.apps.catalog.models import Product
+                    product = Product.objects.get(pk=value['product_id'])
+                    weight_grams = int(value.get('weight', 0))
+                    quantity = int(value.get('quantity', 1))
+                    total_weight_grams += weight_grams * quantity
+                    total_quantity += quantity
+                    session_items.append({'product': product, 'weight_grams': weight_grams, 'quantity': quantity})
+                except (Product.DoesNotExist, ValueError):
+                    continue
+
+            # Теперь выбираем ОДНУ тару для суммарного веса
+            if total_weight_grams > 0:
+                package = Package.for_weight(total_weight_grams)
+                total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+
+                items_payload.append({
+                    'quantity': total_quantity,
+                    'weight': round(total_weight_kg, 3),
+                    'size': {
+                        'length': float(package.length),
+                        'width': float(package.width),
+                        'height': float(package.height),
+                    },
+                    'title': session_items[0]['product'].name if session_items else 'Товар',
+                })
+
+        if not items_payload:
+            return JsonResponse({'success': False, 'error': 'В корзине нет товаров'}, status=200)
+
+        result = service.calculate_price(
+            items=items_payload,
+            destination_coords=destination_coords,
+            destination_address=destination_address,
+            delivery_type=delivery_type,
+        )
+
+        if result.get('success'):
+            return JsonResponse({
+                'success': True,
+                'price': result.get('price', 0),
+                'currency': 'RUB',
+                'delivery_days': result.get('delivery_days'),
+                'eta': result.get('eta'),
+            })
+        else:
+            return JsonResponse({'success': False, 'error': result.get('error', 'Ошибка расчёта')}, status=200)
+    except Exception as e:
+        logger.exception('calculate_delivery unexpected error')
+        return JsonResponse({'success': False, 'error': 'Внутренняя ошибка сервера'}, status=500)
+
+
+@login_required
+def packages_list_view(request):
+    """
+    Return all Package records for frontend tare weight lookup.
+
+    GET /checkout/packages/
+    Returns JSON:
+    {
+        "success": true,
+        "packages": [
+            {
+                "weight_range": "medium",
+                "length": 0.200,
+                "width": 0.120,
+                "height": 0.120,
+                "tare_weight": 0.050
+            },
+            ...
+        ]
+    }
+    """
+    packages = list(Package.objects.values(
+        'weight_range', 'length', 'width', 'height', 'tare_weight'
+    ))
+    return JsonResponse({
+        'success': True,
+        'packages': packages,
+    })
 
 
 @login_required
 def pvz_locations_view(request):
     """
-    Return PVZ/terminal list (placeholder for future API integration).
-    Currently returns mock data for frontend widget.
+    Return PVZ list from Yandex Delivery API.
 
     GET params:
-    - type: 'pvz' or 'postomat'
-    - city: city name
+    - type: 'pvz' or 'postomat' (defaults to 'pvz')
+
+    Returns JSON:
+    {
+        "success": true,
+        "points": [
+            {
+                "id": "...",
+                "name": "...",
+                "address": "...",
+                "latitude": 53.2,
+                "longitude": 50.1,
+                "operator_id": "market_l4g",
+                "type": "pickup_point",
+                "work_schedule": {...}
+            }
+        ],
+        "count": 42
+    }
     """
-    # For now, return empty list - the widget handles PVZ selection via Yandex
-    return JsonResponse({
-        'success': True,
-        'points': [],
-        'mock': True,
-    })
+    delivery_type = request.GET.get('type', 'pvz')
+    point_type = 'pickup_point' if delivery_type == 'pvz' else 'postat'
+
+    service = YandexDeliveryService()
+    result = service.get_pickup_points(
+        operator_ids=['market_l4g'],
+        point_type=point_type,
+        center_lat=getattr(settings, 'YANDEX_SHOP_LAT', 53.216940239129094),
+        center_lon=getattr(settings, 'YANDEX_SHOP_LON', 50.162688008923745),
+        radius_km=50,
+        max_results=500,
+    )
+
+    if result.get('success'):
+        return JsonResponse({
+            'success': True,
+            'points': result.get('points', []),
+            'count': result.get('count', 0),
+        })
+    else:
+        logger.warning('pvz_locations: %s', result.get('error'))
+        return JsonResponse({
+            'success': False,
+            'points': [],
+            'count': 0,
+            'error': result.get('error', 'Не удалось получить точки выдачи'),
+        }, status=200)
 
 
 @csrf_exempt
 @require_POST
 def geocode_address_view(request):
     """
-    Geocode addresses via Yandex Geocoder API.
+    Geocode addresses via Yandex Geocoder API (delegated to YandexGeocoderService).
 
     POST JSON:
     {
@@ -197,118 +242,69 @@ def geocode_address_view(request):
     {
         "success": true,
         "results": ["адрес1", "адрес2", ...],
-        "features": [...]}
+        "features": [{"text": "...", "coords": [lon, lat]}, ...],
+        "rate_limited": false,
+        "api_error": false
+    }
     """
     try:
         data = json.loads(request.body)
     except (json.JSONDecodeError, ValueError):
-        return JsonResponse({
-            'success': False,
-            'error': 'Некорректные данные',
-        }, status=400)
+        return JsonResponse(
+            {'success': False, 'error': 'Некорректные данные'},
+            status=400
+        )
 
     query = data.get('query', '').strip()
     if not query:
-        return JsonResponse({
-            'success': False,
-            'error': 'Запрос пустой',
-        }, status=400)
+        return JsonResponse(
+            {'success': False, 'error': 'Запрос пустой'},
+            status=400
+        )
 
-    api_key = getattr(settings, 'YANDEX_GEOCODER_API_KEY', '') or \
-              getattr(settings, 'YANDEX_MAPS_API_KEY', '')
+    geocoder = YandexGeocoderService()
+    result = geocoder.geocode(query, results=10)
 
-    if not api_key:
-        return JsonResponse({
-            'success': False,
-            'error': 'API ключ не настроен',
-        }, status=500)
+    if 'error' in result:
+        return JsonResponse(result, status=400)
 
-    # Cache geocoding results for 5 minutes (uses hash to avoid key issues)
-    cache_key = f'geocode_{hashlib.md5(query.encode()).hexdigest()}'
-    cached = cache.get(cache_key)
-    if cached:
-        return JsonResponse(cached)
+    return JsonResponse({
+        'success': result['success'],
+        'results': result.get('results', []),
+        'features': result.get('features', []),
+        'rate_limited': result.get('rate_limited', False),
+        'api_error': result.get('api_error', False),
+    })
 
-    try:
-        url = 'https://geocode-maps.yandex.ru/1.x/'
-        params = {
-            'apikey': api_key,
-            'geocode': query,
-            'format': 'json',
-            'lang': 'ru_RU',
-            'results': '10',
-        }
 
-        response = http_requests.get(url, params=params, timeout=5)
+@login_required
+def packages_list_view(request):
+    """
+    Return all Package records for frontend tare weight lookup.
 
-        if response.status_code == 429:
-            logger.warning('Geocoder rate limited for query: %s', query)
-            return JsonResponse({
-                'success': True,
-                'results': [],
-                'features': [],
-                'rate_limited': True,
-            })
-
-        if response.status_code != 200:
-            logger.warning('Geocoder API error: %s', response.status_code)
-            return JsonResponse({
-                'success': True,
-                'results': [],
-                'features': [],
-                'api_error': True,
-            })
-
-        geocoder_data = response.json()
-
-        results = []
-        features = []
-
-        response_obj = geocoder_data.get('response', {})
-        geo_object_collection = response_obj.get('GeoObjectCollection', {})
-        feature_members = geo_object_collection.get('featureMember', [])
-
-        for feature in feature_members:
-            geo_object = feature.get('GeoObject', {})
-
-            meta = geo_object.get('metaDataProperty', {}).get('GeocoderMetaData', {})
-            text = meta.get('text', '')
-
-            point = geo_object.get('Point')
-            coords = None
-            if point:
-                pos = point.get('pos', '')
-                if pos:
-                    coords = pos.split(' ')
-
-            if text:
-                results.append(text)
-                features.append({
-                    'text': text,
-                    'coords': coords,
-                })
-
-        result_data = {
-            'success': True,
-            'results': results,
-            'features': features,
-        }
-        # Cache for 5 minutes
-        cache.set(cache_key, result_data, 300)
-
-        return JsonResponse(result_data)
-
-    except http_requests.exceptions.Timeout:
-        return JsonResponse({
-            'success': False,
-            'error': 'Таймаут запроса',
-        }, status=504)
-
-    except Exception as e:
-        return JsonResponse({
-            'success': False,
-            'error': str(e),
-        }, status=500)
+    GET /checkout/packages/
+    Returns JSON:
+    {
+        "success": true,
+        "packages": [
+            {
+                "weight_range": "medium",
+                "length": 0.200,
+                "width": 0.120,
+                "height": 0.120,
+                "tare_weight": 0.050
+            },
+            ...
+        ]
+    }
+    """
+    packages = list(Package.objects.values(
+        'weight_range', 'length', 'width', 'height', 'tare_weight'
+    ))
+    return JsonResponse({
+        'success': True,
+        'packages': packages,
+    })
 
 
 @csrf_exempt
@@ -330,8 +326,6 @@ def yandex_delivery_webhook(request):
         )
 
     # Extract point data from Yandex payload
-    # The payload structure depends on Yandex's webhook format
-    # Common fields: point_id, point_type, coordinates, address, etc.
     point_id = data.get('id') or data.get('point_id', '')
     point_type = data.get('type', '')
     point_name = data.get('name', '') or data.get('title', '')
@@ -352,8 +346,6 @@ def yandex_delivery_webhook(request):
     )
 
     # Yandex Delivery widget expects an HTML response with JavaScript
-    # that calls the callback function with the selected point data
-    # The format: <script>window.YandexDeliveryCallback({...})</script>
     callback_data = json.dumps({
         'pointId': point_id,
         'pointType': point_type,

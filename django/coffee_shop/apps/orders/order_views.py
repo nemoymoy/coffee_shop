@@ -16,7 +16,7 @@ from coffee_shop.apps.orders.services.promo_service import PromoService
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
-from coffee_shop.apps.orders.models import Order, OrderItem
+from coffee_shop.apps.orders.models import Order, OrderItem, Package
 
 
 def cart_view(request):
@@ -286,24 +286,36 @@ def checkout_view(request):
                         service = YandexDeliveryService()
                         if service.is_configured():
                             # Собираем items для API
-                            api_items = []
+                            # Сначала суммируем вес всех товаров
+                            total_weight_grams = 0
+                            total_quantity = 0
                             for oi in order.items.all():
-                                wt = oi.weight_grams / 1000.0 if oi.weight_grams else 0.5
-                                sz = {}
-                                if oi.package:
-                                    sz = {
-                                        'length': float(oi.package.length),
-                                        'width': float(oi.package.width),
-                                        'height': float(oi.package.height),
-                                    }
-                                else:
-                                    sz = {'length': 0.20, 'width': 0.12, 'height': 0.12}
-                                api_items.append({
-                                    'quantity': oi.quantity,
-                                    'weight': round(wt, 3),
-                                    'size': sz,
-                                    'title': oi.product.name if oi.product else 'Product',
-                                })
+                                total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+                                total_quantity += oi.quantity
+                            
+                            # Теперь выбираем ОДНУ тару для суммарного веса
+                            try:
+                                package = Package.for_weight(total_weight_grams)
+                                total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+                                sz = {
+                                    'length': float(package.length),
+                                    'width': float(package.width),
+                                    'height': float(package.height),
+                                }
+                            except Package.DoesNotExist:
+                                total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+                                sz = {
+                                    'length': 0.12,
+                                    'width': 0.06,
+                                    'height': 0.06,
+                                }
+
+                            api_items.append({
+                                'quantity': total_quantity,
+                                'weight': round(total_weight_kg, 3),
+                                'size': sz,
+                                'title': order.items.first().product.name if order.items.first() else 'Product',
+                            })
 
                             coords_list = []
                             if destination_coords:
