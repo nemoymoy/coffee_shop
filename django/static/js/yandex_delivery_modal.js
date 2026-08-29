@@ -689,7 +689,33 @@ const YandexDeliveryWidget = (() => {
         if (checkoutAddr) checkoutAddr.value = state.selectedAddress;
 
         updateDeliverySummary();
+        updateOrderDeliveryLocation();
         closeModal();
+    }
+
+    /* ==================== Order Delivery Location ==================== */
+    function updateOrderDeliveryLocation() {
+        const locationBlock = $('#orderDeliveryLocation');
+        const locationText = $('#orderDeliveryLocationText');
+        if (!locationBlock || !locationText) return;
+
+        if (!state.selectedPvzName) {
+            hide(locationBlock);
+            return;
+        }
+
+        const typeLabels = {
+            pvz: '📦 ПВЗ',
+            postomat: '📮 Постомат',
+        };
+        const typeLabel = typeLabels[state.selectedType] || '';
+
+        locationText.innerHTML = `
+            <div><strong>${typeLabel}:</strong> ${YandexDeliveryUtils.escapeHtml(state.selectedPvzName)}</div>
+            <div class="mt-1"><strong>Адрес:</strong> ${YandexDeliveryUtils.escapeHtml(state.selectedAddress)}</div>
+        `;
+
+        show(locationBlock);
     }
 
     function showError(msg) {

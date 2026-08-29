@@ -165,6 +165,17 @@
                         <span>Стоимость доставки:</span>
                         <span id="orderDeliveryCost">— ₽</span>
                     </div>
+
+                    <!-- Информация о выбранном пункте выдачи/постомате -->
+                    <div id="orderDeliveryLocation" class="mt-2 mb-2 d-none">
+                        <div class="alert alert-info py-2" style="font-size: 0.85rem;">
+                            <div class="mb-1">
+                                <strong>📍 Пункт выдачи:</strong>
+                            </div>
+                            <div id="orderDeliveryLocationText" class="text-muted"></div>
+                        </div>
+                    </div>
+
                     <hr>
                     <h5 class="mb-0">Итого: <span id="checkoutTotal">{{ total|default:"0"|floatformat:2 }} ₽</span></h5>
                 </div>
