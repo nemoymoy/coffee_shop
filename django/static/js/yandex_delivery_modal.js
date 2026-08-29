@@ -917,6 +917,13 @@ const YandexDeliveryWidget = (() => {
         if (!coords || !Array.isArray(coords) || coords.length < 2) return;
         console.log('[YandexDelivery] Map clicked at', coords);
 
+        // Для ПВЗ и постоматов клик по карте должен показывать подсказку
+        if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+            showPointSelectionHint();
+            return;
+        }
+
+        // Для курьерской доставки — реверс-геокодирование
         ymaps.geocode(coords.join(',')).then((res) => {
             const first = res.geoObjects.get(0);
             if (!first) return;
@@ -1034,6 +1041,30 @@ const YandexDeliveryWidget = (() => {
         }
         hide($('#yandexDeliveryWidgetContainer'));
         show($('#yandexAddressInputWrap'));
+    }
+
+    /**
+     * Показывает подсказку о необходимости выбрать ПВЗ/постомат на карте.
+     */
+    function showPointSelectionHint() {
+        const hintMessage = state.selectedType === 'postomat'
+            ? '📮 Выберите постомат на карте'
+            : '📦 Выберите ПВЗ на карте';
+
+        const costEl = $('#widgetCost');
+        if (costEl) {
+            const originalText = costEl.textContent;
+            costEl.innerHTML = `<span class="text-info">${hintMessage}</span>`;
+            costEl.classList.add('border-info');
+
+            // Убираем подсказку через 3 секунды
+            setTimeout(() => {
+                costEl.textContent = originalText;
+                costEl.classList.remove('border-info');
+            }, 3000);
+        }
+
+        console.log('[YandexDelivery] Hint:', hintMessage);
     }
     /* ==================== Point Selection ==================== */
     function handlePointSelected(point) {
