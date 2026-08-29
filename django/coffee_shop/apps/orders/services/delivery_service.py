@@ -1,4 +1,5 @@
 """Yandex Cargo Delivery service integration (b2b/cargo/integration/v2)."""
+import json
 import logging
 import time
 import requests
@@ -324,6 +325,163 @@ class YandexDeliveryService:
 
 
 
+    def get_postamats(self, operator_ids=None, center_lat=None, center_lon=None,
+                      radius_km=50, max_results=500) -> dict:
+        """
+        Get postamat (terminal) list from Yandex Delivery API.
+        Запрашивает все точки оператора и фильтрует по type=terminal.
+
+        Args:
+            operator_ids: List of operator IDs (e.g. ['market_l4g']).
+            center_lat: Center latitude for geo-filtering.
+            center_lon: Center longitude for geo-filtering.
+            radius_km: Radius in km for geo-filtering.
+            max_results: Max number of points to return.
+
+        Returns:
+            {'success': True, 'points': [...], 'count': N}
+        """
+        if not self.is_api_configured():
+            logger.warning('get_postamats: API not configured')
+            return {
+                'success': False,
+                'error': 'API Яндекс Доставки не настроена',
+            }
+
+        if center_lat is None:
+            center_lat = self.shop_lat
+        if center_lon is None:
+            center_lon = self.shop_lon
+
+        if operator_ids is None:
+            operator_ids = ['market_l4g']
+
+        # Cache for 1 hour (postamat list changes rarely)
+        cache_key = f'yandex_postamats_{operator_ids}_{center_lat}_{center_lon}_{radius_km}'
+        cached = cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            # Используем тот же URL, что и для pickup_points
+            payload = {
+                'operator_ids': operator_ids,
+                'type': 'pickup_point',  # Запрашиваем все точки
+            }
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {self.api_key}',
+            }
+
+            response = requests.post(
+                self.PICKUP_POINTS_URL,
+                json=payload,
+                headers=headers,
+                timeout=15,
+            )
+
+            if response.status_code == 429:
+                logger.warning('Rate limited on pickup-points/list')
+                return {
+                    'success': False,
+                    'error': 'Слишком много запросов. Попробуйте позже.',
+                }
+
+            if response.status_code != 200:
+                logger.error('pickup-points/list failed: status=%s body=%s', response.status_code, response.text[:500])
+                return {
+                    'success': False,
+                    'error': f'Ошибка API: {response.status_code}',
+                }
+
+            data = response.json()
+            all_points = data.get('points', [])
+
+            # Логируем типы точек
+            types_count = {}
+            for p in all_points:
+                t = p.get('type', 'unknown')
+                types_count[t] = types_count.get(t, 0) + 1
+            logger.info('pickup-points types (all): %s', types_count)
+
+            # Фильтруем только постоматы (type=terminal)
+            postamats = [p for p in all_points if p.get('type') == 'terminal']
+            logger.info('postamats found: %d', len(postamats))
+
+            if not postamats:
+                return {
+                    'success': True,
+                    'points': [],
+                    'count': 0,
+                    'message': 'Постоматы в вашем регионе недоступны',
+                }
+
+            # Geo-filter: only points within radius of the shop
+            normalized = []
+            for p in postamats:
+                pos = p.get('position', {})
+                addr = p.get('address', {})
+                latitude = float(pos.get('latitude', 0))
+                longitude = float(pos.get('longitude', 0))
+
+                if not latitude or not longitude:
+                    continue
+
+                distance_km = self._haversine_distance(
+                    center_lat, center_lon,
+                    latitude, longitude
+                )
+                if distance_km > radius_km:
+                    continue
+
+                normalized.append({
+                    'id': p.get('id', ''),
+                    'name': p.get('name', ''),
+                    'address': addr.get('full_address', ''),
+                    'latitude': latitude,
+                    'longitude': longitude,
+                    'operator_id': p.get('operator_id', ''),
+                    'type': p.get('type', ''),
+                    'work_schedule': p.get('work_schedule', {}),
+                    'distance_km': round(distance_km, 1),
+                })
+
+                if len(normalized) >= max_results:
+                    break
+
+            # Sort by distance (closest first)
+            normalized.sort(key=lambda x: x.get('distance_km', 999999))
+
+            result = {
+                'success': True,
+                'points': normalized,
+                'count': len(normalized),
+            }
+
+            # Cache for 1 hour
+            cache.set(cache_key, result, 3600)
+            return result
+
+        except requests.exceptions.Timeout:
+            logger.error('get_postamats: request timeout')
+            return {
+                'success': False,
+                'error': 'Таймаут запроса к API',
+            }
+        except requests.exceptions.RequestException as e:
+            logger.error('get_postamats error: %s', e)
+            return {
+                'success': False,
+                'error': str(e),
+            }
+        except Exception as e:
+            logger.error('get_postamats unexpected error: %s', e)
+            return {
+                'success': False,
+                'error': 'Внутренняя ошибка',
+            }
+
     def get_pickup_points(self, operator_ids=None, point_type='pickup_point',
                           center_lat=None, center_lon=None, radius_km=50, max_results=500) -> dict:
         """
@@ -396,7 +554,18 @@ class YandexDeliveryService:
                 }
 
             data = response.json()
+            
+            # Детальное логирование для отладки
+            logger.info('pickup-points/list response: %s', json.dumps(data, ensure_ascii=False)[:1000])
+            
             points = data.get('points', [])
+            
+            # Логируем типы точек
+            types_count = {}
+            for p in points:
+                t = p.get('type', 'unknown')
+                types_count[t] = types_count.get(t, 0) + 1
+            logger.info('pickup-points types: %s', types_count)
 
             # Normalize point data for frontend
             normalized = []

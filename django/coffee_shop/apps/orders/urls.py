@@ -13,6 +13,7 @@ urlpatterns = [
     # Checkout
     path('checkout/', views.checkout_view, name='checkout'),
     path('checkout/calculate-delivery/', delivery_views.calculate_delivery_view, name='calculate_delivery'),
+    path('checkout/postamats/', delivery_views.postamats_list_view, name='postamats_list'),
     path('checkout/packages/', delivery_views.packages_list_view, name='packages_list'),
     path('checkout/pvz-locations/', delivery_views.pvz_locations_view, name='pvz_locations'),
     path('checkout/geocode-address/', delivery_views.geocode_address_view, name='geocode_address'),

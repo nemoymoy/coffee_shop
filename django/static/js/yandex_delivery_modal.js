@@ -248,26 +248,20 @@ const YandexDeliveryWidget = (() => {
 
     async function loadPvzPoints(type) {
         try {
-            // Всегда запрашиваем все точки (pickup_point), фильтруем на клиенте
-            const data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
+            let data;
+            if (type === 'postomat') {
+                // Для постоматов используем отдельный endpoint
+                data = await apiGet('/checkout/postamats/');
+            } else {
+                // Для ПВЗ используем стандартный endpoint
+                data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
+            }
+
             if (!data.success || !data.points?.length) {
                 return { success: false };
             }
 
-            // Фильтруем точки по типу
-            let filteredPoints = data.points;
-            if (type === 'postomat') {
-                // Для постоматов фильтруем по type=terminal
-                filteredPoints = data.points.filter(p => p.type === 'terminal');
-                console.log('[YandexDelivery] loadPvzPoints: all points=', data.points.length, 'terminal points=', filteredPoints.length);
-            }
-
-            if (!filteredPoints.length) {
-                console.warn('[YandexDelivery] No points found for type:', type);
-                return { success: false };
-            }
-
-            return { success: true, points: filteredPoints };
+            return { success: true, points: data.points };
         } catch (err) {
             console.error('[YandexDelivery] Load PVZ error:', err);
             return { success: false };

@@ -143,6 +143,44 @@ def calculate_delivery_view(request):
 
 
 @login_required
+def postamats_list_view(request):
+    """
+    Return postamat (terminal) list from Yandex Delivery API.
+
+    GET /checkout/postamats/
+    Returns JSON:
+    {
+        "success": true,
+        "points": [...],
+        "count": N
+    }
+    """
+    service = YandexDeliveryService()
+    result = service.get_postamats(
+        operator_ids=['market_l4g'],
+        center_lat=getattr(settings, 'YANDEX_SHOP_LAT', 53.216940239129094),
+        center_lon=getattr(settings, 'YANDEX_SHOP_LON', 50.162688008923745),
+        radius_km=50,
+        max_results=500,
+    )
+
+    if result.get('success'):
+        return JsonResponse({
+            'success': True,
+            'points': result.get('points', []),
+            'count': result.get('count', 0),
+        })
+    else:
+        logger.warning('postamats_list: %s', result.get('error'))
+        return JsonResponse({
+            'success': False,
+            'points': [],
+            'count': 0,
+            'error': result.get('error', 'Не удалось получить постоматы'),
+        }, status=200)
+
+
+@login_required
 def packages_list_view(request):
     """
     Return all Package records for frontend tare weight lookup.
