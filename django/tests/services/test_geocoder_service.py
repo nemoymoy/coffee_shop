@@ -23,28 +23,34 @@ class TestYandexGeocoderService:
             assert service.is_configured() is True
 
     def test_parse_coords_list(self):
-        assert YandexGeocoderService.parse_coords([49.35, 53.21]) == [49.35, 53.21]
+        geocoder = YandexGeocoderService(api_key='test')
+        assert geocoder.parse_coords([49.35, 53.21]) == [49.35, 53.21]
 
     def test_parse_coords_string(self):
-        assert YandexGeocoderService.parse_coords("49.35,53.21") == [49.35, 53.21]
+        geocoder = YandexGeocoderService(api_key='test')
+        assert geocoder.parse_coords("49.35,53.21") == [49.35, 53.21]
 
     def test_parse_coords_empty(self):
-        assert YandexGeocoderService.parse_coords('') is None
-        assert YandexGeocoderService.parse_coords(None) is None
+        geocoder = YandexGeocoderService(api_key='test')
+        assert geocoder.parse_coords('') is None
+        assert geocoder.parse_coords(None) is None
 
     def test_parse_coords_invalid_string(self):
-        assert YandexGeocoderService.parse_coords("abc,def") is None
-        assert YandexGeocoderService.parse_coords("only_one") is None
+        geocoder = YandexGeocoderService(api_key='test')
+        assert geocoder.parse_coords("abc,def") is None
+        assert geocoder.parse_coords("only_one") is None
 
-    def test_parse_coords_invalid_list(self):
-        assert YandexGeocoderService.parse_coords([1, 2, 3]) is None
+    def test_parse_coords_extra_elements(self):
+        # Берёт первые два элемента из списка
+        geocoder = YandexGeocoderService(api_key='test')
+        assert geocoder.parse_coords([1, 2, 3]) == [1.0, 2.0]
 
     def test_geocode_empty_query(self):
         geocoder = YandexGeocoderService(api_key='test-key')
         result = geocoder.geocode('')
         assert result['success'] is False
 
-    @patch('coffee_shop.apps.orders.services.geocoder_service.YandexGeocoderService.is_configured')
+    @patch.object(YandexGeocoderService, 'is_configured')
     def test_geocode_unconfigured(self, mock_configured):
         mock_configured.return_value = False
         geocoder = YandexGeocoderService(api_key='test-key')

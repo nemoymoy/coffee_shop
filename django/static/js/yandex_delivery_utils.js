@@ -5,50 +5,42 @@
  * - CSRF токен
  * - Форматирование цен
  * - DOM helpers
- * - Fetch-обёртки
  */
-var YandexDeliveryUtils = (function () {
-    'use strict';
+const YandexDeliveryUtils = (() => {
 
     /* ==================== CSRF ==================== */
 
+    /**
+     * Получает CSRF токен из формы или cookie.
+     * @returns {string}
+     */
     function getCsrfToken() {
-        var tokenInput = document.querySelector('[name=csrftokenmiddlewaretoken]');
-        if (tokenInput) {
-            return tokenInput.value;
-        }
+        const tokenInput = document.querySelector('[name=csrfmiddlewaretoken]');
+        if (tokenInput) return tokenInput.value;
         return _extractCsrfFromCookie();
     }
 
+    /**
+     * Извлекает CSRF токен из cookie.
+     * @returns {string}
+     */
     function _extractCsrfFromCookie() {
-        var cookieName = 'csrftoken';
-        if (!document.cookie || document.cookie === '') {
-            return '';
-        }
-
-        var cookies = document.cookie.split(';');
-        for (var i = 0; i < cookies.length; i++) {
-            var cookie = cookies[i].trim();
-            if (cookie.substring(0, cookieName.length + 1) === (cookieName + '=')) {
-                return decodeURIComponent(cookie.substring(cookieName.length + 1));
-            }
-        }
-        return '';
-    }
-
-    function buildFetchOptions(body) {
-        return {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': getCsrfToken()
-            },
-            body: JSON.stringify(body)
-        };
+        const cookieName = 'csrftoken';
+        if (!document.cookie) return '';
+        return document.cookie
+            .split(';')
+            .map(c => c.trim())
+            .find(c => c.startsWith(`${cookieName}=`))
+            ?.substring(cookieName.length + 1);
     }
 
     /* ==================== Price Formatting ==================== */
 
+    /**
+     * Форматирует цену в рублях по российскому стандарту.
+     * @param {number|string} price
+     * @returns {string}
+     */
     function formatPrice(price) {
         return parseFloat(price).toLocaleString('ru-RU', {
             minimumFractionDigits: 0,
@@ -58,100 +50,145 @@ var YandexDeliveryUtils = (function () {
 
     /* ==================== DOM Helpers ==================== */
 
+    /**
+     * Находит элемент по CSS-селектору.
+     * @param {string} selector
+     * @returns {Element|null}
+     */
     function $(selector) {
         return document.querySelector(selector);
     }
 
+    /**
+     * Находит все элементы по CSS-селектору.
+     * @param {string} selector
+     * @returns {NodeListOf<Element>}
+     */
     function $$(selector) {
         return document.querySelectorAll(selector);
     }
 
+    /**
+     * Показывает элемент (убирает класс d-none).
+     * @param {Element|null} el
+     */
     function showElement(el) {
-        if (el) el.style.display = 'block';
+        el?.classList.remove('d-none');
     }
 
+    /**
+     * Скрывает элемент (добавляет класс d-none).
+     * @param {Element|null} el
+     */
     function hideElement(el) {
-        if (el) el.style.display = 'none';
+        el?.classList.add('d-none');
     }
 
-    function setFieldvalue(fieldId, value) {
-        var field = $(fieldId);
-        if (field) {
-            field.value = value;
-        }
+    /**
+     * Устанавливает value поля формы.
+     * @param {string} fieldId
+     * @param {string} value
+     */
+    function setFieldValue(fieldId, value) {
+        const field = $(fieldId);
+        if (field) field.value = value;
     }
 
+    /**
+     * Устанавливает textContent элемента.
+     * @param {Element|null} el
+     * @param {string} text
+     */
     function setTextContent(el, text) {
-        if (el) {
-            el.textContent = text;
-        }
+        if (el) el.textContent = text;
+    }
+
+    /**
+     * Устанавливает innerHTML элемента с экранированием HTML.
+     * @param {Element|null} el
+     * @param {string} html
+     */
+    function setHtmlContent(el, html) {
+        if (el) el.innerHTML = _escapeHtml(html);
     }
 
     /* ==================== Error Display ==================== */
 
-    function showInlineError(containerId, message) {
-        var container = $(containerId);
+    /**
+     * Показывает сообщение об ошибке в блоке цены (для курьера).
+     * @param {Element|null} container
+     * @param {string} message
+     */
+    function showPriceError(container, message) {
         if (!container) return;
-
-        // Проверяем, является ли контейнер block с ценой (courierPriceBlock)
-        if (container.id === 'courierPriceBlock') {
-            container.innerHTML = '❌ ' + _escapeHtml(message);
-            container.style.background = '#ffebee';
-            container.style.color = '#c62828';
-        } else {
-            // Для обычного cost элемента
-            container.textContent = '❌ ' + message;
-            container.style.color = 'red';
-        }
+        container.innerHTML = `<span class="text-danger">❌ ${_escapeHtml(message)}</span>`;
+        container.classList.add('border-danger');
     }
 
-    function showInlineSuccess(containerId, message) {
-        var container = $(containerId);
+    /**
+     * Показывает успешное сообщение в блоке цены.
+     * @param {Element|null} container
+     * @param {string} message
+     */
+    function showPriceSuccess(container, message) {
         if (!container) return;
-
-        if (container.id === 'courierPriceBlock') {
-            container.innerHTML = '✅ ' + _escapeHtml(message);
-            container.style.background = '';
-            container.style.color = '';
-        }
-    }
-
-    function _escapeHtml(text) {
-        if (!text) return '';
-        var div = document.createElement('div');
-        div.appendChild(document.createTextNode(text));
-        return div.innerHTML;
+        container.innerHTML = `<span class="text-success">✅ ${_escapeHtml(message)}</span>`;
+        container.classList.remove('border-danger');
     }
 
     /* ==================== Loading States ==================== */
 
+    /**
+     * Устанавливает состояние загрузки в элемент цены.
+     * @param {Element|null} costEl
+     */
     function showLoading(costEl) {
         if (costEl) {
             costEl.textContent = 'Расчёт...';
-            costEl.style.color = '';
+            costEl.classList.remove('text-danger', 'text-success');
         }
     }
 
+    /**
+     * Формирует текст ETA (estimated time of arrival).
+     * @param {number|null} days
+     * @returns {string}
+     */
     function showEtaText(days) {
-        return days ? ('  • ' + days + ' дн.') : '';
+        return days ? ` • ${days} дн.` : '';
+    }
+
+    /* ==================== HTML Escaping ==================== */
+
+    /**
+     * Экранирует HTML-сущности.
+     * @param {string} text
+     * @returns {string}
+     */
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.appendChild(document.createTextNode(text));
+        return div.innerHTML;
     }
 
     /* ==================== Public API ==================== */
 
     return {
-        getCsrfToken: getCsrfToken,
-        buildFetchOptions: buildFetchOptions,
-        formatPrice: formatPrice,
-        $: $,
-        $$: $$,
-        showElement: showElement,
-        hideElement: hideElement,
-        setFieldValue: setFieldvalue,
-        setTextContent: setTextContent,
-        showInlineError: showInlineError,
-        showInlineSuccess: showInlineSuccess,
-        showLoading: showLoading,
-        showEtaText: showEtaText,
-        escapeHtml: _escapeHtml
+        getCsrfToken,
+        formatPrice,
+        $,
+        $$,
+        showElement,
+        hideElement,
+        setFieldValue,
+        setTextContent,
+        setHtmlContent,
+        showPriceError,
+        showPriceSuccess,
+        showLoading,
+        showEtaText,
+        escapeHtml
     };
+
 })();

@@ -14,9 +14,9 @@
     <link rel="stylesheet" href="{% static 'css/components.css' %}">
     {% block extra_css %}{% endblock %}
     
-    <!-- Yandex Maps API 3.0 (when configured) -->
+    <!-- Yandex Maps API 2.1 (when configured) -->
     {% if YANDEX_JAVASCRIPT_API_KEY %}
-    <script src="https://api-maps.yandex.ru/3.0/?apikey={{ YANDEX_JAVASCRIPT_API_KEY }}&lang=ru_RU"></script>
+    <script src="https://api-maps.yandex.ru/2.1/?apikey={{ YANDEX_JAVASCRIPT_API_KEY }}&lang=ru_RU"></script>
     {% endif %}
     
     <!-- Yandex Metrika (when configured) -->
@@ -148,6 +148,7 @@
     <script src="{% static 'js/base.js' %}"></script>
     <script src="{% static 'js/cart.js' %}"></script>
     <script src="{% static 'js/coffee_selector.js' %}"></script>
+    <script src="{% static 'js/yandex_delivery_utils.js' %}"></script>
     <script src="{% static 'js/yandex_delivery_modal.js' %}"></script>
     <script src="{% static 'js/checkout.js' %}"></script>
     {% block extra_js %}{% endblock %}
