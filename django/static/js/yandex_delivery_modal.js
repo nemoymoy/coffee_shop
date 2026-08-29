@@ -347,14 +347,12 @@ const YandexDeliveryWidget = (() => {
         state.step = stepNumber;
         const step1 = $('#deliveryStep1');
         const step2 = $('#deliveryStep2');
-        const step3 = $('#deliveryStep3');
         const widgetContainer = $('#yandexDeliveryWidgetContainer');
         const addressInputWrap = $('#yandexAddressInputWrap');
         const mapWarning = $('#mapUnavailableWarning');
 
         hide(step1);
         hide(step2);
-        hide(step3);
 
         if (stepNumber === 1) {
             show(step1);
@@ -370,72 +368,72 @@ const YandexDeliveryWidget = (() => {
                 hide(mapWarning);
                 show(widgetContainer);
                 hide($('#selectedPvzInfo'));
+                hide($('#calcDetailsBlock'));
                 loadYmaps();
             }
-        } else if (stepNumber === 3) {
-            if (state.selectedType === 'courier') {
-                show(step2);
-                hide(widgetContainer);
-                show(addressInputWrap);
-                hide($('#selectedPvzInfo'));
+        }
+    }
+
+    /**
+     * Показывает блок с деталями расчета под картой.
+     */
+    function showCalcDetails() {
+        const calcDetailsBlock = $('#calcDetailsBlock');
+        if (!calcDetailsBlock) return;
+
+        // Заполняем детали расчета
+        const calcAddress = $('#calcAddress');
+        const calcPvzBlock = $('#calcPvzBlock');
+        const calcPvzName = $('#calcPvzName');
+        const calcDeliveryType = $('#calcDeliveryType');
+        const calcItemDetails = $('#calcItemDetails');
+        const calcPostomatInfo = $('#calcPostomatInfo');
+
+        if (calcAddress) calcAddress.textContent = state.selectedAddress;
+
+        if (calcDeliveryType) {
+            const typeLabels = {
+                pvz: '📦 Пункт выдачи (ПВЗ)',
+                postomat: '📮 Постомат',
+            };
+            calcDeliveryType.textContent = typeLabels[state.selectedType] || typeLabels.pvz;
+        }
+
+        if (calcItemDetails) {
+            if (cartState.packagesLoaded) {
+                const summary = getCartSummary();
+                calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
             } else {
-                show(step3);
-                // Карта остается видимой из шага 2 — не скрываем widgetContainer
-
-                // Заполняем детали расчета
-                const calcAddress = $('#calcAddress');
-                const calcPvzBlock = $('#calcPvzBlock');
-                const calcPvzName = $('#calcPvzName');
-                const calcDeliveryType = $('#calcDeliveryType');
-                const calcItemDetails = $('#calcItemDetails');
-                const calcPostomatInfo = $('#calcPostomatInfo');
-
-                if (calcAddress) calcAddress.textContent = state.selectedAddress;
-
-                if (calcDeliveryType) {
-                    const typeLabels = {
-                        pvz: '📦 Пункт выдачи (ПВЗ)',
-                        postomat: '📮 Постомат',
-                    };
-                    calcDeliveryType.textContent = typeLabels[state.selectedType] || typeLabels.pvz;
-                }
-
-                if (calcItemDetails) {
-                    if (cartState.packagesLoaded) {
-                        const summary = getCartSummary();
-                        calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
-                    } else {
-                        // Fallback: show only product weight if packages not loaded
-                        const summary = getCartSummary();
-                        calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
-                    }
-                }
-
-                if (state.selectedPvzName && calcPvzName) {
-                    calcPvzName.textContent = state.selectedPvzName + (state.selectedAddress ? ' — ' + state.selectedAddress : '');
-                    if (calcPvzBlock) show(calcPvzBlock);
-                } else if (calcPvzBlock) {
-                    hide(calcPvzBlock);
-                }
-
-                // Отображаем доп. информацию о постомате (график работы, расстояние)
-                if (state.selectedType === 'postomat' && calcPostomatInfo) {
-                    const scheduleText = state.selectedWorkSchedule || '';
-                    const distanceText = state.selectedDistance ? ` • ${state.selectedDistance} км от магазина` : '';
-                    let infoHtml = '';
-                    if (scheduleText) {
-                        infoHtml += `<div>🕐 ${YandexDeliveryUtils.escapeHtml(scheduleText)}</div>`;
-                    }
-                    if (distanceText) {
-                        infoHtml += `<div>📏 ${YandexDeliveryUtils.escapeHtml(distanceText)}</div>`;
-                    }
-                    calcPostomatInfo.innerHTML = infoHtml;
-                    show(calcPostomatInfo);
-                } else if (calcPostomatInfo) {
-                    hide(calcPostomatInfo);
-                }
+                const summary = getCartSummary();
+                calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
             }
         }
+
+        if (state.selectedPvzName && calcPvzName) {
+            calcPvzName.textContent = state.selectedPvzName + (state.selectedAddress ? ' — ' + state.selectedAddress : '');
+            if (calcPvzBlock) show(calcPvzBlock);
+        } else if (calcPvzBlock) {
+            hide(calcPvzBlock);
+        }
+
+        // Отображаем доп. информацию о постомате (график работы, расстояние)
+        if (state.selectedType === 'postomat' && calcPostomatInfo) {
+            const scheduleText = state.selectedWorkSchedule || '';
+            const distanceText = state.selectedDistance ? `${state.selectedDistance} от магазина` : '';
+            let infoHtml = '';
+            if (scheduleText) {
+                infoHtml += `<div>🕐 ${YandexDeliveryUtils.escapeHtml(scheduleText)}</div>`;
+            }
+            if (distanceText) {
+                infoHtml += `<div>📏 ${YandexDeliveryUtils.escapeHtml(distanceText)}</div>`;
+            }
+            calcPostomatInfo.innerHTML = infoHtml;
+            show(calcPostomatInfo);
+        } else if (calcPostomatInfo) {
+            hide(calcPostomatInfo);
+        }
+
+        show(calcDetailsBlock);
     }
 
     function resetState() {
@@ -636,9 +634,11 @@ const YandexDeliveryWidget = (() => {
             YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
             YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
             YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
+
+            // Показываем детали расчета под картой
+            showCalcDetails();
         }
         updateConfirmButton();
-        if (state.selectedType !== 'courier') goToStep(3);
     }
 
     function showAddrError(costEl, confirmBtn, courierPriceBlock, msg) {
@@ -1111,9 +1111,10 @@ const YandexDeliveryWidget = (() => {
                     pvzNameEl.textContent = state.selectedAddress;
                     show(pvzInfo);
                 }
-            }
 
-            goToStep(3);
+                // Показываем детали расчета под картой
+                showCalcDetails();
+            }
         } else {
             YandexDeliveryUtils.setTextContent(costEl, calc.error || 'Не удалось рассчитать');
             if (confirmBtn) confirmBtn.disabled = true;
