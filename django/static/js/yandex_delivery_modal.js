@@ -227,8 +227,9 @@ const YandexDeliveryWidget = (() => {
             const totalProductWeight = cartState.items.reduce((sum, item) => sum + item.weight * item.quantity, 0);
             const tare = findPackageForWeight(totalProductWeight);
             const tareWeightGrams = tare ? parseFloat(tare.tare_weight) * 1000 : 0;
+            console.log('[YandexDelivery] Вес тары:', tareWeightGrams, 'г');
             const totalPackageWeightGrams = totalProductWeight + tareWeightGrams;
-            console.log('[YandexDelivery] Вес посылки:', totalPackageWeightGrams, 'г');
+            console.log('[YandexDelivery] Вес посылки (товары + тара):', totalPackageWeightGrams, 'г');
             if (tare) {
                 console.log('[YandexDelivery] Размеры посылки:', `${tare.length}x${tare.width}x${tare.height} м`);
             }
