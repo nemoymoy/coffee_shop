@@ -147,21 +147,55 @@ def postamats_list_view(request):
     """
     Return postamat (terminal) list from Yandex Delivery API.
 
-    GET /checkout/postamats/
+    GET params:
+        radius_km: Geo-filter radius in km (default: 50)
+        max_results: Max points to return (default: 500)
+
+    GET /checkout/postamats/?radius_km=30&max_results=100
+
     Returns JSON:
     {
         "success": true,
-        "points": [...],
-        "count": N
+        "points": [
+            {
+                "id": "12345",
+                "name": "Постомат Яндекс",
+                "address": "Самара, ул. ...",
+                "latitude": 53.21,
+                "longitude": 50.16,
+                "operator_id": "market_l4g",
+                "type": "terminal",
+                "work_schedule": {...},
+                "distance_km": 2.5
+            }
+        ],
+        "count": 5
     }
     """
     service = YandexDeliveryService()
+
+    # Parse query parameters
+    try:
+        radius_km = float(request.GET.get('radius_km', 50))
+        max_results = int(request.GET.get('max_results', 500))
+    except (ValueError, TypeError):
+        return JsonResponse({
+            'success': False,
+            'points': [],
+            'count': 0,
+            'error': 'Некорректные параметры запроса',
+        }, status=400)
+
+    # Clamp values
+    radius_km = max(1, min(radius_km, 200))
+    max_results = max(1, min(max_results, 1000))
+
     result = service.get_postamats(
         operator_ids=['market_l4g'],
         center_lat=getattr(settings, 'YANDEX_SHOP_LAT', 53.216940239129094),
         center_lon=getattr(settings, 'YANDEX_SHOP_LON', 50.162688008923745),
-        radius_km=50,
-        max_results=500,
+        radius_km=radius_km,
+        max_results=max_results,
     )
 
     if result.get('success'):
@@ -169,6 +203,7 @@ def postamats_list_view(request):
             'success': True,
             'points': result.get('points', []),
             'count': result.get('count', 0),
+            'message': result.get('message'),
         })
     else:
         logger.warning('postamats_list: %s', result.get('error'))

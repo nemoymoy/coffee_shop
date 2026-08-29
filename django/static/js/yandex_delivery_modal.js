@@ -20,6 +20,8 @@ const YandexDeliveryWidget = (() => {
         selectedCoords: [],
         selectedPvzId: '',
         selectedPvzName: '',
+        selectedWorkSchedule: '', // График работы постомата
+        selectedDistance: null,   // Расстояние до постомата (км)
         estimatedCost: 0,
         step: 1,
         ymapsLoaded: false,
@@ -257,14 +259,23 @@ const YandexDeliveryWidget = (() => {
                 data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
             }
 
-            if (!data.success || !data.points?.length) {
-                return { success: false };
+            console.log('[YandexDelivery] API response for type', type + ':', JSON.stringify(data).substring(0, 200));
+
+            if (!data.success) {
+                console.error('[YandexDelivery] API error for type', type + ':', data.error);
+                return { success: false, error: data.error || 'Ошибка API' };
             }
 
+            if (!data.points?.length) {
+                console.warn('[YandexDelivery] No points loaded for type:', type, 'message:', data.message);
+                return { success: false, error: data.message || 'Точки доставки недоступны' };
+            }
+
+            console.log('[YandexDelivery] Points loaded for type', type + ':', data.points.length);
             return { success: true, points: data.points };
         } catch (err) {
             console.error('[YandexDelivery] Load PVZ error:', err);
-            return { success: false };
+            return { success: false, error: 'Сетевая ошибка: ' + err.message };
         }
     }
 
@@ -370,16 +381,17 @@ const YandexDeliveryWidget = (() => {
             } else {
                 show(step3);
                 // Карта остается видимой из шага 2 — не скрываем widgetContainer
-                
+
                 // Заполняем детали расчета
                 const calcAddress = $('#calcAddress');
                 const calcPvzBlock = $('#calcPvzBlock');
                 const calcPvzName = $('#calcPvzName');
                 const calcDeliveryType = $('#calcDeliveryType');
                 const calcItemDetails = $('#calcItemDetails');
-                
+                const calcPostomatInfo = $('#calcPostomatInfo');
+
                 if (calcAddress) calcAddress.textContent = state.selectedAddress;
-                
+
                 if (calcDeliveryType) {
                     const typeLabels = {
                         pvz: '📦 Пункт выдачи (ПВЗ)',
@@ -387,7 +399,7 @@ const YandexDeliveryWidget = (() => {
                     };
                     calcDeliveryType.textContent = typeLabels[state.selectedType] || typeLabels.pvz;
                 }
-                
+
                 if (calcItemDetails) {
                     if (cartState.packagesLoaded) {
                         const summary = getCartSummary();
@@ -398,12 +410,29 @@ const YandexDeliveryWidget = (() => {
                         calcItemDetails.textContent = `${summary.totalItems} шт, ${summary.totalWeight} г`;
                     }
                 }
-                
+
                 if (state.selectedPvzName && calcPvzName) {
                     calcPvzName.textContent = state.selectedPvzName + (state.selectedAddress ? ' — ' + state.selectedAddress : '');
                     if (calcPvzBlock) show(calcPvzBlock);
                 } else if (calcPvzBlock) {
                     hide(calcPvzBlock);
+                }
+
+                // Отображаем доп. информацию о постомате (график работы, расстояние)
+                if (state.selectedType === 'postomat' && calcPostomatInfo) {
+                    const scheduleText = state.selectedWorkSchedule || '';
+                    const distanceText = state.selectedDistance ? ` • ${state.selectedDistance} км от магазина` : '';
+                    let infoHtml = '';
+                    if (scheduleText) {
+                        infoHtml += `<div>🕐 ${YandexDeliveryUtils.escapeHtml(scheduleText)}</div>`;
+                    }
+                    if (distanceText) {
+                        infoHtml += `<div>📏 ${YandexDeliveryUtils.escapeHtml(distanceText)}</div>`;
+                    }
+                    calcPostomatInfo.innerHTML = infoHtml;
+                    show(calcPostomatInfo);
+                } else if (calcPostomatInfo) {
+                    hide(calcPostomatInfo);
                 }
             }
         }
@@ -415,6 +444,8 @@ const YandexDeliveryWidget = (() => {
         state.selectedCoords = [];
         state.selectedPvzId = '';
         state.selectedPvzName = '';
+        state.selectedWorkSchedule = '';
+        state.selectedDistance = null;
         state.estimatedCost = 0;
         state.step = 1;
         destroyMap();
@@ -904,7 +935,8 @@ const YandexDeliveryWidget = (() => {
 
         if (!data.success || !data.points?.length) {
             console.warn('[YandexDelivery] No', pointLabel, '(selectedType:', state.selectedType + ')');
-            showMapError(`${pointLabel} временно недоступны`);
+            const errorMsg = data.error || `${pointLabel} временно недоступны`;
+            showMapError(errorMsg);
             return;
         }
 
@@ -915,9 +947,26 @@ const YandexDeliveryWidget = (() => {
         data.points.forEach((point) => {
             if (!point.latitude || !point.longitude) return;
 
+            // Формируем полное описание для балуна
+            let balloonContent = `<strong>${YandexDeliveryUtils.escapeHtml(point.name)}</strong><br>`;
+            balloonContent += `${YandexDeliveryUtils.escapeHtml(point.address)}`;
+
+            // Добавляем информацию о расстоянии
+            if (point.distance_km != null) {
+                balloonContent += `<br>📏 ${point.distance_km} км от магазина`;
+            }
+
+            // Добавляем график работы для постоматов
+            if (state.selectedType === 'postomat' && point.work_schedule) {
+                const scheduleText = formatWorkSchedule(point.work_schedule);
+                if (scheduleText) {
+                    balloonContent += `<br>🕐 ${YandexDeliveryUtils.escapeHtml(scheduleText)}`;
+                }
+            }
+
             const placemark = new ymaps.Placemark([point.latitude, point.longitude], {
                 hintContent: point.name,
-                balloonContent: `<strong>${YandexDeliveryUtils.escapeHtml(point.name)}</strong><br>${YandexDeliveryUtils.escapeHtml(point.address)}`,
+                balloonContent: balloonContent,
             }, { preset: state.selectedType === 'postomat' ? 'islands#darkBlueCircleIcon' : 'islands#darkGreenCircleIcon' });
 
             placemark.events.add('click', () => {
@@ -930,6 +979,8 @@ const YandexDeliveryWidget = (() => {
                     address: point.address || pointLabelFull,
                     fullAddress: pointLabelFull,
                     coordinates: [point.longitude, point.latitude],
+                    work_schedule: point.work_schedule || {},
+                    distance_km: point.distance_km,
                 });
             });
 
@@ -972,6 +1023,13 @@ const YandexDeliveryWidget = (() => {
             ? coords
             : (typeof coords === 'string' ? coords.split(',').map(Number) : []);
 
+        // Extract work schedule for postamats
+        if (state.selectedType === 'postomat') {
+            const schedule = point.work_schedule || {};
+            state.selectedWorkSchedule = formatWorkSchedule(schedule);
+            state.selectedDistance = point.distance_km ? `${point.distance_km} км` : '';
+        }
+
         const costEl = $('#widgetCost');
         const confirmBtn = $('#confirmDeliveryBtn');
         const addressInput = $('#yandexAddressInput');
@@ -986,13 +1044,48 @@ const YandexDeliveryWidget = (() => {
             addressInput.value = state.selectedAddress;
         }
 
-        // Показываем блок с информацией о выбранном ПВЗ
+        // Показываем блок с информацией о выбранном ПВЗ/постомате
         if (pvzNameEl) {
             pvzNameEl.textContent = state.selectedAddress;
         }
 
+        // Показываем блок с информацией о выбранном пункте
+        if (pvzInfoBlock && state.selectedPvzName) {
+            pvzNameEl.textContent = state.selectedAddress;
+            YandexDeliveryUtils.showElement(pvzInfoBlock);
+        }
+
         // Запускаем расчет стоимости доставки
         calculateDeliveryCost(state.selectedCoords.join(','), state.selectedAddress);
+    }
+
+    /**
+     * Форматирует график работы постомата.
+     */
+    function formatWorkSchedule(schedule) {
+        if (!schedule) return '';
+
+        // Handle different schedule formats from Yandex API
+        const days = schedule.days || schedule.schedules || [];
+        if (Array.isArray(days) && days.length > 0) {
+            return days.map(d => {
+                const dayName = d.day_name || d.name || '';
+                const timeRange = d.time_range || d.hours || '';
+                if (dayName && timeRange) return `${dayName}: ${timeRange}`;
+                if (dayName) return dayName;
+                if (timeRange) return timeRange;
+                return '';
+            }).filter(Boolean).join('; ');
+        }
+
+        // Fallback: try to read from raw schedule object
+        if (schedule.monday) return 'Пн: ' + schedule.monday;
+        if (schedule.tuesday) return 'Вт: ' + schedule.tuesday;
+        if (schedule.daily) return schedule.daily;
+        if (schedule.text) return schedule.text;
+        if (schedule.description) return schedule.description;
+
+        return '';
     }
 
     async function calculateDeliveryCost(coords, address) {
@@ -1009,8 +1102,8 @@ const YandexDeliveryWidget = (() => {
             YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
             YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
             updateConfirmButton();
-            
-            // Показываем блок с информацией о выбранном ПВЗ
+
+            // Показываем блок с информацией о выбранном ПВЗ/постомате
             if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
                 const pvzInfo = $('#selectedPvzInfo');
                 const pvzNameEl = $('#selectedPvzNameDisplay');
@@ -1019,7 +1112,7 @@ const YandexDeliveryWidget = (() => {
                     show(pvzInfo);
                 }
             }
-            
+
             goToStep(3);
         } else {
             YandexDeliveryUtils.setTextContent(costEl, calc.error || 'Не удалось рассчитать');

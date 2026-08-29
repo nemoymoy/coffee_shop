@@ -329,7 +329,12 @@ class YandexDeliveryService:
                       radius_km=50, max_results=500) -> dict:
         """
         Get postamat (terminal) list from Yandex Delivery API.
-        Запрашивает все точки оператора и фильтрует по type=terminal.
+
+        Запрашивает постоматы через pickup-points/list API с type='postamat',
+        применяет гео-фильтрацию и кэширует результат на 1 час.
+
+        Note: Yandex API uses 'terminal' type for postamats (not 'postamat').
+        Requesting 'pickup_point' returns only PVZ points. Use 'terminal' to get postamats directly.
 
         Args:
             operator_ids: List of operator IDs (e.g. ['market_l4g']).
@@ -339,7 +344,20 @@ class YandexDeliveryService:
             max_results: Max number of points to return.
 
         Returns:
-            {'success': True, 'points': [...], 'count': N}
+            {'success': True, 'points': [...], 'count': N, 'message': ...}
+
+        Point schema:
+            {
+                'id': str,
+                'name': str,
+                'address': str (full_address),
+                'latitude': float,
+                'longitude': float,
+                'operator_id': str,
+                'type': 'terminal',
+                'work_schedule': dict,
+                'distance_km': float,
+            }
         """
         if not self.is_api_configured():
             logger.warning('get_postamats: API not configured')
@@ -360,108 +378,18 @@ class YandexDeliveryService:
         cache_key = f'yandex_postamats_{operator_ids}_{center_lat}_{center_lon}_{radius_km}'
         cached = cache.get(cache_key)
         if cached:
+            logger.info('get_postamats: cache hit for key=%s', cache_key[:50])
             return cached
 
         try:
-            # Используем тот же URL, что и для pickup_points
-            payload = {
-                'operator_ids': operator_ids,
-                'type': 'pickup_point',  # Запрашиваем все точки
-            }
-
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {self.api_key}',
-            }
-
-            response = requests.post(
-                self.PICKUP_POINTS_URL,
-                json=payload,
-                headers=headers,
-                timeout=15,
+            return self._fetch_postamats(
+                operator_ids=operator_ids,
+                center_lat=center_lat,
+                center_lon=center_lon,
+                radius_km=radius_km,
+                max_results=max_results,
+                cache_key=cache_key,
             )
-
-            if response.status_code == 429:
-                logger.warning('Rate limited on pickup-points/list')
-                return {
-                    'success': False,
-                    'error': 'Слишком много запросов. Попробуйте позже.',
-                }
-
-            if response.status_code != 200:
-                logger.error('pickup-points/list failed: status=%s body=%s', response.status_code, response.text[:500])
-                return {
-                    'success': False,
-                    'error': f'Ошибка API: {response.status_code}',
-                }
-
-            data = response.json()
-            all_points = data.get('points', [])
-
-            # Логируем типы точек
-            types_count = {}
-            for p in all_points:
-                t = p.get('type', 'unknown')
-                types_count[t] = types_count.get(t, 0) + 1
-            logger.info('pickup-points types (all): %s', types_count)
-
-            # Фильтруем только постоматы (type=terminal)
-            postamats = [p for p in all_points if p.get('type') == 'terminal']
-            logger.info('postamats found: %d', len(postamats))
-
-            if not postamats:
-                return {
-                    'success': True,
-                    'points': [],
-                    'count': 0,
-                    'message': 'Постоматы в вашем регионе недоступны',
-                }
-
-            # Geo-filter: only points within radius of the shop
-            normalized = []
-            for p in postamats:
-                pos = p.get('position', {})
-                addr = p.get('address', {})
-                latitude = float(pos.get('latitude', 0))
-                longitude = float(pos.get('longitude', 0))
-
-                if not latitude or not longitude:
-                    continue
-
-                distance_km = self._haversine_distance(
-                    center_lat, center_lon,
-                    latitude, longitude
-                )
-                if distance_km > radius_km:
-                    continue
-
-                normalized.append({
-                    'id': p.get('id', ''),
-                    'name': p.get('name', ''),
-                    'address': addr.get('full_address', ''),
-                    'latitude': latitude,
-                    'longitude': longitude,
-                    'operator_id': p.get('operator_id', ''),
-                    'type': p.get('type', ''),
-                    'work_schedule': p.get('work_schedule', {}),
-                    'distance_km': round(distance_km, 1),
-                })
-
-                if len(normalized) >= max_results:
-                    break
-
-            # Sort by distance (closest first)
-            normalized.sort(key=lambda x: x.get('distance_km', 999999))
-
-            result = {
-                'success': True,
-                'points': normalized,
-                'count': len(normalized),
-            }
-
-            # Cache for 1 hour
-            cache.set(cache_key, result, 3600)
-            return result
 
         except requests.exceptions.Timeout:
             logger.error('get_postamats: request timeout')
@@ -476,11 +404,189 @@ class YandexDeliveryService:
                 'error': str(e),
             }
         except Exception as e:
-            logger.error('get_postamats unexpected error: %s', e)
+            logger.error('get_postamats unexpected error: %s', e, exc_info=True)
             return {
                 'success': False,
                 'error': 'Внутренняя ошибка',
             }
+
+    def _fetch_postamats(self, operator_ids, center_lat, center_lon,
+                         radius_km, max_results, cache_key) -> dict:
+        """
+        Fetch postamats from Yandex API with pagination support.
+
+        Handles offset-based pagination to fetch all points if there are
+        more than the initial page size.
+
+        Note: Yandex API uses 'postamat' type for terminals (not 'terminal').
+        We request 'postamat' type directly to avoid fetching 100k+ PVZ points.
+        """
+        all_points = []
+        offset = 0
+        page_size = 100  # API page size
+        has_more = True
+        total_fetched = 0
+
+        while has_more:
+            payload = {
+                'operator_ids': operator_ids,
+                'type': 'terminal',  # Terminal/postamat type (not 'pickup_point')
+                'offset': offset,
+                'limit': page_size,
+            }
+
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {self.api_key}',
+            }
+
+            try:
+                response = requests.post(
+                    self.PICKUP_POINTS_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=15,
+                )
+            except requests.exceptions.Timeout:
+                logger.error('_fetch_postamats: timeout at offset=%d', offset)
+                return {
+                    'success': False,
+                    'error': 'Таймаут запроса к API',
+                }
+
+            # Handle 429 Too Many Requests with retry
+            if response.status_code == 429:
+                logger.warning('Rate limited at offset=%d, retrying after 60s', offset)
+                time.sleep(60)
+                try:
+                    response = requests.post(
+                        self.PICKUP_POINTS_URL,
+                        json=payload,
+                        headers=headers,
+                        timeout=15,
+                    )
+                except requests.exceptions.Timeout:
+                    return {
+                        'success': False,
+                        'error': 'Таймаут при повторном запросе',
+                    }
+
+            if response.status_code == 401:
+                logger.error('_fetch_postamats: 401 Unauthorized — invalid token')
+                return {
+                    'success': False,
+                    'error': 'Невалидный OAuth-токен. Проверьте YANDEX_DELIVERY_TOKEN',
+                }
+
+            if response.status_code != 200:
+                logger.error(
+                    '_fetch_postamats failed: status=%s body=%s',
+                    response.status_code, response.text[:500],
+                )
+                return {
+                    'success': False,
+                    'error': f'Ошибка API: {response.status_code}',
+                }
+
+            try:
+                data = response.json()
+            except ValueError:
+                logger.error('_fetch_postamats: invalid JSON response')
+                return {
+                    'success': False,
+                    'error': 'Некорректный ответ от API',
+                }
+
+            page_points = data.get('points', [])
+            all_points.extend(page_points)
+            total_fetched += len(page_points)
+
+            logger.info(
+                '_fetch_postamats: page offset=%d fetched=%d total_all=%d',
+                offset, len(page_points), total_fetched,
+            )
+
+            # Log types distribution for debugging
+            types_count = {}
+            for p in page_points:
+                t = p.get('type', 'unknown')
+                types_count[t] = types_count.get(t, 0) + 1
+            logger.info('_fetch_postamats: page types=%s', types_count)
+
+            # Check if there are more pages
+            if len(page_points) < page_size:
+                has_more = False
+            else:
+                offset += page_size
+                # Safety limit: max 10 pages
+                if offset >= page_size * 10:
+                    logger.warning('_fetch_postamats: max pages reached')
+                    has_more = False
+
+        logger.info(
+            '_fetch_postamats: total points fetched=%d', total_fetched,
+        )
+
+        # Фильтруем только постоматы (type=terminal)
+        postamats = [p for p in all_points if p.get('type') == 'terminal']
+        logger.info('get_postamats: terminals found=%d out of %d total', len(postamats), total_fetched)
+
+        if not postamats:
+            result = {
+                'success': True,
+                'points': [],
+                'count': 0,
+                'message': 'Постоматы в вашем регионе недоступны',
+            }
+            cache.set(cache_key, result, 3600)
+            return result
+
+        # Geo-filter: only points within radius of the shop
+        normalized = []
+        for p in postamats:
+            pos = p.get('position', {})
+            addr = p.get('address', {})
+            latitude = float(pos.get('latitude', 0))
+            longitude = float(pos.get('longitude', 0))
+
+            if not latitude or not longitude:
+                continue
+
+            distance_km = self._haversine_distance(
+                center_lat, center_lon,
+                latitude, longitude
+            )
+            if distance_km > radius_km:
+                continue
+
+            normalized.append({
+                'id': p.get('id', ''),
+                'name': p.get('name', ''),
+                'address': addr.get('full_address', ''),
+                'latitude': latitude,
+                'longitude': longitude,
+                'operator_id': p.get('operator_id', ''),
+                'type': p.get('type', ''),
+                'work_schedule': p.get('work_schedule', {}),
+                'distance_km': round(distance_km, 1),
+            })
+
+            if len(normalized) >= max_results:
+                break
+
+        # Sort by distance (closest first)
+        normalized.sort(key=lambda x: x.get('distance_km', 999999))
+
+        result = {
+            'success': True,
+            'points': normalized,
+            'count': len(normalized),
+        }
+
+        # Cache for 1 hour
+        cache.set(cache_key, result, 3600)
+        logger.info('get_postamats: returning %d points (cached)', len(normalized))
+        return result
 
     def get_pickup_points(self, operator_ids=None, point_type='pickup_point',
                           center_lat=None, center_lon=None, radius_km=50, max_results=500) -> dict:
