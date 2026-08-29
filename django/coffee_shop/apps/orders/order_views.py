@@ -196,7 +196,9 @@ def checkout_view(request):
         destination_coords = cleaned.get('destination_coords', '') or request.POST.get('destination_coords', '')
         
         # Стоимость доставки (если выбрана через виджет)
-        delivery_cost = cleaned.get('delivery_cost', 0) or request.POST.get('delivery_cost', 0)
+        delivery_cost = cleaned.get('delivery_cost') or request.POST.get('delivery_cost', '0')
+        if not delivery_cost:
+            delivery_cost = '0'
 
         # Валидация: для доставки адрес обязателен
         if cleaned['delivery_method'] == 'delivery' and not cleaned.get('delivery_address', ''):
@@ -310,12 +312,12 @@ def checkout_view(request):
                                     'height': 0.06,
                                 }
 
-                            api_items.append({
+                            api_items = [{
                                 'quantity': total_quantity,
                                 'weight': round(total_weight_kg, 3),
                                 'size': sz,
                                 'title': order.items.first().product.name if order.items.first() else 'Product',
-                            })
+                            }]
 
                             coords_list = []
                             if destination_coords:
