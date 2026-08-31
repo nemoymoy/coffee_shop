@@ -26,6 +26,64 @@
 }
 
 /* ======================= Yandex Delivery Widget ======================= */
+
+/* Map container for delivery selection */
+#delivery-widget {
+    border-radius: 0.5rem;
+    overflow: hidden;
+    border: 2px solid var(--coffee-lighter);
+    transition: border-color 0.3s;
+}
+
+#delivery-widget:focus-within {
+    border-color: var(--coffee-dark);
+}
+
+/* Map hint text */
+#mapHintText {
+    font-style: italic;
+    padding: 4px 8px;
+    background: var(--coffee-bg-alt);
+    border-radius: 0.25rem;
+    display: inline-block;
+}
+
+/* Courier address display on map */
+#courierAddressDisplay {
+    border-left: 4px solid var(--coffee-dark);
+    background: rgba(62, 39, 35, 0.03);
+}
+
+#courierAddressDisplay #courierAddressText {
+    word-break: break-word;
+}
+
+/* Courier search input wrapper */
+#courierSearchWrap {
+    position: relative;
+    z-index: 1050;
+}
+
+#courierSearchWrap .form-control {
+    border-color: var(--coffee-lighter);
+    transition: border-color 0.3s;
+}
+
+#courierSearchWrap .form-control:focus {
+    border-color: var(--coffee-dark);
+    box-shadow: 0 0 0 0.2rem rgba(62, 39, 35, 0.15);
+}
+
+/* Courier cost block */
+#courierCostBlock {
+    border-left: 4px solid var(--coffee-success);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+#courierCostBlock .text-success {
+    font-weight: 700;
+}
+
 .autocomplete-list {
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;

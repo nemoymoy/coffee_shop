@@ -285,6 +285,21 @@ const YandexDeliveryWidget = (() => {
     const show = (el) => el?.classList.remove('d-none');
     const hide = (el) => el?.classList.add('d-none');
 
+    /**
+     * Обновляет текст подсказки под картой в зависимости от типа доставки.
+     */
+    function updateMapHintText() {
+        const hintEl = $('#mapHintText');
+        if (!hintEl) return;
+
+        const hints = {
+            courier: '🗺️ Нажмите на карту в месте доставки или введите адрес в строку поиска',
+            pvz: '📦 Выберите пункт выдачи на карте',
+            postomat: '📮 Выберите постомат на карте',
+        };
+        hintEl.textContent = hints[state.selectedType] || hints.courier;
+    }
+
     /* ==================== Modal Management ==================== */
     function initModal() {
         const modalEl = $('#deliveryModal');
@@ -315,6 +330,7 @@ const YandexDeliveryWidget = (() => {
         step1Container?.addEventListener('change', (e) => {
             if (e.target.matches('input[name="yandex_delivery_type"]')) {
                 state.selectedType = e.target.value;
+                updateMapHintText();
                 goToStep(2);
                 updateConfirmButton();
             }
@@ -348,6 +364,7 @@ const YandexDeliveryWidget = (() => {
         const step1 = $('#deliveryStep1');
         const step2 = $('#deliveryStep2');
         const widgetContainer = $('#yandexDeliveryWidgetContainer');
+        const courierSearchWrap = $('#courierSearchWrap');
         const addressInputWrap = $('#yandexAddressInputWrap');
         const mapWarning = $('#mapUnavailableWarning');
 
@@ -359,16 +376,22 @@ const YandexDeliveryWidget = (() => {
         } else if (stepNumber === 2) {
             show(step2);
             if (state.selectedType === 'courier') {
-                hide(widgetContainer);
+                hide(addressInputWrap);
                 hide(mapWarning);
                 hide($('#selectedPvzInfo'));
-                show(addressInputWrap);
+                hide($('#calcDetailsBlock'));
+                hide($('#courierCostBlock'));
+                show(widgetContainer);
+                show(courierSearchWrap);
+                updateMapHintText();
+                loadYmaps();
             } else {
                 hide(addressInputWrap);
                 hide(mapWarning);
                 show(widgetContainer);
                 hide($('#selectedPvzInfo'));
                 hide($('#calcDetailsBlock'));
+                updateMapHintText();
                 loadYmaps();
             }
         }
@@ -458,6 +481,12 @@ const YandexDeliveryWidget = (() => {
             autocompleteList.innerHTML = '';
             hide(autocompleteList);
         }
+
+        const courierSearchWrap = $('#courierSearchWrap');
+        if (courierSearchWrap) hide(courierSearchWrap);
+
+        const courierCostBlock = $('#courierCostBlock');
+        if (courierCostBlock) hide(courierCostBlock);
 
         const courierPriceBlock = $('#courierPriceBlock');
         if (courierPriceBlock) {
@@ -579,7 +608,13 @@ const YandexDeliveryWidget = (() => {
         state.suggestions = [];
         state.autocompleteIndex = -1;
 
-        geocodeAndCalculate(feature.text, feature.coords);
+        // Для курьера сразу запускаем расчет с координатами из автокомплита
+        if (state.selectedType === 'courier' && feature.coords) {
+            state.selectedCoords = feature.coords;
+            calculateDeliveryCost(feature.coords.join(','), feature.text);
+        } else {
+            geocodeAndCalculate(feature.text, feature.coords);
+        }
     }
     /* ==================== Geocode & Calculate ==================== */
     async function geocodeAndCalculate(address, initialCoords) {
@@ -626,10 +661,11 @@ const YandexDeliveryWidget = (() => {
     }
 
     function renderCalcResult(costEl, etaEl, etaLabelEl, courierPriceBlock, confirmBtn, calc) {
-        if (state.selectedType === 'courier' && courierPriceBlock) {
-            const etaText = YandexDeliveryUtils.showEtaText(calc.delivery_days);
-            courierPriceBlock.innerHTML = `✅ Стоимость доставки: <strong>${YandexDeliveryUtils.formatPrice(calc.price)} ₽</strong>${etaText}`;
-            courierPriceBlock.classList.remove('border-danger');
+        if (state.selectedType === 'courier') {
+            // Для курьера показываем стоимость в widgetCost
+            YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
+            YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
+            YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
         } else {
             YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
             YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
@@ -882,8 +918,11 @@ const YandexDeliveryWidget = (() => {
             // Клик по карте
             state.mapInstance.events.add('click', onMapClick);
 
-            // Загружаем ПВЗ
-            loadPvzOnMap();
+            // Загружаем ПВЗ/постоматы только для этих типов доставки
+            // Для курьера пользователь выбирает адрес кликом по карте
+            if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+                loadPvzOnMap();
+            }
 
             state.ymapsReady = true;
             console.log('[YandexDelivery] Map created');
@@ -924,12 +963,22 @@ const YandexDeliveryWidget = (() => {
         }
 
         // Для курьерской доставки — реверс-геокодирование
+        showCourierMapLoading();
         ymaps.geocode(coords.join(',')).then((res) => {
             const first = res.geoObjects.get(0);
-            if (!first) return;
+            if (!first) {
+                hideCourierMapLoading();
+                showMapError('Не удалось определить адрес по координатам');
+                return;
+            }
             const address = first.properties.get('fullName') || first.properties.get('text');
+            hideCourierMapLoading();
             onReverseGeocode(address, coords);
-        }).catch((err) => console.error('[YandexDelivery] Reverse geocode error:', err));
+        }).catch((err) => {
+            console.error('[YandexDelivery] Reverse geocode error:', err);
+            hideCourierMapLoading();
+            showMapError('Ошибка при определении адреса');
+        });
     }
 
     function onReverseGeocode(address, coords) {
@@ -939,16 +988,21 @@ const YandexDeliveryWidget = (() => {
 
         state.selectedPlacemark = new ymaps.Placemark(coords, {
             hintContent: address,
-            balloonContent: '✅ Выберите этот адрес',
+            balloonContent: '✅ Этот адрес подходит? Нажмите «Подтвердить»',
         }, { preset: 'islands#orangeCircleDotIcon' });
         state.mapInstance.geoObjects.add(state.selectedPlacemark);
 
-        handlePointSelected({
-            id: '',
-            name: 'Выбранный адрес',
-            address: address,
-            coordinates: coords,
-        });
+        // Вставляем адрес в строку поиска
+        const addressInput = $('#yandexAddressInput');
+        if (addressInput) {
+            addressInput.value = address;
+        }
+
+        state.selectedCoords = coords;
+        state.selectedAddress = address;
+
+        // Запускаем расчет стоимости доставки
+        calculateDeliveryCost(coords.join(','), address);
     }
 
     async function loadPvzOnMap() {
@@ -1047,6 +1101,56 @@ const YandexDeliveryWidget = (() => {
         }
         hide($('#yandexDeliveryWidgetContainer'));
         show($('#yandexAddressInputWrap'));
+    }
+
+    /**
+     * Показывает индикатор загрузки на карте при геокодировании (курьер).
+     */
+    function showCourierMapLoading() {
+        const costEl = $('#widgetCost');
+        if (costEl) {
+            costEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Определение адреса...';
+            costEl.classList.add('border-info');
+        }
+    }
+
+    /**
+     * Убирает индикатор загрузки на карте.
+     */
+    function hideCourierMapLoading() {
+        const costEl = $('#widgetCost');
+        if (costEl) {
+            costEl.classList.remove('border-info');
+        }
+    }
+
+    /**
+     * Показывает блок с рассчитанной стоимостью доставки для курьера.
+     */
+    function showCourierDeliveryCost(calc) {
+        const block = $('#courierCostBlock');
+        if (!block) return;
+
+        const addressEl = $('#courierCostAddress');
+        const priceEl = $('#courierCostPrice');
+        const etaEl = $('#courierCostEta');
+        const totalEl = $('#courierTotalPrice');
+
+        if (addressEl) addressEl.textContent = state.selectedAddress;
+        if (priceEl) priceEl.textContent = `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`;
+        if (etaEl) etaEl.textContent = calc.delivery_days ? `(${calc.delivery_days} дн.)` : '';
+
+        // Рассчитываем итоговую сумму — корректно парсим русское форматирование
+        const goodsText = $('#orderGoodsTotal')?.textContent || '0';
+        // Удаляем пробелы (разделители тысяч), запятую заменяем на точку
+        const cleanText = goodsText.replace(/\s/g, '').replace(/,/g, '.');
+        const goodsTotal = parseFloat(cleanText) || 0;
+        // Гарантируем что price — число (API может вернуть строку)
+        const deliveryPrice = typeof calc.price === 'string' ? parseFloat(calc.price.replace(/,/g, '.')) : calc.price;
+        const total = goodsTotal + (deliveryPrice || 0);
+        if (totalEl) totalEl.textContent = `${YandexDeliveryUtils.formatPrice(total)} ₽`;
+
+        show(block);
     }
 
     /**
@@ -1157,6 +1261,9 @@ const YandexDeliveryWidget = (() => {
         const etaLabelEl = $('#widgetEtaLabel');
         const confirmBtn = $('#confirmDeliveryBtn');
 
+        YandexDeliveryUtils.showLoading(costEl);
+        if (confirmBtn) confirmBtn.disabled = true;
+
         const calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
 
         if (calc.success && calc.price != null) {
@@ -1177,6 +1284,11 @@ const YandexDeliveryWidget = (() => {
 
                 // Показываем детали расчета под картой
                 showCalcDetails();
+            }
+
+            // Для курьера показываем блок с рассчитанной стоимостью
+            if (state.selectedType === 'courier') {
+                showCourierDeliveryCost(calc);
             }
         } else {
             YandexDeliveryUtils.setTextContent(costEl, calc.error || 'Не удалось рассчитать');
