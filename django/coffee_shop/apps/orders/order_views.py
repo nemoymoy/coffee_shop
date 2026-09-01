@@ -413,6 +413,11 @@ def checkout_view(request):
         'YANDEX_DELIVERY_WEBHOOK_URL': reverse('orders:yandex_webhook'),
         'YANDEX_SHOP_LAT': getattr(settings, 'YANDEX_SHOP_LAT', 53.1960),
         'YANDEX_SHOP_LON': getattr(settings, 'YANDEX_SHOP_LON', 49.3782),
+        'YANDEX_SHOP_ADDRESS': getattr(settings, 'YANDEX_SHOP_ADDRESS', 'Самара, ул. Революционная, д. 3'),
+        'YANDEX_PVZ_ID': getattr(settings, 'YANDEX_PVZ_ID', 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'),
+        'YANDEX_PVZ_LAT': getattr(settings, 'YANDEX_PVZ_LAT', 53.200850),
+        'YANDEX_PVZ_LON': getattr(settings, 'YANDEX_PVZ_LON', 50.150500),
+        'YANDEX_PVZ_ADDRESS': getattr(settings, 'YANDEX_PVZ_ADDRESS', 'г. Самара, ул. Лукачева, д. 6'),
     }
     return render(request, 'checkout.html', context)
 

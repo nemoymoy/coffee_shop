@@ -60,6 +60,12 @@ class YandexDeliveryService:
         self.shop_lon = getattr(settings, 'YANDEX_SHOP_LON', 50.162688008923745)
         self.shop_address = getattr(settings, 'YANDEX_SHOP_ADDRESS', 'Самара, ул. Революционная, д. 3')
 
+        # ПВЗ пункт отправления для способа доставки ПВЗ
+        self.pvz_id = getattr(settings, 'YANDEX_PVZ_ID', 'd0222b1e-73ff-4274-9c68-42c79d4c7eae')
+        self.pvz_lat = getattr(settings, 'YANDEX_PVZ_LAT', 53.200850)
+        self.pvz_lon = getattr(settings, 'YANDEX_PVZ_LON', 50.150500)
+        self.pvz_address = getattr(settings, 'YANDEX_PVZ_ADDRESS', 'г. Самара, ул. Лукачева, д. 6')
+
         self.session = requests.Session()
         self.session.headers.update({
             'Authorization': f'Bearer {self.token}',
@@ -116,6 +122,26 @@ class YandexDeliveryService:
         response.raise_for_status()
         return response
 
+    def _get_origin_point(self, delivery_type):
+        """
+        Return origin point coordinates and address based on delivery type.
+
+        For 'pickup' (ПВЗ/Постомат) delivery type, returns the fixed PVZ point.
+        For 'courier' delivery type, returns the shop point.
+        """
+        if delivery_type == 'pickup':
+            return (
+                self.pvz_lon,
+                self.pvz_lat,
+                self.pvz_address,
+            )
+        else:
+            return (
+                self.shop_lon,
+                self.shop_lat,
+                self.shop_address,
+            )
+
     def calculate_price(self, items, destination_coords, destination_address, delivery_type='courier') -> dict:
         """
         Calculate delivery price via check-price API.
@@ -149,11 +175,21 @@ class YandexDeliveryService:
                 'taxi_class': taxi_class,
             }
 
+            # Get origin point based on delivery type
+            origin_lon, origin_lat, origin_address = self._get_origin_point(delivery_type)
+            logger.info(
+                'calculate_price: origin_point=%s | coords=[%s, %s] | delivery_type=%s',
+                origin_address,
+                origin_lon,
+                origin_lat,
+                delivery_type,
+            )
+
             route_points = [
                 {
                     'id': 1,
-                    'coordinates': [self.shop_lon, self.shop_lat],
-                    'fullname': self.shop_address,
+                    'coordinates': [origin_lon, origin_lat],
+                    'fullname': origin_address,
                 },
                 {
                     'id': 2,
@@ -224,12 +260,21 @@ class YandexDeliveryService:
             }
 
             # Build route points
+            origin_lon, origin_lat, origin_address = self._get_origin_point(delivery_type)
+            logger.info(
+                'create_order: origin_point=%s | coords=[%s, %s] | delivery_type=%s',
+                origin_address,
+                origin_lon,
+                origin_lat,
+                delivery_type,
+            )
+
             route_points = [
                 {
                     'id': 'shop-1',
                     'type': 'pickup',
-                    'coordinates': [self.shop_lon, self.shop_lat],
-                    'address': self.shop_address,
+                    'coordinates': [origin_lon, origin_lat],
+                    'address': origin_address,
                 },
             ]
 

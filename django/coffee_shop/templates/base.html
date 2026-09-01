@@ -51,6 +51,17 @@
         });
     </script>
     {% endif %}
+
+    <!-- Yandex Delivery config for JS -->
+    <script>
+        window.YANDEX_SHOP_LAT = {{ YANDEX_SHOP_LAT|default:53.216940239129094 }};
+        window.YANDEX_SHOP_LON = {{ YANDEX_SHOP_LON|default:50.162688008923745 }};
+        window.YANDEX_SHOP_ADDRESS = "{{ YANDEX_SHOP_ADDRESS|default:'Самара, ул. Революционная, д. 3'|escapejs }}";
+        window.YANDEX_PVZ_ID = "{{ YANDEX_PVZ_ID|default:'d0222b1e-73ff-4274-9c68-42c79d4c7eae'|escapejs }}";
+        window.YANDEX_PVZ_LAT = {{ YANDEX_PVZ_LAT|default:53.200850 }};
+        window.YANDEX_PVZ_LON = {{ YANDEX_PVZ_LON|default:50.150500 }};
+        window.YANDEX_PVZ_ADDRESS = "{{ YANDEX_PVZ_ADDRESS|default:'г. Самара, ул. Лукачева, д. 6'|escapejs }}";
+    </script>
 </head>
 <body>
     <!-- Navbar -->

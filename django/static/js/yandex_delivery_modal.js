@@ -218,8 +218,17 @@ const YandexDeliveryWidget = (() => {
             // Логирование данных для отладки расчета доставки
             console.log('[YandexDelivery] === Данные для расчета доставки ===');
             console.log('[YandexDelivery] Тип доставки:', payload.delivery_type);
-            console.log('[YandexDelivery] Координаты:', payload.destination_coords);
-            console.log('[YandexDelivery] Адрес:', payload.destination_address);
+            console.log('[YandexDelivery] Пункт отправки:');
+            if (payload.delivery_type === 'pickup') {
+                console.log('[YandexDelivery]   Адрес:', window.YANDEX_PVZ_ADDRESS || 'г. Самара, ул. Лукачева, д. 6');
+                console.log('[YandexDelivery]   Координаты:', `[${window.YANDEX_PVZ_LON || 50.150500}, ${window.YANDEX_PVZ_LAT || 53.200850}]`);
+                console.log('[YandexDelivery]   ID ПВЗ:', window.YANDEX_PVZ_ID || 'd0222b1e-73ff-4274-9c68-42c79d4c7eae');
+            } else {
+                console.log('[YandexDelivery]   Адрес:', window.YANDEX_SHOP_ADDRESS || 'Самара, ул. Революционная, д. 3');
+                console.log('[YandexDelivery]   Координаты:', `[${window.YANDEX_SHOP_LON || 50.162688008923745}, ${window.YANDEX_SHOP_LAT || 53.216940239129094}]`);
+            }
+            console.log('[YandexDelivery] Координаты доставки:', payload.destination_coords);
+            console.log('[YandexDelivery] Адрес доставки:', payload.destination_address);
             console.log('[YandexDelivery] ПВЗ ID:', payload.pvz_id);
             console.log('[YandexDelivery] Товары в корзине:');
             cartState.items.forEach((item, i) => {

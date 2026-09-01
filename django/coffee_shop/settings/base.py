@@ -226,6 +226,23 @@ YANDEX_SHOP_ADDRESS = os.environ.get('YANDEX_SHOP_ADDRESS', 'Самара, ул.
 # Токен для Cargo API
 YANDEX_DELIVERY_TOKEN = os.environ.get('YANDEX_DELIVERY_TOKEN', '')
 
+# ПВЗ пункт отправления для способа доставки ПВЗ
+# г. Самара, ул. Лукачева 6, ID пункта выдачи
+YANDEX_PVZ_ID = os.environ.get(
+    'YANDEX_PVZ_ID',
+    'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
+)
+YANDEX_PVZ_LAT = float(
+    os.environ.get('YANDEX_PVZ_LAT', '53.200850')
+)
+YANDEX_PVZ_LON = float(
+    os.environ.get('YANDEX_PVZ_LON', '50.150500')
+)
+YANDEX_PVZ_ADDRESS = os.environ.get(
+    'YANDEX_PVZ_ADDRESS',
+    'г. Самара, ул. Лукачева, д. 6'
+)
+
 # Yandex Metrika
 YANDEX_METRIKA_ID = os.environ.get('YANDEX_METRIKA_ID', '')
 YANDEX_METRIKA_WEBVIEWER = os.environ.get('YANDEX_METRIKA_WEBVIEWER', '').lower() in ('1', 'true', 'yes')
@@ -256,7 +273,7 @@ LOGGING = {
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
-            'formatter': 'json' if not DEBUG else 'verbose',
+            'formatter': 'verbose',
         },
         'file': {
             'class': 'logging.FileHandler',

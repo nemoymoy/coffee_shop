@@ -89,6 +89,8 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "https://log.api-maps.yandex.ru "
             "https://maps-static.yandex.net "
             "https://maps-api.yandex.com "
+            "https://api-maps.yandex.ru/services/coverage/v2/ "
+            "https://core-renderer-tiles.maps.yandex.net/tiles "
             "https://*.disk.yandex.net "
             "https://*.captcha.yandex.net "
             "https://kards.fp.yandex.net "
