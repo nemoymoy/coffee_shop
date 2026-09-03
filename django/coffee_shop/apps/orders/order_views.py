@@ -209,6 +209,13 @@ def checkout_view(request):
                 'total': total,
             })
         
+        # Определяем начальный статус заказа в зависимости от способа оплаты
+        payment_method = cleaned['payment_method']
+        if payment_method == 'online':
+            initial_status = 'awaiting_payment'
+        else:
+            initial_status = 'new'
+
         with transaction.atomic():
             order = Order.objects.create(
                 user=request.user if request.user.is_authenticated else None,
@@ -219,11 +226,12 @@ def checkout_view(request):
                 comment=cleaned.get('comment', ''),
                 delivery_method=cleaned['delivery_method'],
                 delivery_type=delivery_type_raw,
-                payment_method=cleaned['payment_method'],
+                payment_method=payment_method,
                 delivery_address=cleaned.get('delivery_address', ''),
                 pvz_id=pvz_id or None,
                 destination_coords=destination_coords or None,
                 total_amount=0,
+                status=initial_status,
             )
             
             total = 0
@@ -283,7 +291,10 @@ def checkout_view(request):
                 # Используем стоимость из формы (если пользователь выбрал через виджет)
                 if delivery_cost and Decimal(str(delivery_cost)) > 0:
                     delivery_price = Decimal(str(delivery_cost))
-                    # Пытаемся создать заказ в Яндекс Доставке
+
+                # Создаём заказ в Яндекс Доставке только для безналичной оплаты
+                # Для онлайн-оплаты доставка создаётся после подтверждения платежа (в webhook)
+                if payment_method != 'online':
                     try:
                         service = YandexDeliveryService()
                         if service.is_configured():
@@ -294,7 +305,7 @@ def checkout_view(request):
                             for oi in order.items.all():
                                 total_weight_grams += oi.weight_grams if oi.weight_grams else 0
                                 total_quantity += oi.quantity
-                            
+
                             # Теперь выбираем ОДНУ тару для суммарного веса
                             try:
                                 package = Package.for_weight(total_weight_grams)
@@ -355,8 +366,10 @@ def checkout_view(request):
 
             order.save(update_fields=fields_to_save)
 
-        # Резервируем stock (не для доставки — там своя логика)
-        if cleaned['delivery_method'] != 'delivery':
+        # Резервируем stock (не для доставки и не для наличной оплаты — там своя логика)
+        # Для online-оплаты статус уже awaiting_payment, reserve_stock просто резервирует stock
+        # Для наличной оплаты статус остаётся new, reserve_stock не вызывается
+        if cleaned['delivery_method'] != 'delivery' and cleaned['payment_method'] == 'online':
             StockService.reserve_stock(order.pk)
         
         # Очищаем корзину
@@ -460,6 +473,53 @@ def order_detail(request, pk):
     return render(request, 'order_detail.html', context)
 
 
+def pay_order(request, order_id):
+    """Перенаправление на страницу оплаты ЮКасса."""
+    from coffee_shop.apps.orders.services.yookassa_service import YooKassaService
+    from django.urls import reverse
+
+    order = get_object_or_404(Order, pk=order_id)
+
+    # Проверяем, что заказ требует оплаты
+    if order.status != 'awaiting_payment':
+        messages.error(request, 'Этот заказ не требует оплаты')
+        return redirect('orders:order_success', order_id=order.pk)
+
+    # Проверяем, что способ оплаты — онлайн
+    if order.payment_method != 'online':
+        messages.error(request, 'Для этого заказа не требуется онлайн-оплата')
+        return redirect('orders:order_success', order_id=order.pk)
+
+    # Проверяем, что ЮКасса настроена
+    yookassa = YooKassaService()
+    if not yookassa.is_configured():
+        messages.error(request, 'Платёжная система не настроена')
+        return redirect('orders:order_success', order_id=order.pk)
+
+    # Создаём платёж в ЮКассе
+    return_url = request.build_absolute_uri(
+        reverse('orders:order_success', kwargs={'order_id': order.pk})
+    )
+
+    result = yookassa.create_payment(
+        order_id=order.pk,
+        amount=order.total_amount,
+        description=f'Заказ #{order.pk} — {order.last_name} {order.first_name}',
+        confirm_type='redirect',
+        return_url=return_url,
+    )
+
+    if result.get('success'):
+        # Сохраняем ID платежа в заказе
+        order.yookassa_payment_id = result.get('payment_id')
+        order.save(update_fields=['yookassa_payment_id'])
+        # Перенаправляем на страницу оплаты ЮКассы
+        return redirect(result['confirmation_url'])
+    else:
+        messages.error(request, f'Ошибка создания платежа: {result.get("error", "неизвестная ошибка")}')
+        return redirect('orders:order_success', order_id=order.pk)
+
+
 @csrf_exempt
 @require_POST
 def payment_webhook(request):
@@ -468,6 +528,7 @@ def payment_webhook(request):
     from django.http import JsonResponse
 
     from .services.yookassa_service import YooKassaService
+    from .services.delivery_service import YandexDeliveryService
 
     try:
         data = json.loads(request.body)
@@ -491,8 +552,74 @@ def payment_webhook(request):
                 with transaction.atomic():
                     order = Order.objects.select_for_update().get(pk=int(order_id))
                     order.yookassa_payment_id = payment_id
+
+                    # Если заказ ещё не передан в Яндекс Доставку (онлайн-оплата),
+                    # создаём заказ в Яндекс Доставке сейчас
+                    if (
+                        order.delivery_method == 'delivery'
+                        and not order.yandex_order_id
+                    ):
+                        service = YandexDeliveryService()
+                        if service.is_configured():
+                            # Суммируем вес и количество товаров
+                            total_weight_grams = 0
+                            total_quantity = 0
+                            for oi in order.items.all():
+                                total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+                                total_quantity += oi.quantity
+
+                            try:
+                                package = Package.for_weight(total_weight_grams)
+                                total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+                                sz = {
+                                    'length': float(package.length),
+                                    'width': float(package.width),
+                                    'height': float(package.height),
+                                }
+                            except Package.DoesNotExist:
+                                total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+                                sz = {
+                                    'length': 0.12,
+                                    'width': 0.06,
+                                    'height': 0.06,
+                                }
+
+                            api_items = [{
+                                'quantity': total_quantity,
+                                'weight': round(total_weight_kg, 3),
+                                'size': sz,
+                                'title': order.items.first().product.name if order.items.first() else 'Product',
+                            }]
+
+                            coords_list = []
+                            if order.destination_coords:
+                                coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                            else:
+                                coords_list = [49.35, 53.21]
+
+                            create_result = service.create_order(
+                                items=api_items,
+                                client_order_id=order.pk,
+                                destination_coords=coords_list,
+                                destination_address=order.delivery_address,
+                                delivery_type=order.delivery_type,
+                                pvz_id=order.pvz_id,
+                            )
+
+                            if create_result.get('success'):
+                                order.yandex_order_id = create_result.get('order_id', '')
+                                order.tracking_number = create_result.get('tracking_number', '')
+                                order.delivery_status = 'pending'
+
                     order.status = 'in_progress'
-                    order.save(update_fields=['yookassa_payment_id', 'status', 'updated_at'])
+                    order.save(update_fields=[
+                        'yookassa_payment_id',
+                        'status',
+                        'updated_at',
+                        'yandex_order_id',
+                        'tracking_number',
+                        'delivery_status',
+                    ])
         except (Order.DoesNotExist, ValueError):
             pass  # Log error, do not return 500
 

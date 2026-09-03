@@ -48,6 +48,12 @@
         </div>
     </div>
     
+    {% if order.status == 'awaiting_payment' %}
+    <a href="{% url 'orders:pay_order' order_id=order.pk %}" class="btn btn-success btn-lg mt-4">
+        💳 Оплатить
+    </a>
+    {% endif %}
+
     <a href="{% url 'catalog:catalog' %}" class="btn btn-coffee btn-lg mt-4">Вернуться в каталог</a>
 </div>
 {% endblock %}

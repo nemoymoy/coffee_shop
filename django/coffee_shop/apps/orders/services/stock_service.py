@@ -89,8 +89,8 @@ class StockService:
         """
         Резервировать остатки для заказа.
 
-        Вызывается после создания заказа со статусом awaiting_payment.
-        Фактически stock не списывается — только помечается заказ как awaiting_payment.
+        Для заказа со статусом 'new' меняет статус на 'awaiting_payment'.
+        Для заказа со статусом 'awaiting_payment' просто резервирует stock.
 
         Args:
             order_id: ID заказа
@@ -101,10 +101,7 @@ class StockService:
         from ..models import Order
 
         try:
-            order = Order.objects.select_for_update().get(
-                pk=order_id,
-                status='new',
-            )
+            order = Order.objects.select_for_update().get(pk=order_id)
         except Order.DoesNotExist:
             return False
 
@@ -120,8 +117,11 @@ class StockService:
                 if item.quantity > available:
                     return False
 
-        # Переходим в статус awaiting_payment
-        order.status = 'awaiting_payment'
+        # Меняем статус на awaiting_payment только для заказов со статусом 'new'
+        # (для online-оплаты статус уже awaiting_payment, для cash — остаётся new)
+        if order.status == 'new':
+            order.status = 'awaiting_payment'
+
         order.reserved_at = timezone.now()
         order.save(update_fields=['status', 'reserved_at', 'updated_at'])
 

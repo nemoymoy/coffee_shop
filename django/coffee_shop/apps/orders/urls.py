@@ -22,6 +22,7 @@ urlpatterns = [
     path('success/<int:order_id>/', views.order_success, name='order_success'),
     path('detail/<int:pk>/', views.order_detail, name='order_detail'),
     # Payment
+    path('pay/<int:order_id>/', views.pay_order, name='pay_order'),
     path('webhook/', views.payment_webhook, name='payment_webhook'),
     # Yandex Delivery Status
     path('delivery/status/', delivery_views.yandex_delivery_status_view, name='yandex_delivery_status'),
