@@ -14,10 +14,10 @@ class TestOrderModel:
     def test_create_order(self, user):
         order = Order.objects.create(
             user=user,
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('300.00'),
-            payment_method='online',
-            delivery_method='pickup',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -25,16 +25,17 @@ class TestOrderModel:
         )
 
         assert order.pk is not None
-        assert str(order) == 'Заказ #{} — Иванов Иван'.format(order.pk)
-        assert order.status == 'new'
+        assert order.order_number.startswith('ORD-')
+        assert str(order) == f'Заказ {order.order_number} — {order.get_status_display()}'
+        assert order.status == Order.Status.NEW
 
-    def test_order_no_user(self):
+    def test_create_order_no_user(self):
         """Анонимный заказ."""
         order = Order.objects.create(
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('300.00'),
-            payment_method='cash',
-            delivery_method='delivery',
+            payment_method=Order.PaymentMethod.CASH,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
             first_name='Гость',
             last_name='',
             phone='+79990000000',
@@ -43,21 +44,74 @@ class TestOrderModel:
         )
 
         assert order.user is None
-        assert order.delivery_method == 'delivery'
+        assert order.delivery_method == Order.DeliveryMethod.DELIVERY
+        assert order.order_number.startswith('ORD-')
 
     def test_order_status_choices(self):
         """Все статусы заказа."""
-        statuses = [s[0] for s in Order.STATUS_CHOICES]
-        assert 'new' in statuses
-        assert 'in_progress' in statuses
-        assert 'ready' in statuses
-        assert 'delivered' in statuses
-        assert 'cancelled' in statuses
+        statuses = [s[0] for s in Order.Status.choices]
+        assert Order.Status.NEW in statuses
+        assert Order.Status.AWAITING_PAYMENT in statuses
+        assert Order.Status.PAID in statuses
+        assert Order.Status.READY in statuses
+        assert Order.Status.DELIVERED in statuses
+        assert Order.Status.CANCELED in statuses
+        assert Order.Status.REFUNDED in statuses
 
     def test_order_items_relation(self, order, order_item):
         """Связь Order.items."""
         assert order.items.count() == 1
         assert order.items.first() == order_item
+
+    def test_order_full_name(self, user):
+        """Проверка свойства full_name."""
+        order = Order.objects.create(
+            user=user,
+            status=Order.Status.NEW,
+            total_amount=Decimal('300.00'),
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
+            first_name='Иван',
+            last_name='Иванов',
+            phone='+79991234567',
+            email='test@example.com'
+        )
+        assert order.full_name == 'Иванов Иван'
+
+    def test_order_number_unique(self, user):
+        """Проверка уникальности order_number."""
+        order1 = Order.objects.create(
+            user=user,
+            status=Order.Status.NEW,
+            total_amount=Decimal('300.00'),
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
+            first_name='Иван',
+            last_name='Иванов',
+            phone='+79991234567',
+            email='test@example.com'
+        )
+        
+        # order_number должен быть сгенерирован автоматически
+        assert order1.order_number is not None
+        assert order1.order_number.startswith('ORD-')
+
+    def test_payment_id_field(self, user):
+        """Проверка поля payment_id."""
+        order = Order.objects.create(
+            user=user,
+            status=Order.Status.AWAITING_PAYMENT,
+            total_amount=Decimal('300.00'),
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
+            first_name='Иван',
+            last_name='Иванов',
+            phone='+79991234567',
+            email='test@example.com',
+            payment_id='pay-123456'
+        )
+        
+        assert order.payment_id == 'pay-123456'
 
 
 class TestOrderItemModel:

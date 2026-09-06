@@ -43,7 +43,11 @@ class StockService:
         reserved_items = (
             OrderItem.objects
             .filter(
-                order__status__in=['new', 'awaiting_payment', 'in_progress'],
+                order__status__in=[
+                    Order.Status.NEW,
+                    Order.Status.AWAITING_PAYMENT,
+                    Order.Status.PAID,
+                ],
                 product_id=product_id,
             )
             .select_related('order')
@@ -52,7 +56,11 @@ class StockService:
         reserved = 0
         for item in reserved_items:
             # Проверяем, что резерв ещё не списан (заказ не оплачен и не отменён)
-            if item.order.status in ['new', 'awaiting_payment', 'in_progress']:
+            if item.order.status in (
+                Order.Status.NEW,
+                Order.Status.AWAITING_PAYMENT,
+                Order.Status.PAID,
+            ):
                 if item.coffee_weight_grams:
                     reserved += item.coffee_weight_grams
                 else:
@@ -117,10 +125,10 @@ class StockService:
                 if item.quantity > available:
                     return False
 
-        # Меняем статус на awaiting_payment только для заказов со статусом 'new'
-        # (для online-оплаты статус уже awaiting_payment, для cash — остаётся new)
-        if order.status == 'new':
-            order.status = 'awaiting_payment'
+        # Меняем статус на AWAITING_PAYMENT только для заказов со статусом 'new'
+        # (для online-оплаты статус уже AWAITING_PAYMENT, для cash — остаётся NEW)
+        if order.status == Order.Status.NEW:
+            order.status = Order.Status.AWAITING_PAYMENT
 
         order.reserved_at = timezone.now()
         order.save(update_fields=['status', 'reserved_at', 'updated_at'])
@@ -145,7 +153,10 @@ class StockService:
         except Order.DoesNotExist:
             return
 
-        if order.status not in ('awaiting_payment', 'new'):
+        if order.status not in (
+            Order.Status.AWAITING_PAYMENT,
+            Order.Status.NEW,
+        ):
             return
 
         for item in order.items.all():
@@ -177,7 +188,10 @@ class StockService:
         except Order.DoesNotExist:
             return
 
-        if order.status not in ('awaiting_payment', 'new'):
+        if order.status not in (
+            Order.Status.AWAITING_PAYMENT,
+            Order.Status.NEW,
+        ):
             return
 
         for item in order.items.all():
@@ -188,7 +202,7 @@ class StockService:
                 product.stock += item.quantity
             product.save(update_fields=['stock'])
 
-        order.status = 'cancelled'
+        order.status = Order.Status.CANCELED
         order.reserved_at = None
         order.save(update_fields=['status', 'reserved_at', 'updated_at'])
 
@@ -209,7 +223,7 @@ class StockService:
         )
 
         expired = Order.objects.filter(
-            status='awaiting_payment',
+            status=Order.Status.AWAITING_PAYMENT,
             reserved_at__lt=threshold,
         )
 

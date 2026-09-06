@@ -109,7 +109,8 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_status',
             'pvz_id',
             'destination_coords',
-            'yookassa_payment_id',
+            'order_number',
+            'payment_id',
             'reserved_at',
             'created_at',
             'updated_at',
@@ -118,9 +119,10 @@ class OrderDetailSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'user',
+            'order_number',
             'created_at',
             'updated_at',
-            'yookassa_payment_id',
+            'payment_id',
             'reserved_at',
         ]
 

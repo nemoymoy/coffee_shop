@@ -26,7 +26,7 @@ class OrderAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at',
                        'yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost']
     inlines = [OrderItemInline]
-    actions = ['mark_awaiting_payment', 'mark_in_progress', 'mark_ready', 'mark_delivered', 'mark_cancelled', 'export_to_csv']
+    actions = ['mark_awaiting_payment', 'mark_in_progress', 'mark_ready', 'mark_delivered', 'mark_cancelled', 'mark_refunded', 'export_to_csv']
 
     date_hierarchy = 'created_at'
     list_per_page = 20
@@ -49,7 +49,7 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('comment',)
         }),
         ('System', {
-            'fields': ('created_at', 'updated_at', 'reserved_at', 'yookassa_payment_id'),
+            'fields': ('order_number', 'created_at', 'updated_at', 'reserved_at', 'payment_id'),
             'classes': ('collapse',)
         }),
     )
@@ -62,6 +62,7 @@ class OrderAdmin(admin.ModelAdmin):
             'ready': '#2e7d32',
             'delivered': '#00695c',
             'cancelled': '#c62828',
+            'refunded': '#607d8b',
         }
         color = colors.get(obj.status, '#616161')
         return format_html(
@@ -98,6 +99,11 @@ class OrderAdmin(admin.ModelAdmin):
         count = queryset.update(status='cancelled')
         self.message_user(request, f'Updated: {count}')
     mark_cancelled.short_description = 'Set to Cancelled'
+
+    def mark_refunded(self, request, queryset):
+        count = queryset.update(status='refunded')
+        self.message_user(request, f'Updated: {count}')
+    mark_refunded.short_description = 'Set to Refunded'
 
     def export_to_csv(self, request, queryset):
         import csv

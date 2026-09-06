@@ -21,10 +21,10 @@ class TestSyncYandexDeliveryStatus:
         """Only orders with yandex_order_id are synced."""
         Order.objects.create(
             user=user,
-            status='in_progress',
+            status=Order.Status.PAID,
             total_amount=Decimal('1000'),
-            payment_method='online',
-            delivery_method='delivery',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -53,10 +53,10 @@ class TestSyncYandexDeliveryStatus:
         """Order statuses are updated."""
         order = Order.objects.create(
             user=user,
-            status='in_progress',
+            status=Order.Status.PAID,
             total_amount=Decimal('1000'),
-            payment_method='online',
-            delivery_method='delivery',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -82,17 +82,17 @@ class TestSyncYandexDeliveryStatus:
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
         assert order.delivery_status == 'in_transit'
-        # Status should remain 'in_progress' (not delivered yet)
-        assert order.status == 'in_progress'
+        # Status should remain PAID (not delivered yet)
+        assert order.status == Order.Status.PAID
 
     def test_sync_delivered_status(self, user):
         """Delivered status updates Order status."""
         order = Order.objects.create(
             user=user,
-            status='in_progress',
+            status=Order.Status.PAID,
             total_amount=Decimal('1000'),
-            payment_method='online',
-            delivery_method='delivery',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -117,16 +117,16 @@ class TestSyncYandexDeliveryStatus:
 
         order.refresh_from_db()
         assert order.delivery_status == 'delivered'
-        assert order.status == 'delivered'
+        assert order.status == Order.Status.DELIVERED
 
     def test_sync_service_error(self, user):
         """Service error — order is not updated."""
         Order.objects.create(
             user=user,
-            status='in_progress',
+            status=Order.Status.PAID,
             total_amount=Decimal('1000'),
-            payment_method='online',
-            delivery_method='delivery',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',

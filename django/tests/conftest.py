@@ -124,10 +124,10 @@ def order(coffee_beans, user):
     """Тестовый заказ."""
     o = Order.objects.create(
         user=user,
-        status='new',
+        status=Order.Status.NEW,
         total_amount=Decimal('300.00'),
-        payment_method='online',
-        delivery_method='pickup',
+        payment_method=Order.PaymentMethod.ONLINE,
+        delivery_method=Order.DeliveryMethod.PICKUP,
         first_name='Иван',
         last_name='Иванов',
         phone='+79991234567',

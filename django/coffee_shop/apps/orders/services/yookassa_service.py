@@ -1,38 +1,41 @@
-"""YooKassa (ЮКасса) payment gateway integration."""
+"""YooKassa (ЮКасса) payment gateway integration using official yookassa package."""
 import hmac
 import hashlib
 import base64
-from typing import Optional
 from decimal import Decimal
+from typing import Optional
 
-import requests
 from django.conf import settings
-from django.utils import timezone
+from yookassa import Configuration, Payment, Refund
+from yookassa.domain.notification import (
+    WebhookNotificationEventType,
+    WebhookNotificationFactory,
+)
 
 
 class YooKassaService:
-    """Сервис для работы с платёжной шлюзом ЮКасса (YooKassa)."""
-
-    API_HOST = "api.yookassa.ru"
-    API_VERSION = "v2"
+    """Сервис для работы с платёжной шлюзом ЮКасса (YooKassa) через официальный SDK."""
 
     def __init__(self):
-        self.merchant_id = getattr(settings, "YOOKASSA_MERCHANT_ID", "")
-        self.api_key = getattr(settings, "YOOKASSA_API_KEY", "")
-        self.test_mode = getattr(settings, "YOOKASSA_TEST_MODE", True)
+        self._configure()
+
+    def _configure(self):
+        """Конфигурирует SDK ЮКасса."""
+        shop_id = getattr(settings, 'YOOKASSA_SHOP_ID', '')
+        secret_key = getattr(settings, 'YOOKASSA_SECRET_KEY', '')
+
+        if shop_id and secret_key:
+            Configuration.configure(shop_id, secret_key)
 
     def is_configured(self) -> bool:
         """Проверка, что сервис настроен."""
-        return bool(self.merchant_id and self.api_key)
-
-    def _auth_header(self) -> str:
-        """Basic Auth: LOGIN:SECRET_KEY encoded in base64."""
-        credentials = f"{self.merchant_id}:{self.api_key}"
-        return f"Basic {base64.b64encode(credentials.encode()).decode()}"
+        shop_id = getattr(settings, 'YOOKASSA_SHOP_ID', '')
+        secret_key = getattr(settings, 'YOOKASSA_SECRET_KEY', '')
+        return bool(shop_id and secret_key)
 
     def create_payment(
         self,
-        order_id: int,
+        order_number: str,
         amount: Decimal,
         description: str,
         confirm_type: str = "redirect",
@@ -42,7 +45,7 @@ class YooKassaService:
         Создаёт платёж через ЮКассу.
 
         Args:
-            order_id: ID заказа в системе
+            order_number: Номер заказа в системе
             amount: Сумма платежа
             description: Описание платежа
             confirm_type: Тип подтверждения ('redirect' или 'qr')
@@ -60,57 +63,40 @@ class YooKassaService:
         if not self.is_configured():
             return {
                 "success": True,
-                "payment_id": f"mock-{order_id}",
-                "payment_url": f"http://localhost:8000/pay/mock/{order_id}/",
-                "confirmation_url": f"http://localhost:8000/pay/mock/{order_id}/",
+                "payment_id": f"mock-{order_number}",
+                "confirmation_url": f"{getattr(settings, 'SITE_URL', 'http://localhost:8000')}/pay/mock/{order_number}/",
                 "amount": str(amount),
                 "mock": True,
             }
 
         try:
-            amount_dict = {
-                "value": str(amount),
-                "currency": "RUB",
-            }
-
-            payload = {
-                "amount": amount_dict,
-                "description": description,
-                "capture": True,
-                "metadata": {
-                    "order_id": str(order_id),
+            payment = Payment.create({
+                "amount": {
+                    "value": str(amount),
+                    "currency": "RUB",
                 },
                 "confirmation": {
                     "type": confirm_type,
                     "return_url": return_url or getattr(
-                        settings, "YOOKASSA_RETURN_URL", ""
+                        settings, 'YOOKASSA_RETURN_URL', ''
                     ),
                 },
-            }
-
-            response = requests.post(
-                f"https://{self.API_HOST}/{self.API_VERSION}/payments",
-                json=payload,
-                headers={
-                    "Idempotence-Key": self._generate_idempotence_key(),
-                    "Authorization": self._auth_header(),
+                "capture": True,
+                "description": description,
+                "metadata": {
+                    "order_number": order_number,
                 },
-                timeout=10,
-            )
-            response.raise_for_status()
+            })
 
-            data = response.json()
             return {
                 "success": True,
-                "payment_id": data["id"],
-                "confirmation_url": data["confirmation"]["confirmation_url"],
-                "amount": str(data["amount"]["value"]),
+                "payment_id": payment.id,
+                "confirmation_url": payment.confirmation.confirmation_url,
+                "amount": str(payment.amount.value),
             }
 
-        except requests.RequestException as e:
+        except Exception as e:
             return {"success": False, "error": str(e)}
-        except (KeyError, ValueError) as e:
-            return {"success": False, "error": f"Invalid response: {e}"}
 
     def get_payment_status(self, payment_id: str) -> dict:
         """
@@ -124,6 +110,7 @@ class YooKassaService:
                 'success': True,
                 'status': 'pending'|'confirmed'|'cancelled',
                 'amount': '...',
+                'paid': True|False,
             }
             или {'success': False, 'error': '...'}
         """
@@ -131,29 +118,27 @@ class YooKassaService:
             return {
                 "success": True,
                 "status": "confirmed",
+                "paid": True,
                 "mock": True,
             }
 
         try:
-            response = requests.get(
-                f"https://{self.API_HOST}/{self.API_VERSION}/payments/{payment_id}",
-                headers={"Authorization": self._auth_header()},
-                timeout=10,
-            )
-            response.raise_for_status()
+            payment = Payment.find_one(payment_id)
 
-            data = response.json()
             return {
                 "success": True,
-                "status": data["status"],
-                "amount": str(data["amount"]["value"]),
-                "paid": data.get("paid", False),
+                "status": payment.status,
+                "amount": payment.amount.value,
+                "paid": payment.paid,
+                "metadata": payment.metadata,
             }
 
-        except requests.RequestException as e:
+        except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def refund_payment(self, payment_id: str, amount: Optional[Decimal] = None) -> dict:
+    def refund_payment(
+        self, payment_id: str, amount: Optional[Decimal] = None
+    ) -> dict:
         """
         Создаёт возврат.
 
@@ -170,35 +155,32 @@ class YooKassaService:
             или {'success': False, 'error': '...'}
         """
         if not self.is_configured():
-            return {"success": True, "refund_id": f"mock-refund-{payment_id}", "mock": True}
+            return {
+                "success": True,
+                "refund_id": f"mock-refund-{payment_id}",
+                "mock": True,
+            }
 
         try:
-            payload: dict = {}
+            refund_payload = {
+                "payment_id": payment_id,
+                "description": f"Возврат по заказу {payment_id}",
+            }
             if amount:
-                payload["amount"] = {
+                refund_payload["amount"] = {
                     "value": str(amount),
                     "currency": "RUB",
                 }
 
-            response = requests.post(
-                f"https://{self.API_HOST}/{self.API_VERSION}/refunds",
-                json=payload,
-                headers={
-                    "Idempotence-Key": self._generate_idempotence_key(),
-                    "Authorization": self._auth_header(),
-                },
-                timeout=10,
-            )
-            response.raise_for_status()
+            refund = Refund.create(refund_payload)
 
-            data = response.json()
             return {
                 "success": True,
-                "refund_id": data["id"],
-                "amount": str(data["amount"]["value"]),
+                "refund_id": refund.id,
+                "amount": refund.amount.value,
             }
 
-        except requests.RequestException as e:
+        except Exception as e:
             return {"success": False, "error": str(e)}
 
     def verify_webhook(self, payload: dict, signature: str) -> bool:
@@ -210,7 +192,7 @@ class YooKassaService:
         {request_body}
 
         Args:
-            payload: Тело webhook (JSON)
+            payload: Тело webhook (JSON dict)
             signature: Значение заголовка X-YooMoney-Signature
 
         Returns:
@@ -219,14 +201,14 @@ class YooKassaService:
         if not self.is_configured():
             return True  # В dev режиме пропускаем
 
-        # ЮКасса использует webhook_secret из настроек магазина
         webhook_secret = getattr(
-            settings, "YOOKASSA_WEBHOOK_SECRET", self.api_key
+            settings, 'YOOKASSA_WEBHOOK_SECRET',
+            getattr(settings, 'YOOKASSA_SECRET_KEY', '')
         )
 
-        raw_body = getattr(
-            self, "_last_webhook_body", "{}"
-        )
+        raw_body = base64.b64encode(
+            str(payload).encode()
+        ).decode()
 
         expected = hmac.new(
             webhook_secret.encode(),
@@ -241,60 +223,49 @@ class YooKassaService:
         Обрабатывает webhook от ЮКассы.
 
         Поддерживаемые события:
-        - payment.waiting_for_payment
         - payment.succeeded
         - payment.canceled
 
         Args:
-            payload: Данные webhook
+            payload: Данные webhook (JSON dict)
 
         Returns:
             {
                 'status': 'paid'|'failed'|'unknown',
                 'payment_id': '...',
-                'order_id': '...',
+                'order_number': '...',
             }
         """
         try:
-            event_type = payload.get("event")
-            payment = payload.get("object", {})
-            payment_id = payment.get("id")
-            status = payment.get("status")
-            paid = payment.get("paid", False)
+            notification = WebhookNotificationFactory().create(payload)
+            event = notification.event
+            payment_object = notification.object
 
-            # metadata.order_id — наш ID заказа
-            metadata = payment.get("metadata", {})
-            order_id = metadata.get("order_id")
+            order_number = getattr(payment_object, 'metadata', {}).get(
+                'order_number'
+            )
 
-            if event_type == "payment.succeeded" and paid:
+            if event == WebhookNotificationEventType.PAYMENT_SUCCEEDED:
                 return {
                     "status": "paid",
-                    "payment_id": payment_id,
-                    "order_id": order_id,
-                    "amount": str(payment.get("amount", {}).get("value", "0")),
+                    "payment_id": payment_object.id,
+                    "order_number": order_number,
+                    "amount": payment_object.amount.value,
+                    "paid": payment_object.paid,
                 }
 
-            elif event_type == "payment.canceled" or (
-                event_type == "payment.succeeded" and not paid
-            ):
+            elif event == WebhookNotificationEventType.PAYMENT_CANCELED:
                 return {
                     "status": "failed",
-                    "payment_id": payment_id,
-                    "order_id": order_id,
+                    "payment_id": payment_object.id,
+                    "order_number": order_number,
                 }
 
             return {
                 "status": "unknown",
-                "event_type": event_type,
-                "payment_id": payment_id,
+                "event_type": event,
+                "payment_id": payment_object.id,
             }
 
         except Exception as e:
             return {"status": "error", "error": str(e)}
-
-    @staticmethod
-    def _generate_idempotence_key() -> str:
-        """Генерирует случайный idempotence-key для безопасных операций."""
-        import uuid
-
-        return str(uuid.uuid4())

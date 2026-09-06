@@ -21,9 +21,13 @@ urlpatterns = [
     # Order
     path('success/<int:order_id>/', views.order_success, name='order_success'),
     path('detail/<int:pk>/', views.order_detail, name='order_detail'),
-    # Payment
+    # Payment - YooKassa
     path('pay/<int:order_id>/', views.pay_order, name='pay_order'),
     path('webhook/', views.payment_webhook, name='payment_webhook'),
+    path('api/pay/', views.create_payment_api, name='create_payment_api'),
+    path('api/payment/status/<str:payment_id>/', views.check_payment_status, name='check_payment_status'),
+    path('api/refund/', views.create_refund, name='create_refund'),
+    path('payment/result/', views.payment_result, name='payment_result'),
     # Yandex Delivery Status
     path('delivery/status/', delivery_views.yandex_delivery_status_view, name='yandex_delivery_status'),
 ]

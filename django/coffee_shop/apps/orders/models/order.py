@@ -1,67 +1,62 @@
 ﻿from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class Order(models.Model):
     """Заказ клиента."""
 
-    STATUS_CHOICES = [
-        ('new', 'Новый'),
-        ('awaiting_payment', 'Ожидает оплаты'),
-        ('in_progress', 'В обработке'),
-        ('ready', 'Готов'),
-        ('delivered', 'Доставлен'),
-        ('cancelled', 'Отменён'),
-    ]
+    class Status(models.TextChoices):
+        NEW = "new", "Новый"
+        AWAITING_PAYMENT = "awaiting_payment", "Ожидает оплаты"
+        PAID = "in_progress", "Оплачен"
+        READY = "ready", "Готов"
+        DELIVERED = "delivered", "Доставлен"
+        CANCELED = "cancelled", "Отменён"
+        REFUNDED = "refunded", "Возврат"
 
-    PAYMENT_METHOD_CHOICES = [
-        ('online', 'Онлайн'),
-        ('cash', 'При получении'),
-    ]
+    class PaymentMethod(models.TextChoices):
+        ONLINE = "online", "Онлайн"
+        CASH = "cash", "При получении"
 
-    DELIVERY_METHOD_CHOICES = [
-        ('pickup', 'Самовывоз'),
-        ('delivery', 'Доставка'),
-    ]
+    class DeliveryMethod(models.TextChoices):
+        PICKUP = "pickup", "Самовывоз"
+        DELIVERY = "delivery", "Доставка"
 
-    DELIVERY_TYPE_CHOICES = [
-        ('courier', 'Курьер'),
-        ('pickup', 'ПВЗ/Постомат'),
-    ]
+    class DeliveryType(models.TextChoices):
+        COURIER = "courier", "Курьер"
+        PVZ = "pickup", "ПВЗ/Постомат"
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='orders',
-        verbose_name='Пользователь'
+    order_number = models.CharField(
+        max_length=50,
+        unique=True,
+        verbose_name="Номер заказа"
     )
     status = models.CharField(
         max_length=20,
-        choices=STATUS_CHOICES,
-        default='new',
-        verbose_name='Статус'
+        choices=Status.choices,
+        default=Status.NEW,
+        verbose_name="Статус"
     )
     total_amount = models.DecimalField(
         max_digits=12,
         decimal_places=2,
-        verbose_name='Итого'
+        verbose_name="Итого"
     )
-    yookassa_payment_id = models.CharField(
+    payment_id = models.CharField(
         max_length=100,
         blank=True,
         null=True,
-        verbose_name='ID платежа в ЮКассе'
+        verbose_name="ID платежа в платёжной системе"
     )
     payment_method = models.CharField(
         max_length=10,
-        choices=PAYMENT_METHOD_CHOICES,
-        verbose_name='Способ оплаты'
+        choices=PaymentMethod.choices,
+        verbose_name="Способ оплаты"
     )
     delivery_method = models.CharField(
         max_length=10,
-        choices=DELIVERY_METHOD_CHOICES,
+        choices=DeliveryMethod.choices,
         verbose_name='Способ получения'
     )
 
@@ -115,8 +110,8 @@ class Order(models.Model):
     )
     delivery_type = models.CharField(
         max_length=20,
-        choices=DELIVERY_TYPE_CHOICES,
-        default='courier',
+        choices=DeliveryType.choices,
+        default=DeliveryType.COURIER,
         verbose_name='Тип доставки'
     )
     pvz_id = models.CharField(
@@ -130,6 +125,15 @@ class Order(models.Model):
         blank=True,
         null=True,
         verbose_name='Координаты доставки [lon,lat]'
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='orders',
+        verbose_name='Пользователь'
     )
 
     reserved_at = models.DateTimeField(
@@ -150,8 +154,17 @@ class Order(models.Model):
         ]
 
     def __str__(self):
-        return f'Заказ #{self.pk} — {self.last_name} {self.first_name}'
+        return f'Заказ {self.order_number} — {self.get_status_display()}'
 
     @property
     def full_name(self):
         return f'{self.last_name} {self.first_name}'
+
+    def save(self, *args, **kwargs):
+        """Автоматически генерируем order_number при создании."""
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+        if is_new and not self.order_number:
+            # Генерируем order_number после присвоения pk
+            self.order_number = f"ORD-{timezone.now().strftime('%Y%m%d')}-{self.pk:06d}"
+            super().save(update_fields=['order_number'])

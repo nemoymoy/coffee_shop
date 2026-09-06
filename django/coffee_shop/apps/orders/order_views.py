@@ -1,13 +1,14 @@
 """Orders views."""
+import json
 from decimal import Decimal
 
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db import transaction
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_GET
 
 from coffee_shop.apps.catalog.models import Product
 from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
@@ -201,7 +202,7 @@ def checkout_view(request):
             delivery_cost = '0'
 
         # Валидация: для доставки адрес обязателен
-        if cleaned['delivery_method'] == 'delivery' and not cleaned.get('delivery_address', ''):
+        if cleaned['delivery_method'] == Order.DeliveryMethod.DELIVERY and not cleaned.get('delivery_address', ''):
             messages.error(request, 'Необходимо указать адрес доставки')
             return render(request, 'checkout.html', {
                 'cart_items': cart_items,
@@ -211,10 +212,10 @@ def checkout_view(request):
         
         # Определяем начальный статус заказа в зависимости от способа оплаты
         payment_method = cleaned['payment_method']
-        if payment_method == 'online':
-            initial_status = 'awaiting_payment'
+        if payment_method == Order.PaymentMethod.ONLINE:
+            initial_status = Order.Status.AWAITING_PAYMENT
         else:
-            initial_status = 'new'
+            initial_status = Order.Status.NEW
 
         with transaction.atomic():
             order = Order.objects.create(
@@ -287,14 +288,14 @@ def checkout_view(request):
 
             # Устанавливаем стоимость доставки
             delivery_price = Decimal('0')
-            if cleaned['delivery_method'] == 'delivery':
+            if cleaned['delivery_method'] == Order.DeliveryMethod.DELIVERY:
                 # Используем стоимость из формы (если пользователь выбрал через виджет)
                 if delivery_cost and Decimal(str(delivery_cost)) > 0:
                     delivery_price = Decimal(str(delivery_cost))
 
                 # Создаём заказ в Яндекс Доставке только для безналичной оплаты
                 # Для онлайн-оплаты доставка создаётся после подтверждения платежа (в webhook)
-                if payment_method != 'online':
+                if payment_method != Order.PaymentMethod.ONLINE:
                     try:
                         service = YandexDeliveryService()
                         if service.is_configured():
@@ -367,9 +368,9 @@ def checkout_view(request):
             order.save(update_fields=fields_to_save)
 
         # Резервируем stock (не для доставки и не для наличной оплаты — там своя логика)
-        # Для online-оплаты статус уже awaiting_payment, reserve_stock просто резервирует stock
-        # Для наличной оплаты статус остаётся new, reserve_stock не вызывается
-        if cleaned['delivery_method'] != 'delivery' and cleaned['payment_method'] == 'online':
+        # Для online-оплаты статус уже AWAITING_PAYMENT, reserve_stock просто резервирует stock
+        # Для наличной оплаты статус остаётся NEW, reserve_stock не вызывается
+        if cleaned['delivery_method'] != Order.DeliveryMethod.DELIVERY and cleaned['payment_method'] == Order.PaymentMethod.ONLINE:
             StockService.reserve_stock(order.pk)
         
         # Очищаем корзину
@@ -481,12 +482,12 @@ def pay_order(request, order_id):
     order = get_object_or_404(Order, pk=order_id)
 
     # Проверяем, что заказ требует оплаты
-    if order.status != 'awaiting_payment':
+    if order.status != Order.Status.AWAITING_PAYMENT:
         messages.error(request, 'Этот заказ не требует оплаты')
         return redirect('orders:order_success', order_id=order.pk)
 
     # Проверяем, что способ оплаты — онлайн
-    if order.payment_method != 'online':
+    if order.payment_method != Order.PaymentMethod.ONLINE:
         messages.error(request, 'Для этого заказа не требуется онлайн-оплата')
         return redirect('orders:order_success', order_id=order.pk)
 
@@ -498,21 +499,21 @@ def pay_order(request, order_id):
 
     # Создаём платёж в ЮКассе
     return_url = request.build_absolute_uri(
-        reverse('orders:order_success', kwargs={'order_id': order.pk})
+        reverse('orders:payment_result')
     )
 
     result = yookassa.create_payment(
-        order_id=order.pk,
+        order_number=order.order_number,
         amount=order.total_amount,
-        description=f'Заказ #{order.pk} — {order.last_name} {order.first_name}',
+        description=f'Заказ #{order.order_number} — {order.full_name}',
         confirm_type='redirect',
         return_url=return_url,
     )
 
     if result.get('success'):
         # Сохраняем ID платежа в заказе
-        order.yookassa_payment_id = result.get('payment_id')
-        order.save(update_fields=['yookassa_payment_id'])
+        order.payment_id = result.get('payment_id')
+        order.save(update_fields=['payment_id'])
         # Перенаправляем на страницу оплаты ЮКассы
         return redirect(result['confirmation_url'])
     else:
@@ -524,39 +525,46 @@ def pay_order(request, order_id):
 @require_POST
 def payment_webhook(request):
     """Webhook endpoint for YooKassa payment notifications."""
-    import json
-    from django.http import JsonResponse
-
     from .services.yookassa_service import YooKassaService
     from .services.delivery_service import YandexDeliveryService
 
     try:
-        data = json.loads(request.body)
-    except json.JSONDecodeError:
+        body = request.body.decode('utf-8')
+        data = json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError):
         return JsonResponse({"error": "Invalid JSON"}, status=400)
-
-    signature = request.META.get('HTTP_X_YOOMONEY_SIGNATURE', '')
 
     yookassa = YooKassaService()
 
+    # Проверка подписи webhook
+    signature = request.META.get('HTTP_X_YOOMONEY_SIGNATURE', '')
     if not yookassa.verify_webhook(data, signature):
-        return JsonResponse({"error": "Invalid signature"}, status=401)
+        return HttpResponse("Forbidden", status=403)
 
     result = yookassa.process_webhook(data)
 
     if result.get('status') == 'paid':
-        try:
-            order_id = result.get('order_id')
-            payment_id = result.get('payment_id')
-            if order_id:
+        order_number = result.get('order_number')
+        payment_id = result.get('payment_id')
+
+        if order_number:
+            try:
+                order = Order.objects.select_for_update().get(
+                    order_number=order_number
+                )
+
+                # Проверяем сумму
+                webhook_amount = Decimal(str(result.get('amount', '0')))
+                if webhook_amount != order.total_amount:
+                    return HttpResponse("Amount mismatch", status=400)
+
                 with transaction.atomic():
-                    order = Order.objects.select_for_update().get(pk=int(order_id))
-                    order.yookassa_payment_id = payment_id
+                    order.payment_id = payment_id
 
                     # Если заказ ещё не передан в Яндекс Доставку (онлайн-оплата),
                     # создаём заказ в Яндекс Доставке сейчас
                     if (
-                        order.delivery_method == 'delivery'
+                        order.delivery_method == Order.DeliveryMethod.DELIVERY
                         and not order.yandex_order_id
                     ):
                         service = YandexDeliveryService()
@@ -611,16 +619,161 @@ def payment_webhook(request):
                                 order.tracking_number = create_result.get('tracking_number', '')
                                 order.delivery_status = 'pending'
 
-                    order.status = 'in_progress'
+                    order.status = Order.Status.PAID
                     order.save(update_fields=[
-                        'yookassa_payment_id',
+                        'payment_id',
                         'status',
                         'updated_at',
                         'yandex_order_id',
                         'tracking_number',
                         'delivery_status',
                     ])
-        except (Order.DoesNotExist, ValueError):
-            pass  # Log error, do not return 500
+
+            except (Order.DoesNotExist, ValueError) as e:
+                pass  # Log error, do not return 500
 
     return JsonResponse({"status": "ok"})
+
+
+# ── API Endpoints for YooKassa Integration ──────────────────────────────
+
+@csrf_exempt
+@require_POST
+def create_payment_api(request):
+    """
+    API endpoint for creating a YooKassa payment.
+    Accepts order_number and amount, creates a payment and returns
+    confirmation_url for redirect.
+    """
+    from .services.yookassa_service import YooKassaService
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    order_number = data.get('order_number')
+    amount_value = data.get('amount')
+
+    if not order_number or not amount_value:
+        return JsonResponse(
+            {'error': 'order_number and amount are required'}, status=400
+        )
+
+    try:
+        amount = Decimal(str(amount_value))
+    except Exception:
+        return JsonResponse({'error': 'Invalid amount'}, status=400)
+
+    # Get or create order
+    try:
+        order = Order.objects.get(order_number=order_number)
+    except Order.DoesNotExist:
+        return JsonResponse({'error': 'Order not found'}, status=404)
+
+    yookassa = YooKassaService()
+    if not yookassa.is_configured():
+        return JsonResponse({'error': 'Payment system not configured'}, status=500)
+
+    return_url = f"{getattr(settings, 'SITE_URL', '')}/orders/payment/result/?order_number={order_number}"
+
+    result = yookassa.create_payment(
+        order_number=order.order_number,
+        amount=order.total_amount,
+        description=f"Payment for order #{order.order_number}",
+        confirm_type='redirect',
+        return_url=return_url,
+    )
+
+    if result.get('success'):
+        order.payment_id = result.get('payment_id')
+        order.save(update_fields=['payment_id'])
+
+        return JsonResponse({
+            'payment_id': result.get('payment_id'),
+            'confirmation_url': result.get('confirmation_url'),
+        })
+    else:
+        return JsonResponse(
+            {'error': result.get('error', 'Unknown error')}, status=500
+        )
+
+
+@require_GET
+def check_payment_status(request, payment_id):
+    """
+    Check payment status directly via API - fallback mechanism
+    if webhook didn't arrive or front-end needs to check status.
+    """
+    from .services.yookassa_service import YooKassaService
+
+    yookassa = YooKassaService()
+    result = yookassa.get_payment_status(payment_id)
+
+    if result.get('success'):
+        return JsonResponse({
+            'status': result.get('status'),
+            'paid': result.get('paid', False),
+            'amount': result.get('amount'),
+            'metadata': result.get('metadata', {}),
+        })
+    else:
+        return JsonResponse(
+            {'error': result.get('error', 'Unknown error')}, status=500
+        )
+
+
+@csrf_exempt
+@require_POST
+def create_refund(request):
+    """
+    Full or partial refund for a successful payment.
+    """
+    from .services.yookassa_service import YooKassaService
+
+    try:
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON"}, status=400)
+
+    payment_id = data.get('payment_id')
+    amount_value = data.get('amount')
+
+    if not payment_id:
+        return JsonResponse({'error': 'payment_id is required'}, status=400)
+
+    try:
+        order = Order.objects.get(payment_id=payment_id)
+    except Order.DoesNotExist:
+        return JsonResponse({'error': 'Order not found'}, status=404)
+
+    yookassa = YooKassaService()
+    result = yookassa.refund_payment(
+        payment_id=payment_id,
+        amount=Decimal(str(amount_value)) if amount_value else None,
+    )
+
+    if result.get('success'):
+        order.status = Order.Status.REFUNDED
+        order.save(update_fields=['status'])
+
+        return JsonResponse({
+            'refund_id': result.get('refund_id'),
+            'amount': result.get('amount'),
+        })
+    else:
+        return JsonResponse(
+            {'error': result.get('error', 'Unknown error')}, status=500
+        )
+
+
+@require_GET
+def payment_result(request):
+    """
+    Page where YooKassa redirects user after payment.
+    """
+    order_number = request.GET.get('order_number')
+    return JsonResponse({
+        'message': 'Payment is being processed. Final status will come via webhook.',
+        'order_number': order_number,
+    })

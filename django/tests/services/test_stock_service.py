@@ -15,10 +15,10 @@ class TestCartService:
         """Создание позиции кофе с списанием остатка."""
         from coffee_shop.apps.orders.models import Order
         order = Order.objects.create(
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('300.00'),
-            payment_method='online',
-            delivery_method='pickup',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -39,10 +39,10 @@ class TestCartService:
         """Попытка заказать больше, чем есть на складе."""
         from coffee_shop.apps.orders.models import Order
         order = Order.objects.create(
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('100.00'),
-            payment_method='online',
-            delivery_method='pickup',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',
@@ -59,10 +59,10 @@ class TestCartService:
         """Создание позиции не-кофе товара."""
         from coffee_shop.apps.orders.models import Order
         order = Order.objects.create(
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('350.00'),
-            payment_method='online',
-            delivery_method='pickup',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
             first_name='Иван',
             last_name='Иванов',
             phone='+79991234567',

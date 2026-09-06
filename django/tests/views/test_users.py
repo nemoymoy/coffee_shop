@@ -207,10 +207,10 @@ class TestDashboardView:
         from coffee_shop.apps.orders.models import Order
         Order.objects.create(
             user=user,
-            status='new',
+            status=Order.Status.NEW,
             total_amount=Decimal('300.00'),
-            payment_method='online',
-            delivery_method='pickup',
+            payment_method=Order.PaymentMethod.ONLINE,
+            delivery_method=Order.DeliveryMethod.PICKUP,
             first_name='Иван',
             last_name='Тестов',
             phone='+79991234567',

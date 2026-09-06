@@ -27,7 +27,7 @@ django-crispy-forms==2.1
 crispy-bootstrap5==2024.2
 
 # Payment
-requests==2.31.0
+yookassa==2.2.0
 
 # Email (SMTP)
 # RuSender: smtp.rusender.ru:465 (SSL)
