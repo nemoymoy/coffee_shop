@@ -28,6 +28,7 @@ crispy-bootstrap5==2024.2
 
 # Payment
 yookassa==2.2.0
+urllib3<2.0
 
 # Email (SMTP)
 # RuSender: smtp.rusender.ru:465 (SSL)

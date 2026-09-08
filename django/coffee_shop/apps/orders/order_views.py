@@ -190,7 +190,7 @@ def checkout_view(request):
         
         # Сохраняем тип доставки и PVZ ID из формы (если передан)
         delivery_type_raw = cleaned.get('delivery_type', '') or request.POST.get('delivery_type', '')
-        if delivery_type_raw not in dict(Order.DELIVERY_TYPE_CHOICES):
+        if delivery_type_raw not in dict(Order.DeliveryType.choices):
             delivery_type_raw = 'courier'
 
         pvz_id = cleaned.get('pvz_id', '') or request.POST.get('pvz_id', '')
@@ -494,7 +494,8 @@ def pay_order(request, order_id):
     # Проверяем, что ЮКасса настроена
     yookassa = YooKassaService()
     if not yookassa.is_configured():
-        messages.error(request, 'Платёжная система не настроена')
+        error_msg = yookassa.get_config_error()
+        messages.error(request, error_msg or 'ЮКасса не настроена')
         return redirect('orders:order_success', order_id=order.pk)
 
     # Создаём платёж в ЮКассе

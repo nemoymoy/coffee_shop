@@ -33,6 +33,16 @@ class YooKassaService:
         secret_key = getattr(settings, 'YOOKASSA_SECRET_KEY', '')
         return bool(shop_id and secret_key)
 
+    def get_config_error(self) -> str:
+        """Возвращает описание проблемы с настройкой."""
+        shop_id = getattr(settings, 'YOOKASSA_SHOP_ID', '')
+        secret_key = getattr(settings, 'YOOKASSA_SECRET_KEY', '')
+        if not shop_id:
+            return 'Не указан YOOKASSA_SHOP_ID'
+        if not secret_key:
+            return 'Не указан YOOKASSA_SECRET_KEY'
+        return ''
+
     def create_payment(
         self,
         order_number: str,
