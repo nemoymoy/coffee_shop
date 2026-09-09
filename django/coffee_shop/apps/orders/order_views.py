@@ -500,7 +500,7 @@ def pay_order(request, order_id):
 
     # Создаём платёж в ЮКассе
     return_url = request.build_absolute_uri(
-        reverse('orders:payment_result')
+        reverse('orders:payment_result') + f'?order_number={order.order_number}'
     )
 
     result = yookassa.create_payment(
@@ -526,27 +526,34 @@ def pay_order(request, order_id):
 @require_POST
 def payment_webhook(request):
     """Webhook endpoint for YooKassa payment notifications."""
+    import logging
     from .services.yookassa_service import YooKassaService
     from .services.delivery_service import YandexDeliveryService
+
+    logger = logging.getLogger(__name__)
 
     try:
         body = request.body.decode('utf-8')
         data = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError):
+        logger.error('Invalid JSON in webhook')
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     yookassa = YooKassaService()
 
     # Проверка подписи webhook
     signature = request.META.get('HTTP_X_YOOMONEY_SIGNATURE', '')
-    if not yookassa.verify_webhook(data, signature):
+    if not yookassa.verify_webhook(body, signature):
+        logger.error('Webhook signature verification failed')
         return HttpResponse("Forbidden", status=403)
 
     result = yookassa.process_webhook(data)
+    logger.info('Webhook processed: %s', result)
 
     if result.get('status') == 'paid':
         order_number = result.get('order_number')
         payment_id = result.get('payment_id')
+        logger.info('Payment succeeded: order=%s, payment=%s', order_number, payment_id)
 
         if order_number:
             try:
@@ -629,9 +636,10 @@ def payment_webhook(request):
                         'tracking_number',
                         'delivery_status',
                     ])
+                    logger.info('Order status updated to PAID: %s', order.pk)
 
             except (Order.DoesNotExist, ValueError) as e:
-                pass  # Log error, do not return 500
+                logger.error('Error processing webhook: %s', e)
 
     return JsonResponse({"status": "ok"})
 
@@ -772,12 +780,100 @@ def create_refund(request):
 def payment_result(request):
     """Страница результата оплаты — перенаправление от ЮКассы."""
     from decimal import Decimal
+    from .services.yookassa_service import YooKassaService
+    from .services.promo_service import PromoService
+    from .services.stock_service import StockService
+    from .services.delivery_service import YandexDeliveryService
+    from coffee_shop.apps.orders.models import Package
     
     order_number = request.GET.get('order_number')
     
     if order_number:
         try:
             order = Order.objects.get(order_number=order_number)
+            
+            # Проверяем статус платежа через API ЮКассы
+            if order.payment_id:
+                yookassa = YooKassaService()
+                payment_status = yookassa.get_payment_status(order.payment_id)
+                
+                if payment_status.get('success') and payment_status.get('paid'):
+                    # Платёж успешен — обновляем статус заказа
+                    if order.status != Order.Status.PAID:
+                        with transaction.atomic():
+                            order.status = Order.Status.PAID
+                            order.save(update_fields=['status', 'updated_at'])
+                            
+                            # Создаём заказ в Яндекс Доставке для онлайн-оплаты
+                            if (
+                                order.delivery_method == Order.DeliveryMethod.DELIVERY
+                                and not order.yandex_order_id
+                            ):
+                                service = YandexDeliveryService()
+                                if service.is_configured():
+                                    total_weight_grams = 0
+                                    total_quantity = 0
+                                    for oi in order.items.all():
+                                        total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+                                        total_quantity += oi.quantity
+                                    
+                                    try:
+                                        package = Package.for_weight(total_weight_grams)
+                                        total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+                                        sz = {
+                                            'length': float(package.length),
+                                            'width': float(package.width),
+                                            'height': float(package.height),
+                                        }
+                                    except Package.DoesNotExist:
+                                        total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+                                        sz = {
+                                            'length': 0.12,
+                                            'width': 0.06,
+                                            'height': 0.06,
+                                        }
+                                    
+                                    api_items = [{
+                                        'quantity': total_quantity,
+                                        'weight': round(total_weight_kg, 3),
+                                        'size': sz,
+                                        'title': order.items.first().product.name if order.items.first() else 'Product',
+                                    }]
+                                    
+                                    coords_list = []
+                                    if order.destination_coords:
+                                        coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                                    else:
+                                        coords_list = [49.35, 53.21]
+                                    
+                                    create_result = service.create_order(
+                                        items=api_items,
+                                        client_order_id=order.pk,
+                                        destination_coords=coords_list,
+                                        destination_address=order.delivery_address,
+                                        delivery_type=order.delivery_type,
+                                        pvz_id=order.pvz_id,
+                                    )
+                                    
+                                    if create_result.get('success'):
+                                        order.yandex_order_id = create_result.get('order_id', '')
+                                        order.tracking_number = create_result.get('tracking_number', '')
+                                        order.delivery_status = 'pending'
+                                        order.save(update_fields=['yandex_order_id', 'tracking_number', 'delivery_status', 'updated_at'])
+                                        messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                    else:
+                                        messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
+                            
+                            # Резервируем stock
+                            StockService.reserve_stock(order.pk)
+                            
+                    messages.success(request, 'Оплата прошла успешно!')
+                elif payment_status.get('status') == 'pending':
+                    messages.warning(request, 'Оплата обрабатывается. Статус обновится автоматически.')
+                else:
+                    messages.error(request, 'Оплата не прошла. Попробуйте снова.')
+                    return redirect('orders:pay_order', order_id=order.pk)
+            
             goods_total = sum(
                 (item.total_price for item in order.items.all()),
                 Decimal('0')

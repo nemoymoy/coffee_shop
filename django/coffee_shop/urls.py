@@ -10,6 +10,7 @@ from . import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', views.health_check, name='health'),
+    path('favicon.ico', views.favicon, name='favicon'),
     path('', views.home, name='home'),
     path('catalog/', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
     path('cart/', include('coffee_shop.apps.orders.urls', namespace='cart')),

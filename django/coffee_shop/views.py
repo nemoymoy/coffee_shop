@@ -2,9 +2,11 @@ from django.shortcuts import render, redirect
 from django.contrib.auth import login
 from django.contrib import messages
 from django.db.models import Sum
-from django.http import JsonResponse
+from django.http import JsonResponse, FileResponse
+from django.conf import settings
 from django.utils import timezone
 from django.core.paginator import Paginator
+import os
 
 from coffee_shop.apps.catalog.models import Category, Product
 from coffee_shop.apps.orders.models import Order
@@ -37,6 +39,19 @@ def health_check(request):
         'status': 'ok',
         'timestamp': timezone.now().isoformat(),
     })
+
+
+def favicon(request):
+    """Serve favicon.ico from static files."""
+    favicon_path = os.path.join(
+        settings.STATIC_ROOT, 'img', 'favicon.ico'
+    )
+    if os.path.exists(favicon_path):
+        return FileResponse(
+            open(favicon_path, 'rb'),
+            content_type='image/x-icon'
+        )
+    return JsonResponse({'error': 'favicon not found'}, status=404)
 
 
 def dashboard_view(request):

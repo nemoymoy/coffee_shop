@@ -193,16 +193,16 @@ class YooKassaService:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def verify_webhook(self, payload: dict, signature: str) -> bool:
+    def verify_webhook(self, body: str, signature: str) -> bool:
         """
         Проверяет подпись webhook от ЮКассы.
 
         ЮКасса отправляет HMAC-SHA256 подпись в заголовке
         X-YooMoney-Signature. Подписывает строку вида:
-        {request_body}
+        {request_body}\n{secret_key}
 
         Args:
-            payload: Тело webhook (JSON dict)
+            body: Тело webhook (JSON строка из request.body)
             signature: Значение заголовка X-YooMoney-Signature
 
         Returns:
@@ -216,13 +216,10 @@ class YooKassaService:
             getattr(settings, 'YOOKASSA_SECRET_KEY', '')
         )
 
-        raw_body = base64.b64encode(
-            str(payload).encode()
-        ).decode()
-
+        # ЮКасса подписывает: body\nsecret
+        message = f"{body}\n{webhook_secret}"
         expected = hmac.new(
-            webhook_secret.encode(),
-            raw_body.encode(),
+            message.encode(),
             hashlib.sha256,
         ).hexdigest()
 
