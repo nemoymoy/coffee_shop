@@ -770,11 +770,27 @@ def create_refund(request):
 
 @require_GET
 def payment_result(request):
-    """
-    Page where YooKassa redirects user after payment.
-    """
+    """Страница результата оплаты — перенаправление от ЮКассы."""
+    from decimal import Decimal
+    
     order_number = request.GET.get('order_number')
-    return JsonResponse({
-        'message': 'Payment is being processed. Final status will come via webhook.',
-        'order_number': order_number,
-    })
+    
+    if order_number:
+        try:
+            order = Order.objects.get(order_number=order_number)
+            goods_total = sum(
+                (item.total_price for item in order.items.all()),
+                Decimal('0')
+            )
+            context = {
+                'order': order,
+                'goods_total': goods_total,
+                'payment_processed': True,
+            }
+            return render(request, 'order_success.html', context)
+        except Order.DoesNotExist:
+            messages.error(request, 'Заказ не найден')
+            return redirect('orders:order_success', order_id=1)
+    
+    messages.warning(request, 'Нет данных об оплате')
+    return redirect('catalog:catalog')

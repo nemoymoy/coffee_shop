@@ -55,7 +55,7 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
                 'max-age=31536000; includeSubDomains'
             )
 
-        # CSP — всегда, чтобы работали сервисы Яндекса
+        # CSP — всегда, чтобы работали сервисы Яндекса и ЮКасса
         response['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
@@ -71,7 +71,9 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "https://taxi.yandex.ru "
             "https://yandex.ru "
             "https://avatars.mds.yandex.net "
-            "https://smart-yandex.yandex.net; "
+            "https://smart-yandex.yandex.net "
+            "https://static.yoomoney.ru https://core.yoomoney.ru "
+            "https://*.yoomoney.ru; "
             "object-src 'none'; "
             "base-uri 'self'; "
             "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' https://yastatic.net; "
@@ -96,7 +98,7 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "https://kards.fp.yandex.net "
             "wss://mc.yandex.ru wss://mc.yandex.md wss://mc.yandex.kz wss://mc.yandex.com "
             "wss://delivery.yandex.ru; "
-            "frame-src 'self' https://dostavka.yandex.ru https://delivery.yandex.ru https://yandex.ru https://mc.yandex.ru https://yandex.ru/maps; "
+            "frame-src 'self' https://dostavka.yandex.ru https://delivery.yandex.ru https://yandex.ru https://mc.yandex.ru https://yandex.ru/maps https://yoomoney.ru https://*.yoomoney.ru; "
             "frame-ancestors 'self' https://dostavka.yandex.ru https://delivery.yandex.ru;"
         )
 
