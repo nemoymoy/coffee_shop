@@ -150,7 +150,7 @@ class TestExpressClaimView:
 
     def test_determine_api_type_pickup(self):
         """PVZ → Other Day API."""
-        from coffee_shop.apps_orders.views.delivery_views import _determine_api_type
+        from coffee_shop.apps.orders.views.delivery_views import _determine_api_type
         assert _determine_api_type('pickup') == 'other_day'
 
     def test_determine_api_type_postamat(self):

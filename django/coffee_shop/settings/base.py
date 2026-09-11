@@ -174,6 +174,10 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'coffee_shop.tasks.sync_yandex_delivery_status',
         'schedule': timedelta(minutes=5),
     },
+    'accept-express-claims': {
+        'task': 'coffee_shop.tasks.accept_express_claims_pending',
+        'schedule': timedelta(minutes=2),
+    },
     'generate-daily-report': {
         'task': 'coffee_shop.tasks.generate_daily_report',
         'schedule': crontab(hour=9, minute=0),
@@ -242,6 +246,28 @@ YANDEX_PVZ_LON = float(
 YANDEX_PVZ_ADDRESS = os.environ.get(
     'YANDEX_PVZ_ADDRESS',
     'г. Самара, ул. Лукачева, д. 6'
+)
+
+# Express API (доставка день-в-день)
+YANDEX_EXPRESS_BASE_URL = os.environ.get(
+    'YANDEX_EXPRESS_BASE_URL',
+    'https://b2b.taxi.yandex.net/b2b/cargo/integration/v2'
+)
+
+# Тестовое окружение Яндекс Доставки
+YANDEX_DELIVERY_TEST_MODE = os.environ.get(
+    'YANDEX_DELIVERY_TEST_MODE', 'false'
+).lower() in ('1', 'true', 'yes')
+YANDEX_DELIVERY_TEST_BASE_URL = os.environ.get(
+    'YANDEX_DELIVERY_TEST_BASE_URL',
+    'https://b2b.taxi.tst.yandex.net'
+)
+YANDEX_DELIVERY_TEST_TOKEN = os.environ.get(
+    'YANDEX_DELIVERY_TEST_TOKEN', ''
+)
+YANDEX_DELIVERY_TEST_WAREHOUSE_ID = os.environ.get(
+    'YANDEX_DELIVERY_TEST_WAREHOUSE_ID',
+    'fbed3aa1-2cc6-4370-ab45-59c5cc9bb924'
 )
 
 # Yandex Metrika

@@ -861,7 +861,8 @@ tests/
 |--------|----------|---------------|
 | `send_order_confirmation_email` | Отправка email подтверждения заказа | При создании заказа |
 | `send_order_status_changed_email` | Отправка уведомления об изменении статуса | При изменении статуса |
-| `sync_yandex_delivery_status` | Синхронизация статусов Яндекс Доставки | Каждые 5 минут |
+| `sync_yandex_delivery_status` | Синхронизация статусов (Express + Other Day) | Каждые 5 минут |
+| `accept_express_claims_pending` | Подтверждение Express заявок (в течение 10 мин) | Каждые 2 минуты |
 | `generate_daily_report` | Ежедневный отчёт: заказы, выручка, топ товары | Каждый день в 9:00 |
 | `update_promo_codes_expiry` | Проверка истёкших промокодов | Каждый час |
 | `release_expired_reservations` | Освобождение резервов товаров для неоплаченных заказов (status=awaiting_payment, timeout=30 мин) | Каждый час |
@@ -887,6 +888,10 @@ CELERY_BEAT_SCHEDULE = {
     'sync-yandex-delivery': {
         'task': 'coffee_shop.tasks.sync_yandex_delivery_status',
         'schedule': timedelta(minutes=5),
+    },
+    'accept-express-claims': {
+        'task': 'coffee_shop.tasks.accept_express_claims_pending',
+        'schedule': timedelta(minutes=2),
     },
     'generate-daily-report': {
         'task': 'coffee_shop.tasks.generate_daily_report',
@@ -941,55 +946,245 @@ CELERY_BEAT_SCHEDULE = {
 
 ---
 
-## ☕ Яндекс Доставка (Merchant API)
+## ☕ Яндекс Доставка (Express + Other Day API)
+
+Проект поддерживает **два API** Яндекс Доставки:
+
+| API | Тип доставки | URL | Когда используется |
+|-----|-------------|-----|--------------------|
+| **Express** | День-в-день | `b2b.taxi.yandex.net/b2b/cargo/integration/v2` | Доставка курьером |
+| **Other Day** | Выбранный интервал | `b2b-authproxy.taxi.yandex.net/api/b2b/platform` | Доставка в ПВЗ/Постомат |
+
+### Автоматический выбор API
+
+| Тип доставки | API | Описание |
+|-------------|-----|----------|
+| Курьер | **Express** | Заявка создаётся и подтверждается автоматически в течение 10 минут |
+| ПВЗ | **Other Day** | Заказ создаётся на выбранный интервал доставки |
+| Постомат | **Other Day** | Заказ создаётся на выбранный интервал доставки |
 
 ### Настройка
 
-Для работы через Merchant API Яндекс Доставки необходимо:
+#### 1. Получение OAuth-токена
 
-1. **Получить OAuth-токен** в личном кабинете мерчанта (раздел «Интеграция» / «API»)
-2. **Добавить в `.env`:**
-   ```bash
-   YANDEX_DELIVERY_CLIENT_ID=...
-   YANDEX_DELIVERY_CLIENT_SECRET=...
-   YANDEX_DELIVERY_GEO_ID=213  # 213 — Москва
-   ```
+В личном кабинете Яндекс Бизнес (раздел «Интеграция» / «API»):
+- Токен начинается с `ya2.` или `y0__`
 
-### Автополучение merchant_id
+#### 2. Переменные окружения
 
-`merchant_id` **не нужно** настраивать вручную:
+```bash
+# Основной токен (продакшн)
+YANDEX_DELIVERY_TOKEN=ya2_AgAAAA...
 
-1. При первом создании заказа сервис вызывает `GET /api/v1/merchant/info`
-2. Полученный `merchant_id` **автоматически записывается в `.env`**
-3. Последующие запросы используют значение из `.env`
+# Координаты магазина (откуда отправка)
+YANDEX_SHOP_LAT=53.216940239129094
+YANDEX_SHOP_LON=50.162688008923745
+YANDEX_SHOP_ADDRESS=Самара, ул. Революционная, д. 3
 
-Если API недоступен — используется fallback из `YANDEX_DELIVERY_MERCHANT_ID` в `.env`.
+# ПВЗ пункт отправления (для доставки из ПВЗ)
+YANDEX_PVZ_ID=d0222b1e-73ff-4274-9c68-42c79d4c7eae
+YANDEX_PVZ_LAT=53.200850
+YANDEX_PVZ_LON=50.150500
+YANDEX_PVZ_ADDRESS=г. Самара, ул. Лукачева, д. 6
 
-### Получение platform_station_id
+# Express API (день-в-день)
+YANDEX_EXPRESS_BASE_URL=https://b2b.taxi.yandex.net/b2b/cargo/integration/v2
 
-Точки (ПВЗ/склады) получаются через API:
-```
-GET /api/v1/locations/points?geo_id=213&type=terminal
-Host: delivery.yandex.net
-Authorization: OAuth AgAAAA...
-```
-
-### Выбор точки доставки
-
-При оформлении заказа клиент **обязан** выбрать пункт выдачи из списка:
-```
-GET /api/orders/delivery/locations/?type=terminal&geo_id=213
+# Тестовое окружение (опционально)
+YANDEX_DELIVERY_TEST_MODE=false
+YANDEX_DELIVERY_TEST_TOKEN=y0__...
+YANDEX_DELIVERY_TEST_BASE_URL=https://b2b.taxi.tst.yandex.net
+YANDEX_DELIVERY_TEST_WAREHOUSE_ID=fbed3aa1-2cc6-4370-ab45-59c5cc9bb924
 ```
 
-Выбранная точка сохраняется в заказе как `yandex_station_id` и `yandex_station_name`.
+### Express API — доставка день-в-день
 
-### Эндпоинты Merchant API
+#### Жизненный цикл заявки
+
+```
+new → estimating → ready_for_approval → accepted → performer_lookup → performer_found → pickup_arrived → pickuped → delivery_arrived → delivered → delivered_finish
+```
+
+#### Создание заявки
+
+```bash
+curl -X POST "https://b2b.taxi.yandex.net/b2b/cargo/integration/v2/claims/create?request_id=$(uuidgen)" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "items": [{
+      "title": "Коробка с товаром",
+      "quantity": 1,
+      "cost_value": "1500",
+      "cost_currency": "RUB",
+      "size": {"length": 0.3, "width": 0.2, "height": 0.15},
+      "weight": 1.2
+    }],
+    "route_points": [
+      {
+        "point_id": 1,
+        "visit_order": 1,
+        "type": "source",
+        "contact": {"name": "Магазин", "phone": "+79001234567"},
+        "address": {
+          "fullname": "Москва, ул. Складская, 1",
+          "coordinates": [37.6, 55.76]
+        }
+      },
+      {
+        "point_id": 2,
+        "visit_order": 2,
+        "type": "destination",
+        "contact": {"name": "Иван Петров", "phone": "+79007654321"},
+        "address": {
+          "fullname": "Москва, ул. Арбат, 10, кв. 5",
+          "coordinates": [37.59, 55.75]
+        }
+      }
+    ],
+    "client_requirements": {"taxi_class": "express"}
+  }'
+```
+
+#### Подтверждение заявки
+
+⚠️ **Важно:** Заявку нужно подтвердить в течение **10 минут** после создания.
+
+```bash
+curl -X POST "https://b2b.taxi.yandex.net/b2b/cargo/integration/v2/claims/accept" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"claim_id": "ID_ЗАЯВКИ"}'
+```
+
+#### Проверка статуса
+
+```bash
+curl -X POST "https://b2b.taxi.yandex.net/b2b/cargo/integration/v2/claims/info" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"claim_id": "ID_ЗАЯВКИ"}'
+```
+
+### Other Day API — доставка на выбранный интервал
+
+#### Создание заказа (ПВЗ → ПВЗ)
+
+```bash
+curl -X POST "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform/request/create" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "info": {
+      "operator_request_id": "my-order-123",
+      "comment": "Заказ №123"
+    },
+    "source": {
+      "platform_station": {"platform_id": "ID_ПВЗ_ОТПРАВКИ"},
+      "interval_utc": {"from": "2026-09-12T09:00:00Z", "to": "2026-09-12T18:00:00Z"}
+    },
+    "destination": {
+      "type": "platform_station",
+      "platform_station": {"platform_id": "ID_ПВЗ_ПОЛУЧЕНИЯ"},
+      "interval_utc": {"from": "2026-09-13T09:00:00Z", "to": "2026-09-13T18:00:00Z"}
+    },
+    "items": [{
+      "count": 1,
+      "name": "Наушники",
+      "physical_dims": {"dx": 15, "dy": 10, "dz": 5}
+    }],
+    "billing_info": {"payment_method": "already_paid", "delivery_cost": 0},
+    "recipient_info": {
+      "first_name": "Иван",
+      "last_name": "Петров",
+      "phone": "+79007654321",
+      "email": "ivan@example.com"
+    },
+    "last_mile_policy": "self_pickup"
+  }'
+```
+
+#### Получение офферов (варианты доставки)
+
+```bash
+curl -X POST "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform/offers/create" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{...same payload...}'
+
+# Ответ:
+# {"offers": [{"offer_id": "xxx", "offer_details": {"pricing_total": "1400.96 RUB"}}]}
+```
+
+#### Подтверждение оффера
+
+```bash
+curl -X POST "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform/offers/confirm" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"offer_id": "offer_id_из_ответа"}'
+```
+
+#### Проверка статуса
+
+```bash
+curl -X POST "https://b2b-authproxy.taxi.yandex.net/api/b2b/platform/request/info" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"request_id": "request_id_из_ответа"}'
+```
+
+### Жизненный цикл Other Day заказа
+
+```
+created → in_work → picked_up → delivered → delivered_to_address → finished
+```
+
+### Получение списка ПВЗ/Постоматов
+
+```bash
+curl -X POST "https://b2b.taxi.yandex.net/api/b2b/platform/pickup-points/list" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{
+    "operator_ids": ["market_l4g"],
+    "type": "pickup_point"  # или "postamat" для постоматов
+  }'
+```
+
+### Тестовое окружение
+
+Для тестирования используйте тестовый хост и токен:
+
+```bash
+YANDEX_DELIVERY_TEST_MODE=true
+YANDEX_DELIVERY_TEST_BASE_URL=https://b2b.taxi.tst.yandex.net
+YANDEX_DELIVERY_TEST_TOKEN=<ваш_тестовый_токен>
+YANDEX_DELIVERY_TEST_WAREHOUSE_ID=<ваш_warehouse_id>
+```
+
+### Важные нюансы
+
+| Параметр | Express API | Other Day API |
+|----------|-------------|---------------|
+| Координаты | `[долгота, широта]` | `latitude` / `longitude` в `custom_location` |
+| Идемпотентность | `request_id` в query-параметре | `operator_request_id` в payload |
+| Цены | `cost_value` в рублях | `unit_price` в **копейках** |
+| Подтверждение | В течение 10 минут | Автоматически при `/offers/confirm` |
+| Интервалы | Не требуются | `interval_utc` (ISO 8601, UTC) |
+
+### Фоновые задачи
+
+| Задача | Описание | Периодичность |
+|--------|----------|---------------|
+| `sync_yandex_delivery_status` | Синхронизация статусов (Express + Other Day) | Каждые 5 минут |
+| `accept_express_claims_pending` | Подтверждение Express заявок | Каждые 2 минуты |
+
+### API эндпоинты доставки
 
 | Эндпоинт | Метод | Описание |
 |----------|-------|----------|
-| `/api/v1/merchant/info` | GET | Информация о мерчанте |
-| `/api/v1/locations/points` | GET | Список точек (ПВЗ/склады) |
-| `/api/v1/orders` | POST | Создание заказа на доставку |
+| `/checkout/calculate-delivery/` | POST | Расчёт стоимости доставки |
+| `/checkout/postamats/` | GET | Список постоматов |
+| `/checkout/pvz-locations/` | GET | Список ПВЗ |
+| `/checkout/geocode-address/` | POST | Геокодирование адреса |
+| `/checkout/packages/` | GET | Список тары (весовые категории) |
+| `/delivery/webhook/` | POST | Webhook от виджета Яндекс Доставки |
+| `/delivery/status/` | GET | Статус интеграции (только staff) |
 
 ---
 

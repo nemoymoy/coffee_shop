@@ -5,26 +5,22 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="c8505586-bae0-42e4-b5a6-074e2d717058" name="Changes" comment="update .gitignore">
-      <change afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/migrations/0012_update_yookassa_integration.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" afterPath="$PROJECT_DIR$/.env.example" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/migrations/0013_express_other_day_api.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/services/test_express_delivery.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/django/tests/services/test_other_day_delivery.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/admin.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/admin.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/models/order.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/models/order.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/order_views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/order_views.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/serializers.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/serializers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/payment_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/payment_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/stock_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/stock_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/yookassa_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/yookassa_service.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/delivery_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/services/delivery_service.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/urls.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/urls.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views/delivery_views.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/apps/orders/views/delivery_views.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/django/coffee_shop/settings/base.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/settings/base.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/api/test_payment_gateway.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/api/test_payment_gateway.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/conftest.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/conftest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/models/test_order.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/models/test_order.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/services/test_stock_service.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/services/test_stock_service.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/services/test_sync_delivery_task.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/services/test_sync_delivery_task.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/django/tests/views/test_users.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/tests/views/test_users.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker-compose.yml" beforeDir="false" afterPath="$PROJECT_DIR$/docker-compose.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements/base.txt" beforeDir="false" afterPath="$PROJECT_DIR$/requirements/base.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/tasks.py" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/tasks.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/coffee_shop/templates/checkout.html" beforeDir="false" afterPath="$PROJECT_DIR$/django/coffee_shop/templates/checkout.html" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/static/js/yandex_delivery_modal.js" beforeDir="false" afterPath="$PROJECT_DIR$/django/static/js/yandex_delivery_modal.js" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/django/static/js/yandex_delivery_utils.js" beforeDir="false" afterPath="$PROJECT_DIR$/django/static/js/yandex_delivery_utils.js" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
