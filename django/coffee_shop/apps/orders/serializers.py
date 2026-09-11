@@ -95,6 +95,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'payment_method',
             'delivery_method',
             'delivery_type',
+            'delivery_api_type',
             'first_name',
             'last_name',
             'phone',
@@ -104,11 +105,17 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'delivery_date',
             'delivery_time',
             'delivery_cost',
+            'delivery_interval_from',
+            'delivery_interval_to',
             'yandex_order_id',
+            'express_claim_id',
             'tracking_number',
             'delivery_status',
             'pvz_id',
             'destination_coords',
+            'client_order_id',
+            'recipient_name',
+            'recipient_phone',
             'order_number',
             'payment_id',
             'reserved_at',
@@ -174,6 +181,11 @@ class OrderUpdateSerializer(serializers.Serializer):
         ]
     )
     yandex_order_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default=''
+    )
+    express_claim_id = serializers.CharField(
         required=False,
         allow_blank=True,
         default=''

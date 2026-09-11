@@ -12,6 +12,8 @@ urlpatterns = [
     path('promo/check/', views.promo_check, name='promo_check'),
     # Checkout
     path('checkout/', views.checkout_view, name='checkout'),
+    path('checkout/create-express-delivery/', delivery_views.create_express_delivery_view, name='create_express_delivery'),
+    path('checkout/cancel-express-delivery/', delivery_views.cancel_express_delivery_view, name='cancel_express_delivery'),
     path('checkout/calculate-delivery/', delivery_views.calculate_delivery_view, name='calculate_delivery'),
     path('checkout/postamats/', delivery_views.postamats_list_view, name='postamats_list'),
     path('checkout/packages/', delivery_views.packages_list_view, name='packages_list'),

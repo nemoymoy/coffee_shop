@@ -90,7 +90,12 @@ const YandexDeliveryUtils = (() => {
      * @param {string} value
      */
     function setFieldValue(fieldId, value) {
-        const selector = fieldId.startsWith('#') ? fieldId : '#' + fieldId;
+        // Если fieldId начинается с 'id_', убираем его чтобы не было дублирования
+        let cleanId = fieldId;
+        if (cleanId.startsWith('id_id_')) {
+            cleanId = cleanId.substring(3); // убираем 'id_' префикс
+        }
+        const selector = cleanId.startsWith('#') ? cleanId : '#' + cleanId;
         const field = $(selector);
         if (field) field.value = value;
     }

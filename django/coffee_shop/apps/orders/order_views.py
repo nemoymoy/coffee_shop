@@ -1,8 +1,11 @@
 """Orders views."""
 import json
+import logging
 from decimal import Decimal
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib import messages
 from django.db import transaction
@@ -15,9 +18,143 @@ from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
 from coffee_shop.apps.orders.services.stock_service import StockService
 from coffee_shop.apps.orders.services.promo_service import PromoService
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
+from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem, Package
+
+
+def _get_express_claim_status(service, claim_id):
+    """Get current status of an Express claim.
+
+    Returns:
+        {'success': True, 'status': '...'} or {'success': False, 'error': '...'}
+    """
+    try:
+        return service.get_express_claim_info(claim_id)
+    except Exception as e:
+        logger.error('_get_express_claim_status error: %s', e)
+        return {'success': False, 'error': str(e)}
+
+
+def _create_express_delivery(service, order, coords_list, address, existing_claim_id=None):
+    """Create Express delivery claim or use existing one.
+
+    If existing_claim_id is provided, use it instead of creating a new claim.
+    This avoids creating duplicate claims.
+
+    Before accepting, checks claim status to avoid 409 Conflict
+    (claim may already be accepted during price calculation).
+
+    Returns:
+        {'success': True, 'claim_id': '...', 'status': '...'}
+    """
+    # Build Express items
+    total_weight_grams = 0
+    total_quantity = 0
+    for oi in order.items.all():
+        total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+        total_quantity += oi.quantity
+
+    try:
+        package = Package.for_weight(total_weight_grams)
+        total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+        sz = {
+            'length': float(package.length),
+            'width': float(package.width),
+            'height': float(package.height),
+        }
+    except Package.DoesNotExist:
+        total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+        sz = {'length': 0.12, 'width': 0.06, 'height': 0.06}
+
+    items = [{
+        'title': order.items.first().product.name if order.items.first() else 'Product',
+        'quantity': total_quantity,
+        'cost_value': '0',
+        'cost_currency': 'RUB',
+        'pickup_point': 1,
+        'droppof_point': 2,
+        'size': sz,
+        'weight': round(total_weight_kg, 3),
+    }]
+
+    route_points = [
+        {
+            'point_id': 1,
+            'visit_order': 1,
+            'type': 'source',
+            'contact': {
+                'name': 'Магазин',
+                'phone': '+79000000000',
+            },
+            'address': {
+                'fullname': service.shop_address,
+                'coordinates': [service.shop_lon, service.shop_lat],
+            },
+        },
+        {
+            'point_id': 2,
+            'visit_order': 2,
+            'type': 'destination',
+            'contact': {
+                'name': order.recipient_name or 'Клиент',
+                'phone': order.recipient_phone or '',
+            },
+            'address': {
+                'fullname': address,
+                'coordinates': coords_list if coords_list else [49.35, 53.21],
+            },
+        },
+    ]
+
+    # Use existing claim if provided (from price calculation)
+    if existing_claim_id:
+        logger.info('[Express] Using existing claim_id: %s', existing_claim_id)
+        claim_id = existing_claim_id
+
+        # Check if claim is already accepted to avoid 409 Conflict
+        status_result = _get_express_claim_status(service, claim_id)
+        if status_result.get('success'):
+            current_status = status_result.get('status', '')
+            version = status_result.get('raw', {}).get('version', 1)
+            logger.info('[Express] Existing claim status: %s, version: %d', current_status, version)
+            if current_status in ('confirmed', 'accepting', 'accepted'):
+                logger.info('[Express] Claim already accepted, skipping accept step')
+                return {
+                    'success': True,
+                    'claim_id': claim_id,
+                    'status': current_status,
+                }
+            # Accept with correct version
+            accept_result = service.accept_express_claim(claim_id, version=version)
+        else:
+            accept_result = service.accept_express_claim(claim_id)
+    else:
+        # Create new claim
+        result = service.create_express_claim(
+            items=items,
+            route_points=route_points,
+            client_requirements={'taxi_class': 'courier'},
+        )
+
+        if not result.get('success'):
+            return result
+
+        claim_id = result.get('claim_id')
+        accept_result = service.accept_express_claim(claim_id)
+
+    if accept_result.get('success'):
+        return {
+            'success': True,
+            'claim_id': claim_id,
+            'status': accept_result.get('status', 'accepted'),
+        }
+    else:
+        return {
+            'success': False,
+            'error': f'Failed to accept claim: {accept_result.get("error")}',
+        }
 
 
 def cart_view(request):
@@ -195,11 +332,24 @@ def checkout_view(request):
 
         pvz_id = cleaned.get('pvz_id', '') or request.POST.get('pvz_id', '')
         destination_coords = cleaned.get('destination_coords', '') or request.POST.get('destination_coords', '')
+
+        # Определяем API type: Курьер → Express, ПВЗ/Постомат → Other Day
+        if delivery_type_raw in ('pickup', 'postamat'):
+            delivery_api_type = 'other_day'
+        else:
+            delivery_api_type = 'express'
+
+        # Интервал доставки (для Other Day)
+        delivery_interval_from = cleaned.get('delivery_interval_from', None)
+        delivery_interval_to = cleaned.get('delivery_interval_to', None)
         
         # Стоимость доставки (если выбрана через виджет)
         delivery_cost = cleaned.get('delivery_cost') or request.POST.get('delivery_cost', '0')
         if not delivery_cost:
             delivery_cost = '0'
+
+        # Express claim ID (если выбран через виджет)
+        express_claim_id = request.POST.get('express_claim_id', '')
 
         # Валидация: для доставки адрес обязателен
         if cleaned['delivery_method'] == Order.DeliveryMethod.DELIVERY and not cleaned.get('delivery_address', ''):
@@ -227,13 +377,24 @@ def checkout_view(request):
                 comment=cleaned.get('comment', ''),
                 delivery_method=cleaned['delivery_method'],
                 delivery_type=delivery_type_raw,
+                delivery_api_type=delivery_api_type,
                 payment_method=payment_method,
                 delivery_address=cleaned.get('delivery_address', ''),
                 pvz_id=pvz_id or None,
                 destination_coords=destination_coords or None,
+                # client_order_id будет установлен после save
+                client_order_id=None,
+                delivery_interval_from=delivery_interval_from,
+                delivery_interval_to=delivery_interval_to,
+                recipient_name=f"{cleaned['last_name']} {cleaned['first_name']}",
+                recipient_phone=cleaned['phone'],
+                express_claim_id=express_claim_id or None,
                 total_amount=0,
                 status=initial_status,
             )
+            # Устанавливаем client_order_id после создания заказа
+            order.client_order_id = str(order.pk)
+            order.save(update_fields=['client_order_id'])
             
             total = 0
             for key, value in cart.items():
@@ -337,19 +498,44 @@ def checkout_view(request):
                             else:
                                 coords_list = [49.35, 53.21]  # fallback
 
-                            create_result = service.create_order(
-                                items=api_items,
-                                client_order_id=order.pk,
-                                destination_coords=coords_list,
-                                destination_address=cleaned.get('delivery_address', ''),
-                                delivery_type=order.delivery_type,
-                                pvz_id=order.pvz_id,
-                            )
+                            # Создаём доставку через нужный API
+                            if delivery_api_type == 'express':
+                                # Express API — создание + подтверждение заявки
+                                # Используем существующий claim_id, если он есть (из расчёта цены)
+                                existing_claim_id = cleaned.get('express_claim_id', '')
+                                create_result = _create_express_delivery(
+                                    service, order, coords_list,
+                                    cleaned.get('delivery_address', ''),
+                                    existing_claim_id or None
+                                )
+                            else:
+                                # Other Day API
+                                create_result = service.create_order(
+                                    items=api_items,
+                                    client_order_id=order.pk,
+                                    destination_coords=coords_list,
+                                    destination_address=cleaned.get('delivery_address', ''),
+                                    delivery_type=order.delivery_type,
+                                    pvz_id=order.pvz_id,
+                                    recipient_name=order.recipient_name,
+                                    recipient_phone=order.recipient_phone,
+                                    email=order.email,
+                                    delivery_cost=delivery_price,
+                                    payment_method='already_paid',
+                                )
 
                             if create_result.get('success'):
-                                order.yandex_order_id = create_result.get('order_id', '')
-                                order.tracking_number = create_result.get('tracking_number', '')
-                                order.delivery_status = 'pending'
+                                if delivery_api_type == 'express':
+                                    # Если claim_id уже был (из расчёта), не перезаписываем
+                                    if not order.express_claim_id:
+                                        order.express_claim_id = create_result.get('claim_id', '')
+                                    order.yandex_order_id = order.express_claim_id
+                                    order.delivery_status = create_result.get('status', 'accepted')
+                                    # Заявка уже подтверждена при расчёте цены, повторное подтверждение не нужно
+                                else:
+                                    order.yandex_order_id = create_result.get('request_id', '')
+                                    order.tracking_number = create_result.get('tracking_number', '')
+                                    order.delivery_status = 'pending'
                                 order.status = 'in_progress'
                                 messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
                             else:
@@ -364,6 +550,8 @@ def checkout_view(request):
             fields_to_save = ['delivery_cost', 'total_amount']
             if order.yandex_order_id:
                 fields_to_save.extend(['yandex_order_id', 'tracking_number', 'delivery_status', 'status'])
+            if order.express_claim_id:
+                fields_to_save.append('express_claim_id')
 
             order.save(update_fields=fields_to_save)
 
@@ -553,7 +741,8 @@ def payment_webhook(request):
     if result.get('status') == 'paid':
         order_number = result.get('order_number')
         payment_id = result.get('payment_id')
-        logger.info('Payment succeeded: order=%s, payment=%s', order_number, payment_id)
+        logger.info('payment_webhook: Payment succeeded: order=%s, payment=%s', order_number, payment_id)
+        logger.info('payment_webhook: webhook data: %s', json.dumps(data, ensure_ascii=False)[:500])
 
         if order_number:
             try:
@@ -571,71 +760,91 @@ def payment_webhook(request):
 
                     # Если заказ ещё не передан в Яндекс Доставку (онлайн-оплата),
                     # создаём заказ в Яндекс Доставке сейчас
+                    logger.info('payment_webhook: order=%s, delivery_method=%s, yandex_order_id=%s, express_claim_id=%s',
+                               order.pk, order.delivery_method, order.yandex_order_id, order.express_claim_id)
                     if (
                         order.delivery_method == Order.DeliveryMethod.DELIVERY
                         and not order.yandex_order_id
                     ):
+                        logger.info('payment_webhook: Creating/accepting Yandex delivery for order %s', order.pk)
                         service = YandexDeliveryService()
                         if service.is_configured():
-                            # Суммируем вес и количество товаров
-                            total_weight_grams = 0
-                            total_quantity = 0
-                            for oi in order.items.all():
-                                total_weight_grams += oi.weight_grams if oi.weight_grams else 0
-                                total_quantity += oi.quantity
-
-                            try:
-                                package = Package.for_weight(total_weight_grams)
-                                total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
-                                sz = {
-                                    'length': float(package.length),
-                                    'width': float(package.width),
-                                    'height': float(package.height),
-                                }
-                            except Package.DoesNotExist:
-                                total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
-                                sz = {
-                                    'length': 0.12,
-                                    'width': 0.06,
-                                    'height': 0.06,
-                                }
-
-                            api_items = [{
-                                'quantity': total_quantity,
-                                'weight': round(total_weight_kg, 3),
-                                'size': sz,
-                                'title': order.items.first().product.name if order.items.first() else 'Product',
-                            }]
-
-                            coords_list = []
-                            if order.destination_coords:
-                                coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                            # Express API — принимаем существующий claim
+                            if order.express_claim_id:
+                                logger.info('payment_webhook: accepting Express claim %s', order.express_claim_id)
+                                # Get version from claim info
+                                info = service.get_express_claim_info(order.express_claim_id)
+                                version = info.get('raw', {}).get('version', 1) if info.get('success') else 1
+                                accept_result = service.accept_express_claim(order.express_claim_id, version=version)
+                                if accept_result.get('success'):
+                                    order.yandex_order_id = order.express_claim_id
+                                    order.delivery_status = accept_result.get('status', 'accepted')
+                                    logger.info('payment_webhook: Express claim accepted: %s', accept_result.get('status'))
+                                else:
+                                    logger.error('payment_webhook: failed to accept Express claim: %s', accept_result.get('error'))
                             else:
-                                coords_list = [49.35, 53.21]
+                                # Other Day API — создаём новый заказ (ПВЗ/постомат)
+                                total_weight_grams = 0
+                                total_quantity = 0
+                                for oi in order.items.all():
+                                    total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+                                    total_quantity += oi.quantity
 
-                            create_result = service.create_order(
-                                items=api_items,
-                                client_order_id=order.pk,
-                                destination_coords=coords_list,
-                                destination_address=order.delivery_address,
-                                delivery_type=order.delivery_type,
-                                pvz_id=order.pvz_id,
-                            )
+                                try:
+                                    package = Package.for_weight(total_weight_grams)
+                                    total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+                                    sz = {
+                                        'length': float(package.length),
+                                        'width': float(package.width),
+                                        'height': float(package.height),
+                                    }
+                                except Package.DoesNotExist:
+                                    total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+                                    sz = {
+                                        'length': 0.12,
+                                        'width': 0.06,
+                                        'height': 0.06,
+                                    }
 
-                            if create_result.get('success'):
-                                order.yandex_order_id = create_result.get('order_id', '')
-                                order.tracking_number = create_result.get('tracking_number', '')
-                                order.delivery_status = 'pending'
+                                api_items = [{
+                                    'quantity': total_quantity,
+                                    'weight': round(total_weight_kg, 3),
+                                    'size': sz,
+                                    'title': order.items.first().product.name if order.items.first() else 'Product',
+                                }]
+
+                                coords_list = []
+                                if order.destination_coords:
+                                    coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                                else:
+                                    coords_list = [49.35, 53.21]
+
+                                create_result = service.create_order(
+                                    items=api_items,
+                                    client_order_id=order.pk,
+                                    destination_coords=coords_list,
+                                    destination_address=order.delivery_address,
+                                    delivery_type=order.delivery_type,
+                                    pvz_id=order.pvz_id,
+                                )
+
+                                if create_result.get('success'):
+                                    order.yandex_order_id = create_result.get('order_id', '')
+                                    order.tracking_number = create_result.get('tracking_number', '')
+                                    order.delivery_status = 'pending'
 
                     order.status = Order.Status.PAID
-                    order.save(update_fields=[
+                    save_fields = [
                         'payment_id',
                         'status',
                         'updated_at',
                         'yandex_order_id',
                         'tracking_number',
                         'delivery_status',
-                    ])
+                    ]
+                    if order.express_claim_id:
+                        save_fields.append('express_claim_id')
+                    order.save(update_fields=save_fields)
                     logger.info('Order status updated to PAID: %s', order.pk)
 
             except (Order.DoesNotExist, ValueError) as e:
@@ -811,58 +1020,74 @@ def payment_result(request):
                             ):
                                 service = YandexDeliveryService()
                                 if service.is_configured():
-                                    total_weight_grams = 0
-                                    total_quantity = 0
-                                    for oi in order.items.all():
-                                        total_weight_grams += oi.weight_grams if oi.weight_grams else 0
-                                        total_quantity += oi.quantity
-                                    
-                                    try:
-                                        package = Package.for_weight(total_weight_grams)
-                                        total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
-                                        sz = {
-                                            'length': float(package.length),
-                                            'width': float(package.width),
-                                            'height': float(package.height),
-                                        }
-                                    except Package.DoesNotExist:
-                                        total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
-                                        sz = {
-                                            'length': 0.12,
-                                            'width': 0.06,
-                                            'height': 0.06,
-                                        }
-                                    
-                                    api_items = [{
-                                        'quantity': total_quantity,
-                                        'weight': round(total_weight_kg, 3),
-                                        'size': sz,
-                                        'title': order.items.first().product.name if order.items.first() else 'Product',
-                                    }]
-                                    
-                                    coords_list = []
-                                    if order.destination_coords:
-                                        coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                                    # Express API — принимаем существующий claim
+                                    if order.express_claim_id:
+                                        logger.info('payment_result: accepting Express claim %s', order.express_claim_id)
+                                        # Get version from claim info
+                                        info = service.get_express_claim_info(order.express_claim_id)
+                                        version = info.get('raw', {}).get('version', 1) if info.get('success') else 1
+                                        accept_result = service.accept_express_claim(order.express_claim_id, version=version)
+                                        if accept_result.get('success'):
+                                            order.yandex_order_id = order.express_claim_id
+                                            order.delivery_status = accept_result.get('status', 'accepted')
+                                            order.save(update_fields=['yandex_order_id', 'delivery_status', 'updated_at', 'express_claim_id'])
+                                            messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                        else:
+                                            messages.warning(request, f'Не удалось подтвердить заказ в Яндекс Доставке: {accept_result.get("error", "unknown")}')
                                     else:
-                                        coords_list = [49.35, 53.21]
-                                    
-                                    create_result = service.create_order(
-                                        items=api_items,
-                                        client_order_id=order.pk,
-                                        destination_coords=coords_list,
-                                        destination_address=order.delivery_address,
-                                        delivery_type=order.delivery_type,
-                                        pvz_id=order.pvz_id,
-                                    )
-                                    
-                                    if create_result.get('success'):
-                                        order.yandex_order_id = create_result.get('order_id', '')
-                                        order.tracking_number = create_result.get('tracking_number', '')
-                                        order.delivery_status = 'pending'
-                                        order.save(update_fields=['yandex_order_id', 'tracking_number', 'delivery_status', 'updated_at'])
-                                        messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
-                                    else:
-                                        messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
+                                        # Other Day API — создаём новый заказ (ПВЗ/постомат)
+                                        total_weight_grams = 0
+                                        total_quantity = 0
+                                        for oi in order.items.all():
+                                            total_weight_grams += oi.weight_grams if oi.weight_grams else 0
+                                            total_quantity += oi.quantity
+
+                                        try:
+                                            package = Package.for_weight(total_weight_grams)
+                                            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+                                            sz = {
+                                                'length': float(package.length),
+                                                'width': float(package.width),
+                                                'height': float(package.height),
+                                            }
+                                        except Package.DoesNotExist:
+                                            total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
+                                            sz = {
+                                                'length': 0.12,
+                                                'width': 0.06,
+                                                'height': 0.06,
+                                            }
+
+                                        api_items = [{
+                                            'quantity': total_quantity,
+                                            'weight': round(total_weight_kg, 3),
+                                            'size': sz,
+                                            'title': order.items.first().product.name if order.items.first() else 'Product',
+                                        }]
+
+                                        coords_list = []
+                                        if order.destination_coords:
+                                            coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
+                                        else:
+                                            coords_list = [49.35, 53.21]
+
+                                        create_result = service.create_order(
+                                            items=api_items,
+                                            client_order_id=order.pk,
+                                            destination_coords=coords_list,
+                                            destination_address=order.delivery_address,
+                                            delivery_type=order.delivery_type,
+                                            pvz_id=order.pvz_id,
+                                        )
+
+                                        if create_result.get('success'):
+                                            order.yandex_order_id = create_result.get('order_id', '')
+                                            order.tracking_number = create_result.get('tracking_number', '')
+                                            order.delivery_status = 'pending'
+                                            order.save(update_fields=['yandex_order_id', 'tracking_number', 'delivery_status', 'updated_at'])
+                                            messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                        else:
+                                            messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
                             
                             # Резервируем stock
                             StockService.reserve_stock(order.pk)

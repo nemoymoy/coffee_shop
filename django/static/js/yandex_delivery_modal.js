@@ -22,6 +22,7 @@ const YandexDeliveryWidget = (() => {
         selectedPvzName: '',
         selectedWorkSchedule: '', // График работы постомата
         selectedDistance: null,   // Расстояние до постомата (км)
+        expressClaimId: '',       // ID заявки Express API
         estimatedCost: 0,
         step: 1,
         ymapsLoaded: false,
@@ -34,16 +35,52 @@ const YandexDeliveryWidget = (() => {
         debounceTimer: null,
         autocompleteIndex: -1,
         suggestions: [],
+        // Новая логика
+        deliveryOrderCreated: false,  // true когда заказ создан в Яндекс Доставке
+        confirmationTimer: null,      // ID таймера
+        confirmationTimeout: 600,     // Таймаут подтверждения (сек)
+        timeRemaining: 600,           // Оставшееся время (сек)
+        isLocked: false,              // true когда адрес заблокирован
     };
+
+    /* ==================== Reset State ==================== */
+
+    /**
+     * Сбрасывает состояние виджета доставки в начальное.
+     */
+    function resetState() {
+        state.selectedType = null;
+        state.selectedAddress = '';
+        state.selectedCoords = [];
+        state.selectedPvzId = '';
+        state.selectedPvzName = '';
+        state.selectedWorkSchedule = '';
+        state.selectedDistance = null;
+        state.expressClaimId = '';
+        state.estimatedCost = 0;
+        state.step = 1;
+        state.deliveryOrderCreated = false;
+        state.confirmationTimer = null;
+        state.timeRemaining = CONFIG.CONFIRMATION_TIMEOUT_SECONDS;
+        state.isLocked = false;
+
+        // Останавливаем таймер если есть
+        stopConfirmationTimer();
+
+        console.log('[YandexDelivery] State reset');
+    }
 
     /* ==================== Config ==================== */
     const CONFIG = {
+        CREATE_EXPRESS_URL: '/checkout/create-express-delivery/',
+        CANCEL_EXPRESS_URL: '/checkout/cancel-express-delivery/',
         CALCULATE_DELIVERY_URL: '/checkout/calculate-delivery/',
         GEOCODE_URL: '/checkout/geocode-address/',
         PVZ_LOCATIONS_URL: '/checkout/pvz-locations/',
         DEBOUNCE_MS: 600,
         SHOP_LAT: window.YANDEX_SHOP_LAT ?? 53.216940239129094,
         SHOP_LON: window.YANDEX_SHOP_LON ?? 50.162688008923745,
+        CONFIRMATION_TIMEOUT_SECONDS: 600, // 10 минут
     };
 
     /* ==================== Cart State ==================== */
@@ -89,18 +126,55 @@ const YandexDeliveryWidget = (() => {
     function loadCartFromPage() {
         cartState.items = [];
 
-        // Ищем элементы корзины в правой колонке (карточка "Ваш заказ")
-        const orderCard = document.querySelector('.col-md-4 .card-body');
+        // Пытаемся найти корзину несколькими способами
+        // Способ 1: карточка "Ваш заказ" в правой колонке
+        let orderCard = document.querySelector('.col-md-4 .card-body');
         if (!orderCard) {
-            console.warn('[YandexDelivery] Order card not found');
+            // Способ 2: карточка с классом order-summary или similar
+            orderCard = document.querySelector('.order-summary, .order-card, .card-body');
+        }
+        if (!orderCard) {
+            // Способ 3: ищем все карточки с товарами
+            const allCards = document.querySelectorAll('.card-body');
+            if (allCards.length > 0) {
+                orderCard = allCards[0];
+            }
+        }
+
+        if (!orderCard) {
+            console.warn('[YandexDelivery] Order card not found, trying alternative selectors');
+            // Финальная попытка: ищем строки товаров по всему документу
+            const allRows = document.querySelectorAll('.d-flex.justify-content-between');
+            if (allRows.length > 0) {
+                console.log('[YandexDelivery] Found', allRows.length, 'rows, parsing directly');
+                parseCartRows(allRows);
+                console.log('[YandexDelivery] Cart loaded from page (direct):', cartState.items);
+                return cartState.items;
+            }
+            console.warn('[YandexDelivery] No order card or rows found');
             return cartState.items;
         }
 
         // Пропускаем первую строку (итого за товары), берём элементы товаров
         const rows = orderCard.querySelectorAll('.d-flex.justify-content-between');
+        if (rows.length === 0) {
+            console.warn('[YandexDelivery] No rows found in order card');
+            return cartState.items;
+        }
+
+        parseCartRows(rows);
+
+        console.log('[YandexDelivery] Cart loaded from page:', cartState.items);
+        return cartState.items;
+    }
+
+    /**
+     * Парсит строки товаров из DOM.
+     */
+    function parseCartRows(rows) {
         let itemIndex = 0;
 
-        rows.forEach((row, index) => {
+        rows.forEach((row) => {
             // Пропускаем заголовок "Ваш заказ" и строки итогов (Стоимость товаров, Доставка, Итого)
             // Строки товаров содержат <strong>название товара</strong> и <small>вес г</small>
             const strongEl = row.querySelector('strong');
@@ -122,9 +196,6 @@ const YandexDeliveryWidget = (() => {
             });
             itemIndex++;
         });
-
-        console.log('[YandexDelivery] Cart loaded from page:', cartState.items);
-        return cartState.items;
     }
 
     /**
@@ -201,18 +272,29 @@ const YandexDeliveryWidget = (() => {
             // Load cart items from DOM if not already loaded
             if (cartState.items.length === 0) {
                 loadCartFromPage();
+                console.log('[YandexDelivery] Cart items after load:', cartState.items);
             }
             // Load packages from API if not already loaded
             if (!cartState.packagesLoaded) {
                 await loadPackagesFromAPI();
             }
 
+            // Если корзина всё ещё пуста, отправляем пустой массив
+            // бэкенд использует fallback на session cart
+            const cartItemsToSend = cartState.items.length > 0 ? cartState.items : [];
+
+            // Parse coords - ensure it's [lon, lat] format
+            let parsedCoords = coords;
+            if (typeof coords === 'string') {
+                parsedCoords = coords.split(',').map(c => parseFloat(c.trim()));
+            }
+
             const payload = {
-                destination_coords: coords,
+                destination_coords: parsedCoords,
                 destination_address: address,
                 pvz_id: pvzId || null,
                 delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
-                cart_items: cartState.items,
+                cart_items: cartItemsToSend,
             };
 
             // Логирование данных для отладки расчета доставки
@@ -248,13 +330,330 @@ const YandexDeliveryWidget = (() => {
 
             const data = await apiPost(CONFIG.CALCULATE_DELIVERY_URL, payload);
             if (data.success && data.price != null) {
-                return { success: true, price: data.price, delivery_days: data.delivery_days };
+                return {
+                    success: true,
+                    price: data.price,
+                    delivery_days: data.delivery_days,
+                    claim_id: data.claim_id || '',
+                };
             }
             return { success: false, error: data.error || 'Не удалось рассчитать стоимость' };
         } catch (err) {
             console.error('[YandexDelivery] Calculate error:', err);
             return { success: false, error: 'Сетевая ошибка' };
         }
+    }
+
+    /* ==================== Express Order Creation ==================== */
+
+    /**
+     * Обновляет состояние кнопки расчета доставки для курьера.
+     * Активирует кнопку если адрес выбран.
+     */
+    function updateCourierDeliveryButton() {
+        const calcBtn = $('#calculateDeliveryBtn');
+        const costEl = $('#widgetCost');
+
+        // Активируем кнопку расчета если адрес выбран
+        if (state.selectedAddress && state.selectedCoords.length >= 2) {
+            if (calcBtn) {
+                calcBtn.disabled = false;
+                const btnText = state.selectedAddress.length > 30
+                    ? state.selectedAddress.substring(0, 30) + '...'
+                    : state.selectedAddress;
+                YandexDeliveryUtils.setTextContent(
+                    calcBtn,
+                    `🚚 Рассчитать доставку (${btnText})`
+                );
+            }
+            // Сбрасываем поле цены
+            if (costEl) {
+                YandexDeliveryUtils.setTextContent(costEl, 'Нажмите «Рассчитать доставку»');
+            }
+            console.log('[YandexDelivery] Address selected, calculate button activated:', state.selectedAddress);
+        } else {
+            if (calcBtn) calcBtn.disabled = true;
+            console.log('[YandexDelivery] No address selected, calculate button disabled');
+        }
+    }
+
+    /**
+     * Создаёт заказ в Яндекс Доставке по клику на кнопку «Рассчитать доставку».
+     * Запускает таймер на 10 минут для подтверждения.
+     */
+    async function createExpressDelivery(coords, address) {
+        const costEl = $('#widgetCost');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const cancelBtn = $('#cancelDeliveryBtn');
+
+        console.log('[YandexDelivery] createExpressDelivery:', { coords, address });
+
+        YandexDeliveryUtils.showLoading(costEl);
+        if (confirmBtn) confirmBtn.disabled = true;
+        if (cancelBtn) cancelBtn.disabled = true;
+
+        // Загружаем корзину
+        if (cartState.items.length === 0) {
+            loadCartFromPage();
+        }
+        if (!cartState.packagesLoaded) {
+            await loadPackagesFromAPI();
+        }
+
+        const cartItemsToSend = cartState.items.length > 0 ? cartState.items : [];
+
+        let parsedCoords = coords;
+        if (typeof coords === 'string') {
+            parsedCoords = coords.split(',').map(c => parseFloat(c.trim()));
+        }
+
+        const payload = {
+            destination_coords: parsedCoords,
+            destination_address: address,
+            delivery_type: 'courier',
+            cart_items: cartItemsToSend,
+        };
+
+        try {
+            console.log('[YandexDelivery] POST', CONFIG.CREATE_EXPRESS_URL, JSON.stringify(payload));
+            const result = await apiPost(CONFIG.CREATE_EXPRESS_URL, payload);
+
+            console.log('[YandexDelivery] createExpressDelivery result:', JSON.stringify(result));
+
+            if (result.success && result.price && result.claim_id) {
+                console.log('[YandexDelivery] ✓ success, price:', result.price, 'claim_id:', result.claim_id, 'expires:', result.expires_in_seconds);
+
+                // Сохраняем данные
+                state.expressClaimId = result.claim_id;
+                state.estimatedCost = parseFloat(result.price);
+                state.deliveryOrderCreated = true;
+                state.timeRemaining = CONFIG.CONFIRMATION_TIMEOUT_SECONDS;
+
+                console.log('[YandexDelivery] State updated:', {
+                    expressClaimId: state.expressClaimId,
+                    estimatedCost: state.estimatedCost,
+                    deliveryOrderCreated: state.deliveryOrderCreated,
+                    timeRemaining: state.timeRemaining
+                });
+
+                // Обновляем UI
+                const formattedPrice = YandexDeliveryUtils.formatPrice(result.price);
+                const formattedTime = formatTime(result.expires_in_seconds);
+                console.log('[YandexDelivery] UI: setting costEl to:', formattedPrice + ' ₽ • ' + formattedTime);
+                YandexDeliveryUtils.setTextContent(
+                    costEl,
+                    formattedPrice + ' ₽ • ' + formattedTime
+                );
+                console.log('[YandexDelivery] costEl textContent:', costEl ? costEl.textContent : 'NULL');
+
+                // Показываем кнопки подтверждения/отмены
+                if (confirmBtn) {
+                    confirmBtn.disabled = false;
+                    console.log('[YandexDelivery] confirmBtn enabled');
+                }
+                if (cancelBtn) {
+                    cancelBtn.disabled = false;
+                    console.log('[YandexDelivery] cancelBtn enabled');
+                }
+
+                // Показываем блок с деталями расчета (где находится widgetCost)
+                const calcDetailsBlock = $('#calcDetailsBlock');
+                if (calcDetailsBlock) {
+                    show(calcDetailsBlock);
+                    // Заполняем детали расчета
+                    showCalcDetails();
+                    console.log('[YandexDelivery] Showed calcDetailsBlock and filled data');
+                }
+
+                // Запускаем таймер
+                startConfirmationTimer();
+
+                // Блокируем изменение адреса
+                lockAddress();
+
+                console.log('[YandexDelivery] ✓ Order created successfully, timer started');
+            } else {
+                const errorMsg = result.error || 'Не удалось создать заказ';
+                console.error('[YandexDelivery] ✗ Failed:', result);
+                YandexDeliveryUtils.setTextContent(costEl, errorMsg);
+                if (confirmBtn) confirmBtn.disabled = true;
+                if (cancelBtn) cancelBtn.disabled = true;
+                console.error('[YandexDelivery] Failed to create order:', errorMsg);
+            }
+        } catch (err) {
+            console.error('[YandexDelivery] createExpressDelivery error:', err);
+            YandexDeliveryUtils.setTextContent(costEl, 'Сетевая ошибка');
+            if (confirmBtn) confirmBtn.disabled = true;
+            if (cancelBtn) cancelBtn.disabled = true;
+        }
+    }
+
+    /**
+     * Форматирует время из секунд в ММ:СС
+     */
+    function formatTime(seconds) {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
+
+    /**
+     * Запускает 10-минутный таймер подтверждения заказа
+     */
+    function startConfirmationTimer() {
+        // Очищаем предыдущий таймер если есть
+        stopConfirmationTimer();
+
+        const timerEl = $('#deliveryTimer');
+        const orderTimerText = $('#orderDeliveryTimerText');
+        const costEl = $('#widgetCost');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const cancelBtn = $('#cancelDeliveryBtn');
+
+        state.confirmationTimer = setInterval(() => {
+            state.timeRemaining--;
+
+            // Обновляем отображение таймера в модалке
+            if (timerEl) {
+                timerEl.textContent = formatTime(state.timeRemaining);
+            }
+
+            // Обновляем отображение таймера на странице оформления
+            if (orderTimerText) {
+                orderTimerText.textContent = formatTime(state.timeRemaining);
+            }
+
+            // Обновляем цену с таймером
+            if (costEl && state.deliveryOrderCreated) {
+                YandexDeliveryUtils.setTextContent(
+                    costEl,
+                    `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽ • ${formatTime(state.timeRemaining)}`
+                );
+            }
+
+            // Время вышло — автоматически отменяем
+            if (state.timeRemaining <= 0) {
+                stopConfirmationTimer();
+                if (costEl) YandexDeliveryUtils.setTextContent(costEl, 'Время подтверждения истекло');
+                if (confirmBtn) confirmBtn.disabled = true;
+                if (cancelBtn) cancelBtn.disabled = true;
+                console.warn('[YandexDelivery] Confirmation timer expired');
+            }
+        }, 1000);
+
+        console.log('[YandexDelivery] Timer started:', CONFIG.CONFIRMATION_TIMEOUT_SECONDS, 'seconds');
+    }
+
+    /**
+     * Останавливает таймер подтверждения
+     */
+    function stopConfirmationTimer() {
+        if (state.confirmationTimer) {
+            clearInterval(state.confirmationTimer);
+            state.confirmationTimer = null;
+            console.log('[YandexDelivery] Timer stopped');
+        }
+    }
+
+    /**
+     * Отменяет заказ в Яндекс Доставке
+     */
+    async function cancelDelivery() {
+        const costEl = $('#widgetCost');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const cancelBtn = $('#cancelDeliveryBtn');
+
+        console.log('[YandexDelivery] Cancelling delivery:', state.expressClaimId);
+
+        stopConfirmationTimer();
+
+        try {
+            const result = await apiPost(CONFIG.CANCEL_EXPRESS_URL, {
+                claim_id: state.expressClaimId,
+            });
+
+            console.log('[YandexDelivery] Cancel result:', result);
+        } catch (err) {
+            console.error('[YandexDelivery] Cancel error:', err);
+            // Даже если отмена не удалась — всё равно разблокируем
+        }
+
+        // Сбрасываем состояние
+        resetDeliveryState();
+
+        // Показываем сообщение
+        YandexDeliveryUtils.setTextContent(costEl, 'Заказ отменён');
+        if (confirmBtn) confirmBtn.disabled = true;
+        if (cancelBtn) cancelBtn.disabled = true;
+    }
+
+    /**
+     * Сбрасывает состояние доставки в исходное
+     */
+    function resetDeliveryState() {
+        state.deliveryOrderCreated = false;
+        state.expressClaimId = '';
+        state.estimatedCost = 0;
+        state.timeRemaining = CONFIG.CONFIRMATION_TIMEOUT_SECONDS;
+        state.isLocked = false;
+
+        stopConfirmationTimer();
+        unlockAddress();
+    }
+
+    /**
+     * Блокирует карту и поле ввода адреса
+     */
+    function lockAddress() {
+        state.isLocked = true;
+
+        const addressInput = $('#yandexAddressInput');
+        const mapContainer = $('#yandexDeliveryWidgetContainer');
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const cancelBtn = $('#cancelDeliveryBtn');
+
+        if (addressInput) {
+            addressInput.disabled = true;
+            addressInput.classList.add('bg-light');
+        }
+
+        if (mapContainer) {
+            mapContainer.classList.add('opacity-50', 'pointer-events-none');
+        }
+
+        // Добавляем сообщение о блокировке
+        const warningEl = $('#addressLockedWarning');
+        if (warningEl) {
+            show(warningEl);
+        }
+
+        console.log('[YandexDelivery] Address locked');
+    }
+
+    /**
+     * Разблокирует карту и поле ввода адреса
+     */
+    function unlockAddress() {
+        state.isLocked = false;
+
+        const addressInput = $('#yandexAddressInput');
+        const mapContainer = $('#yandexDeliveryWidgetContainer');
+        const warningEl = $('#addressLockedWarning');
+
+        if (addressInput) {
+            addressInput.disabled = false;
+            addressInput.classList.remove('bg-light');
+        }
+
+        if (mapContainer) {
+            mapContainer.classList.remove('opacity-50', 'pointer-events-none');
+        }
+
+        if (warningEl) {
+            hide(warningEl);
+        }
+
+        console.log('[YandexDelivery] Address unlocked');
     }
 
     async function loadPvzPoints(type) {
@@ -351,6 +750,31 @@ const YandexDeliveryWidget = (() => {
         // Подтверждение
         $('#confirmDeliveryBtn')?.addEventListener('click', handleConfirm);
 
+        // Отмена заказа доставки
+        $('#cancelDeliveryBtn')?.addEventListener('click', () => {
+            if (state.deliveryOrderCreated) {
+                if (confirm('Отменить созданный заказ в Яндекс Доставке?')) {
+                    cancelDelivery();
+                }
+            }
+        });
+
+        // Расчет доставки (для курьера)
+        $('#calculateDeliveryBtn')?.addEventListener('click', () => {
+            if (state.selectedType === 'courier' && state.selectedAddress && state.selectedCoords.length >= 2) {
+                if (state.deliveryOrderCreated) {
+                    // Заказ уже создан — просто подтверждаем
+                    handleConfirm();
+                } else {
+                    // Создаем новый заказ
+                    createExpressDelivery(
+                        state.selectedCoords.join(','),
+                        state.selectedAddress
+                    );
+                }
+            }
+        });
+
         // Кнопка открытия
         $('#openDeliveryModal')?.addEventListener('click', (e) => {
             e.preventDefault();
@@ -374,7 +798,6 @@ const YandexDeliveryWidget = (() => {
         const step2 = $('#deliveryStep2');
         const widgetContainer = $('#yandexDeliveryWidgetContainer');
         const courierSearchWrap = $('#courierSearchWrap');
-        const addressInputWrap = $('#yandexAddressInputWrap');
         const mapWarning = $('#mapUnavailableWarning');
 
         hide(step1);
@@ -385,17 +808,17 @@ const YandexDeliveryWidget = (() => {
         } else if (stepNumber === 2) {
             show(step2);
             if (state.selectedType === 'courier') {
-                hide(addressInputWrap);
+                // Показываем блок с полем ввода адреса и кнопкой расчета
+                show(courierSearchWrap);
                 hide(mapWarning);
                 hide($('#selectedPvzInfo'));
                 hide($('#calcDetailsBlock'));
                 hide($('#courierCostBlock'));
                 show(widgetContainer);
-                show(courierSearchWrap);
                 updateMapHintText();
                 loadYmaps();
             } else {
-                hide(addressInputWrap);
+                hide(courierSearchWrap);
                 hide(mapWarning);
                 show(widgetContainer);
                 hide($('#selectedPvzInfo'));
@@ -425,10 +848,11 @@ const YandexDeliveryWidget = (() => {
 
         if (calcDeliveryType) {
             const typeLabels = {
+                courier: '🚗 Курьер',
                 pvz: '📦 Пункт выдачи (ПВЗ)',
                 postomat: '📮 Постомат',
             };
-            calcDeliveryType.textContent = typeLabels[state.selectedType] || typeLabels.pvz;
+            calcDeliveryType.textContent = typeLabels[state.selectedType] || '🚗 Курьер';
         }
 
         if (calcItemDetails) {
@@ -476,6 +900,7 @@ const YandexDeliveryWidget = (() => {
         state.selectedPvzName = '';
         state.selectedWorkSchedule = '';
         state.selectedDistance = null;
+        state.expressClaimId = '';
         state.estimatedCost = 0;
         state.step = 1;
         destroyMap();
@@ -617,11 +1042,28 @@ const YandexDeliveryWidget = (() => {
         state.suggestions = [];
         state.autocompleteIndex = -1;
 
-        // Для курьера сразу запускаем расчет с координатами из автокомплита
-        if (state.selectedType === 'courier' && feature.coords) {
+        // Устанавливаем координаты из автокомплита
+        if (feature.coords) {
             state.selectedCoords = feature.coords;
-            calculateDeliveryCost(feature.coords.join(','), feature.text);
+        }
+
+        // Если заказ уже создан — сбрасываем состояние при изменении адреса
+        if (state.deliveryOrderCreated && state.selectedType === 'courier') {
+            console.log('[YandexDelivery] Address changed, resetting delivery order state');
+            stopConfirmationTimer();
+            resetDeliveryState();
+        }
+
+        // Для курьера — обновляем метку на карте и активируем кнопку расчета
+        // Для ПВЗ/постомат — рассчитываем доставку как раньше
+        if (state.selectedType === 'courier') {
+            const coords = feature.coords || state.selectedCoords;
+            if (coords && coords.length >= 2) {
+                // Просто обновляем метку и активируем кнопку расчета
+                updateCourierDeliveryButton();
+            }
         } else {
+            // Для ПВЗ/постомат геокодируем адрес
             geocodeAndCalculate(feature.text, feature.coords);
         }
     }
@@ -710,9 +1152,47 @@ const YandexDeliveryWidget = (() => {
 
     /* ==================== Confirm Selection ==================== */
     function handleConfirm() {
+        // Для курьера — заказ должен быть создан через кнопку «Рассчитать доставку»
+        if (state.selectedType === 'courier') {
+            if (!state.deliveryOrderCreated) {
+                showError('Сначала нажмите «Рассчитать доставку» для создания заказа в Яндекс Доставке');
+                return;
+            }
+
+            clearError();
+
+            YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
+            YandexDeliveryUtils.setFieldValue('id_yandex_delivery_type', state.selectedType);
+            YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
+            YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
+            YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
+            if (state.expressClaimId) {
+                YandexDeliveryUtils.setFieldValue('id_express_claim_id', state.expressClaimId);
+            }
+
+            const checkoutAddr = $('#id_delivery_address');
+            if (checkoutAddr) checkoutAddr.value = state.selectedAddress;
+
+            updateDeliverySummary();
+            updateOrderDeliveryLocation();
+
+            // Показываем таймер на странице оформления заказа
+            const orderTimerBlock = $('#orderDeliveryTimer');
+            if (orderTimerBlock) {
+                YandexDeliveryUtils.showElement(orderTimerBlock);
+            }
+
+            // Разблокируем адрес и закрываем модалку
+            // ВАЖНО: НЕ вызываем stopConfirmationTimer() — таймер уже запущен и
+            // startConfirmationTimer() обновляет #orderDeliveryTimerText каждую секунду
+            unlockAddress();
+            closeModal();
+            return;
+        }
+
+        // Для ПВЗ/постомат — старый расчёт
         const errors = [];
-        if (!state.selectedType) errors.push('Выберите способ доставки');
-        if (state.selectedType !== 'courier' && !state.selectedPvzId) errors.push('Выберите пункт выдачи или постомат');
+        if (!state.selectedPvzId) errors.push('Выберите пункт выдачи или постомат');
         if (!state.selectedCoords.length) errors.push('Координаты не получены');
         if (!state.selectedAddress) errors.push('Введите адрес доставки');
         if (state.estimatedCost <= 0) errors.push('Не удалось рассчитать стоимость');
@@ -831,7 +1311,25 @@ const YandexDeliveryWidget = (() => {
 
     function updateConfirmButton() {
         const btn = $('#confirmDeliveryBtn');
-        if (btn) btn.disabled = !(state.selectedType && state.estimatedCost > 0);
+        if (!btn) return;
+
+        // Для курьера кнопка активна только если заказ создан
+        if (state.selectedType === 'courier') {
+            btn.disabled = !state.deliveryOrderCreated;
+            console.log('[YandexDelivery] updateConfirmButton (courier):', {
+                deliveryOrderCreated: state.deliveryOrderCreated,
+                canConfirm: state.deliveryOrderCreated
+            });
+        } else {
+            // Для ПВЗ/постомат — старый расчёт
+            const canConfirm = state.selectedType && state.estimatedCost > 0;
+            btn.disabled = !canConfirm;
+            console.log('[YandexDelivery] updateConfirmButton (PVZ):', {
+                selectedType: state.selectedType,
+                estimatedCost: state.estimatedCost,
+                canConfirm: canConfirm
+            });
+        }
     }
     /* ==================== YMaps Integration ==================== */
     function loadYmaps() {
@@ -997,7 +1495,7 @@ const YandexDeliveryWidget = (() => {
 
         state.selectedPlacemark = new ymaps.Placemark(coords, {
             hintContent: address,
-            balloonContent: '✅ Этот адрес подходит? Нажмите «Подтвердить»',
+            balloonContent: '✅ Этот адрес подходит? Нажмите «Рассчитать доставку»',
         }, { preset: 'islands#orangeCircleDotIcon' });
         state.mapInstance.geoObjects.add(state.selectedPlacemark);
 
@@ -1010,8 +1508,15 @@ const YandexDeliveryWidget = (() => {
         state.selectedCoords = coords;
         state.selectedAddress = address;
 
-        // Запускаем расчет стоимости доставки
-        calculateDeliveryCost(coords.join(','), address);
+        // Если заказ уже создан — сбрасываем состояние при изменении адреса
+        if (state.deliveryOrderCreated && state.selectedType === 'courier') {
+            console.log('[YandexDelivery] Address changed via map click, resetting');
+            stopConfirmationTimer();
+            resetDeliveryState();
+        }
+
+        // Обновляем метку на карте и активируем кнопку расчета
+        updateCourierDeliveryButton();
     }
 
     async function loadPvzOnMap() {
@@ -1270,17 +1775,25 @@ const YandexDeliveryWidget = (() => {
         const etaLabelEl = $('#widgetEtaLabel');
         const confirmBtn = $('#confirmDeliveryBtn');
 
+        console.log('[YandexDelivery] calculateDeliveryCost called:', { coords, address, deliveryType: state.selectedType });
+
         YandexDeliveryUtils.showLoading(costEl);
         if (confirmBtn) confirmBtn.disabled = true;
 
         const calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
 
-        if (calc.success && calc.price != null) {
-            state.estimatedCost = calc.price;
+        console.log('[YandexDelivery] calculateDelivery result:', calc);
+
+        if (calc.success && calc.price != null && parseFloat(calc.price) > 0) {
+            state.estimatedCost = parseFloat(calc.price);
+            // Сохраняем claim_id для Express API (чтобы использовать при оформлении)
+            if (calc.claim_id && state.selectedType === 'courier') {
+                state.expressClaimId = calc.claim_id;
+                console.log('[YandexDelivery] Express claim ID saved:', state.expressClaimId);
+            }
             YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
             YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
             YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
-            updateConfirmButton();
 
             // Показываем блок с информацией о выбранном ПВЗ/постомате
             if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
@@ -1299,8 +1812,13 @@ const YandexDeliveryWidget = (() => {
             if (state.selectedType === 'courier') {
                 showCourierDeliveryCost(calc);
             }
+
+            // Активируем кнопку подтверждения
+            updateConfirmButton();
         } else {
-            YandexDeliveryUtils.setTextContent(costEl, calc.error || 'Не удалось рассчитать');
+            console.error('[YandexDelivery] Delivery calculation failed:', calc);
+            const errorMsg = calc.error || 'Не удалось рассчитать стоимость доставки';
+            YandexDeliveryUtils.setTextContent(costEl, errorMsg);
             if (confirmBtn) confirmBtn.disabled = true;
         }
     }

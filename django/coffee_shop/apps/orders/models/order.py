@@ -25,7 +25,8 @@ class Order(models.Model):
 
     class DeliveryType(models.TextChoices):
         COURIER = "courier", "Курьер"
-        PVZ = "pickup", "ПВЗ/Постомат"
+        PVZ = "pickup", "ПВЗ"
+        POSTAMAT = "postamat", "Постомат"
 
     order_number = models.CharField(
         max_length=50,
@@ -125,6 +126,58 @@ class Order(models.Model):
         blank=True,
         null=True,
         verbose_name='Координаты доставки [lon,lat]'
+    )
+
+    # Идемпотентность (operator_request_id)
+    client_order_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='ID идемпотентности (operator_request_id)'
+    )
+
+    # Интервал доставки (Other Day API)
+    delivery_interval_from = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Интервал доставки от'
+    )
+    delivery_interval_to = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Интервал доставки до'
+    )
+
+    # Получатель
+    recipient_name = models.CharField(
+        max_length=200,
+        blank=True,
+        verbose_name='Имя получателя'
+    )
+    recipient_phone = models.CharField(
+        max_length=20,
+        blank=True,
+        verbose_name='Телефон получателя'
+    )
+
+    # Тип API Яндекс Доставки
+    DELIVERY_API_TYPE_CHOICES = (
+        ('express', 'Express (день-в-день)'),
+        ('other_day', 'Other Day (выбранный интервал)'),
+    )
+    delivery_api_type = models.CharField(
+        max_length=20,
+        choices=DELIVERY_API_TYPE_CHOICES,
+        default='other_day',
+        verbose_name='Тип API Яндекс Доставки'
+    )
+
+    # Для Express API
+    express_claim_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='ID заявки Express API'
     )
 
     user = models.ForeignKey(

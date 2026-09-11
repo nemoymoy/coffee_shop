@@ -106,6 +106,7 @@
                 <input type="hidden" name="station_id" id="id_yandex_station_id" value="">
                 <input type="hidden" name="station_name" id="id_yandex_station_name" value="">
                 <input type="hidden" name="delivery_cost" id="id_yandex_delivery_cost" value="0">
+                <input type="hidden" name="express_claim_id" id="id_express_claim_id" value="">
             </div>
 
 
@@ -164,6 +165,11 @@
                     <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
                         <span>Стоимость доставки:</span>
                         <span id="orderDeliveryCost">— ₽</span>
+                    </div>
+
+                    <!-- Таймер подтверждения Express доставки -->
+                    <div id="orderDeliveryTimer" class="mt-1 d-none">
+                        <small class="text-warning">⏱ До истечения цены: <strong id="orderDeliveryTimerText">10:00</strong></small>
                     </div>
 
                     <!-- Информация о выбранном пункте выдачи/постомате -->
@@ -244,10 +250,16 @@
                     <!-- Контейнер для виджета Яндекс Доставки (карта показывается здесь) -->
                     <div id="yandexDeliveryWidgetContainer" class="mt-2 d-none">
                         <!-- Адрес для курьерской доставки (строка поиска с автокомплитом) -->
-                        <div id="courierSearchWrap" class="mb-2 d-none">
+                        <div id="courierSearchWrap" class="mb-2">
                             <label class="form-label small">Адрес доставки</label>
                             <input type="text" id="yandexAddressInput" class="form-control" placeholder="Начните вводить адрес или выберите на карте..." autocomplete="off">
                             <div id="yandexAutocompleteList" class="autocomplete-list mt-1 d-none" style="position: absolute; z-index: 1060; width: calc(100% + 2px); left: -1px;"></div>
+
+                            <!-- Кнопка расчета доставки -->
+                            <button type="button" class="btn btn-primary w-100 mt-2" id="calculateDeliveryBtn" disabled>
+                                🚚 Рассчитать доставку
+                            </button>
+
                             <small class="text-muted">Введите адрес или выберите на карте</small>
                         </div>
                         <!-- Блок с рассчитанной стоимостью доставки (для курьера) -->
@@ -315,18 +327,20 @@
                                         <span id="widgetEta" class="ms-2 text-muted"></span>
                                     </div>
                                     <small class="text-muted" id="widgetEtaLabel">ETA: —</small>
+
+                                    <!-- Таймер подтверждения -->
+                                    <div id="deliveryTimerBlock" class="mt-2 d-none">
+                                        <small class="text-muted">До истечения времени подтверждения: </small>
+                                        <strong id="deliveryTimer" class="text-warning">10:00</strong>
+                                    </div>
+
+                                    <!-- Сообщение о заблокированном адресе -->
+                                    <div id="addressLockedWarning" class="alert alert-info mt-2 d-none">
+                                        <small>🔒 Адрес заблокирован. Подтвердите или отмените заказ.</small>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <!-- Ручной ввод адреса (fallback) -->
-                    <div id="yandexAddressInputWrap" class="mt-2 d-none">
-                        <label class="form-label small">Адрес доставки</label>
-                        <input type="text" id="yandexAddressInput" class="form-control" placeholder="Начните вводить адрес..." autocomplete="off">
-                        <div id="yandexAutocompleteList" class="autocomplete-list mt-1 d-none" style="position: absolute; z-index: 1060; width: calc(100% + 2px); left: -1px;"></div>
-                        <div id="courierPriceBlock" class="modal-delivery-price mt-2 d-none"></div>
-                        <small class="text-muted">Введите адрес или выберите из подсказок</small>
                     </div>
                     
                     <!-- Сообщение если API не подключён -->
@@ -338,6 +352,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-outline-danger d-none" id="cancelDeliveryBtn" disabled>❌ Отменить заказ</button>
                 <button type="button" class="btn btn-coffee" id="confirmDeliveryBtn" disabled>Подтвердить</button>
             </div>
         </div>
