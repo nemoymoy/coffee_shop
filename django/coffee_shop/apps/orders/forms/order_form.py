@@ -61,6 +61,18 @@ class OrderForm(CheckoutForm):
         required=False,
         widget=forms.HiddenInput(),
     )
+    delivery_date = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    delivery_time = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
+    yandex_request_id = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+    )
 
     def clean_delivery_cost(self):
         """Clean delivery_cost: convert comma to dot for DecimalField."""

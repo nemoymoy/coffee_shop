@@ -351,6 +351,11 @@ def checkout_view(request):
         # Express claim ID (если выбран через виджет)
         express_claim_id = request.POST.get('express_claim_id', '')
 
+        # Delivery date/time (если заказ создан через request/create)
+        delivery_date_str = cleaned.get('delivery_date', '') or request.POST.get('delivery_date', '')
+        delivery_time_str = cleaned.get('delivery_time', '') or request.POST.get('delivery_time', '')
+        yandex_request_id = cleaned.get('yandex_request_id', '') or request.POST.get('yandex_request_id', '')
+
         # Валидация: для доставки адрес обязателен
         if cleaned['delivery_method'] == Order.DeliveryMethod.DELIVERY and not cleaned.get('delivery_address', ''):
             messages.error(request, 'Необходимо указать адрес доставки')
@@ -368,6 +373,27 @@ def checkout_view(request):
             initial_status = Order.Status.NEW
 
         with transaction.atomic():
+            # Парсим delivery_date/delivery_time если есть
+            delivery_interval_from_dt = None
+            delivery_interval_to_dt = None
+            if delivery_date_str and delivery_time_str:
+                try:
+                    from datetime import datetime, timedelta, timezone
+                    # delivery_date_str = "15.09.2026", delivery_time_str = "10:00–14:00"
+                    date_part = datetime.strptime(delivery_date_str, '%d.%m.%Y').date()
+                    time_parts = delivery_time_str.split('–')
+                    if time_parts:
+                        time_from = datetime.strptime(time_parts[0].strip(), '%H:%M').time()
+                        datetime_from = datetime.combine(date_part, time_from)
+                        delivery_interval_from_dt = datetime_from
+
+                        if len(time_parts) > 1:
+                            time_to = datetime.strptime(time_parts[1].strip(), '%H:%M').time()
+                            datetime_to = datetime.combine(date_part, time_to)
+                            delivery_interval_to_dt = datetime_to
+                except (ValueError, IndexError) as e:
+                    logger.warning('Failed to parse delivery_date/time: %s', e)
+
             order = Order.objects.create(
                 user=request.user if request.user.is_authenticated else None,
                 first_name=cleaned['first_name'],
@@ -384,8 +410,8 @@ def checkout_view(request):
                 destination_coords=destination_coords or None,
                 # client_order_id будет установлен после save
                 client_order_id=None,
-                delivery_interval_from=delivery_interval_from,
-                delivery_interval_to=delivery_interval_to,
+                delivery_interval_from=delivery_interval_from_dt or delivery_interval_from,
+                delivery_interval_to=delivery_interval_to_dt or delivery_interval_to,
                 recipient_name=f"{cleaned['last_name']} {cleaned['first_name']}",
                 recipient_phone=cleaned['phone'],
                 express_claim_id=express_claim_id or None,
@@ -509,20 +535,56 @@ def checkout_view(request):
                                     existing_claim_id or None
                                 )
                             else:
-                                # Other Day API
-                                create_result = service.create_order(
-                                    items=api_items,
+                                # Other Day API — ПВЗ/Постмат
+                                # Полная логика: offers/info → offers/create → offers/confirm
+                                # или request/create если нет офферов
+                                other_day_items = list(
+                                    service._build_items_payload_for_other_day(
+                                        order.items.all(), pvz_id=order.pvz_id
+                                    )[0]
+                                )
+
+                                result = service.create_order(
+                                    items=other_day_items,
                                     client_order_id=order.pk,
-                                    destination_coords=coords_list,
+                                    destination_coords=[],
                                     destination_address=cleaned.get('delivery_address', ''),
                                     delivery_type=order.delivery_type,
                                     pvz_id=order.pvz_id,
                                     recipient_name=order.recipient_name,
                                     recipient_phone=order.recipient_phone,
                                     email=order.email,
-                                    delivery_cost=delivery_price,
+                                    delivery_cost=float(delivery_price),
                                     payment_method='already_paid',
                                 )
+
+                                if result.get('success'):
+                                    order.yandex_offer_id = result.get('offer_id')
+                                    messages.info(
+                                        request,
+                                        f'Заказ на доставку создан в Яндекс Доставке. '
+                                        f'Интервал: {result.get("delivery_date", "")} '
+                                        f'{result.get("delivery_time", "")}'
+                                    )
+                                else:
+                                    error_msg = result.get('error', 'неизвестная ошибка')
+                                    error_detail = result.get('message', '')
+                                    if error_msg == 'no_delivery_options':
+                                        messages.warning(
+                                            request,
+                                            error_detail or (
+                                                'Доставка недоступна. '
+                                                'Проверьте: 1) Календарь отгрузок; '
+                                                '2) Маршрут между ПВЗ; '
+                                                '3) Габариты грузомест.'
+                                            )
+                                        )
+                                    else:
+                                        messages.warning(
+                                            request,
+                                            f'Не удалось создать заказ в Яндекс Доставке: '
+                                            f'{error_detail or error_msg}'
+                                        )
 
                             if create_result.get('success'):
                                 if delivery_api_type == 'express':
@@ -552,6 +614,8 @@ def checkout_view(request):
                 fields_to_save.extend(['yandex_order_id', 'tracking_number', 'delivery_status', 'status'])
             if order.express_claim_id:
                 fields_to_save.append('express_claim_id')
+            if order.yandex_offer_id:
+                fields_to_save.append('yandex_offer_id')
 
             order.save(update_fields=fields_to_save)
 
@@ -783,55 +847,49 @@ def payment_webhook(request):
                                 else:
                                     logger.error('payment_webhook: failed to accept Express claim: %s', accept_result.get('error'))
                             else:
-                                # Other Day API — создаём новый заказ (ПВЗ/постомат)
-                                total_weight_grams = 0
-                                total_quantity = 0
-                                for oi in order.items.all():
-                                    total_weight_grams += oi.weight_grams if oi.weight_grams else 0
-                                    total_quantity += oi.quantity
+                                # Other Day API — для онлайн-оплаты ПВЗ/Постмат
+                                # Используем новую логику: offers/info → offers/create → request/info
+                                other_day_items = list(
+                                    service._build_items_payload_for_other_day(
+                                        order.items.all(), pvz_id=order.pvz_id
+                                    )[0]
+                                )
 
-                                try:
-                                    package = Package.for_weight(total_weight_grams)
-                                    total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
-                                    sz = {
-                                        'length': float(package.length),
-                                        'width': float(package.width),
-                                        'height': float(package.height),
-                                    }
-                                except Package.DoesNotExist:
-                                    total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
-                                    sz = {
-                                        'length': 0.12,
-                                        'width': 0.06,
-                                        'height': 0.06,
-                                    }
-
-                                api_items = [{
-                                    'quantity': total_quantity,
-                                    'weight': round(total_weight_kg, 3),
-                                    'size': sz,
-                                    'title': order.items.first().product.name if order.items.first() else 'Product',
-                                }]
-
-                                coords_list = []
-                                if order.destination_coords:
-                                    coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
-                                else:
-                                    coords_list = [49.35, 53.21]
-
-                                create_result = service.create_order(
-                                    items=api_items,
+                                result = service.create_order(
+                                    items=other_day_items,
                                     client_order_id=order.pk,
-                                    destination_coords=coords_list,
+                                    destination_coords=[],
                                     destination_address=order.delivery_address,
                                     delivery_type=order.delivery_type,
                                     pvz_id=order.pvz_id,
+                                    recipient_name=order.recipient_name,
+                                    recipient_phone=order.recipient_phone,
+                                    email=order.email,
+                                    delivery_cost=float(order.delivery_cost),
+                                    payment_method='already_paid',
                                 )
 
-                                if create_result.get('success'):
-                                    order.yandex_order_id = create_result.get('order_id', '')
-                                    order.tracking_number = create_result.get('tracking_number', '')
-                                    order.delivery_status = 'pending'
+                                if result.get('success'):
+                                    order.yandex_offer_id = result.get('offer_id')
+                                    order.yandex_order_id = result.get('request_id')
+                                    order.tracking_number = result.get(
+                                        'delivery_time', ''
+                                    )
+                                    order.delivery_status = result.get('status', 'pending')
+                                    logger.info(
+                                        'payment_webhook: Other Day order created: '
+                                        'request_id=%s, status=%s, method=%s',
+                                        result.get('request_id'),
+                                        result.get('status'),
+                                        result.get('method'),
+                                    )
+                                else:
+                                    logger.error(
+                                        'payment_webhook: failed to create Other Day order '
+                                        'for order %s: %s',
+                                        order.pk, result.get('error')
+                                    )
+                                    return HttpResponse('Delivery creation failed', status=400)
 
                     order.status = Order.Status.PAID
                     save_fields = [
@@ -844,6 +902,8 @@ def payment_webhook(request):
                     ]
                     if order.express_claim_id:
                         save_fields.append('express_claim_id')
+                    if order.yandex_offer_id:
+                        save_fields.append('yandex_offer_id')
                     order.save(update_fields=save_fields)
                     logger.info('Order status updated to PAID: %s', order.pk)
 
@@ -1035,59 +1095,54 @@ def payment_result(request):
                                         else:
                                             messages.warning(request, f'Не удалось подтвердить заказ в Яндекс Доставке: {accept_result.get("error", "unknown")}')
                                     else:
-                                        # Other Day API — создаём новый заказ (ПВЗ/постомат)
-                                        total_weight_grams = 0
-                                        total_quantity = 0
-                                        for oi in order.items.all():
-                                            total_weight_grams += oi.weight_grams if oi.weight_grams else 0
-                                            total_quantity += oi.quantity
+                                        # Other Day API — для онлайн-оплаты ПВЗ/Постмат
+                                        # Используем новую логику: offers/info → offers/create → request/info
+                                        other_day_items = list(
+                                            service._build_items_payload_for_other_day(
+                                                order.items.all(), pvz_id=order.pvz_id
+                                            )[0]
+                                        )
 
-                                        try:
-                                            package = Package.for_weight(total_weight_grams)
-                                            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
-                                            sz = {
-                                                'length': float(package.length),
-                                                'width': float(package.width),
-                                                'height': float(package.height),
-                                            }
-                                        except Package.DoesNotExist:
-                                            total_weight_kg = total_weight_grams / 1000.0 if total_weight_grams > 0 else 0.1
-                                            sz = {
-                                                'length': 0.12,
-                                                'width': 0.06,
-                                                'height': 0.06,
-                                            }
-
-                                        api_items = [{
-                                            'quantity': total_quantity,
-                                            'weight': round(total_weight_kg, 3),
-                                            'size': sz,
-                                            'title': order.items.first().product.name if order.items.first() else 'Product',
-                                        }]
-
-                                        coords_list = []
-                                        if order.destination_coords:
-                                            coords_list = [float(c.strip()) for c in order.destination_coords.split(',')]
-                                        else:
-                                            coords_list = [49.35, 53.21]
-
-                                        create_result = service.create_order(
-                                            items=api_items,
+                                        result = service.create_order(
+                                            items=other_day_items,
                                             client_order_id=order.pk,
-                                            destination_coords=coords_list,
+                                            destination_coords=[],
                                             destination_address=order.delivery_address,
                                             delivery_type=order.delivery_type,
                                             pvz_id=order.pvz_id,
+                                            recipient_name=order.recipient_name,
+                                            recipient_phone=order.recipient_phone,
+                                            email=order.email,
+                                            delivery_cost=float(order.delivery_cost),
+                                            payment_method='already_paid',
                                         )
 
-                                        if create_result.get('success'):
-                                            order.yandex_order_id = create_result.get('order_id', '')
-                                            order.tracking_number = create_result.get('tracking_number', '')
-                                            order.delivery_status = 'pending'
-                                            order.save(update_fields=['yandex_order_id', 'tracking_number', 'delivery_status', 'updated_at'])
-                                            messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                        if result.get('success'):
+                                            order.yandex_offer_id = result.get('offer_id')
+                                            order.yandex_order_id = result.get('request_id')
+                                            order.tracking_number = result.get(
+                                                'delivery_time', ''
+                                            )
+                                            order.delivery_status = result.get(
+                                                'status', 'pending'
+                                            )
+                                            order.save(update_fields=[
+                                                'yandex_order_id', 'tracking_number',
+                                                'delivery_status', 'updated_at',
+                                                'yandex_offer_id'
+                                            ])
+                                            messages.info(
+                                                request,
+                                                f'Заказ на доставку создан в Яндекс Доставке. '
+                                                f'Интервал: {result.get("delivery_date", "")} '
+                                                f'{result.get("delivery_time", "")}'
+                                            )
                                         else:
-                                            messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
+                                            messages.warning(
+                                                request,
+                                                f'Не удалось создать заказ в Яндекс Доставке: '
+                                                f'{result.get("error", "unknown")}'
+                                            )
                             
                             # Резервируем stock
                             StockService.reserve_stock(order.pk)

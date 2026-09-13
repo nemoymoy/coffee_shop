@@ -651,3 +651,25 @@
     font-size: 0.8rem;
     color: var(--coffee-light);
 }
+
+/* ======================= Delivery Offers Overlay ======================= */
+/* Затемнение карты когда показаны ошибки/интервалы */
+#yandexDeliveryWidgetContainer.has-offers-error #delivery-widget {
+    opacity: 0.3;
+    pointer-events: none;
+    filter: grayscale(50%);
+}
+
+#deliveryOffersContainer .list-group .delivery-offer-item {
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#deliveryOffersContainer .list-group .delivery-offer-item:hover {
+    background: #f8f9fa;
+}
+
+#deliveryOffersContainer .list-group .delivery-offer-item.selected {
+    background: #e3f2fd;
+    border-color: #2196f3 !important;
+}

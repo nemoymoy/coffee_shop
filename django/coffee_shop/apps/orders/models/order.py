@@ -180,6 +180,14 @@ class Order(models.Model):
         verbose_name='ID заявки Express API'
     )
 
+    # Для Other Day API (ПВЗ/Постомат)
+    yandex_offer_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name='ID оффера Яндекс Доставки (Other Day API)'
+    )
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

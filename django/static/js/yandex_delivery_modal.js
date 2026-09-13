@@ -22,6 +22,7 @@ const YandexDeliveryWidget = (() => {
         selectedPvzName: '',
         selectedWorkSchedule: '', // График работы постомата
         selectedDistance: null,   // Расстояние до постомата (км)
+        selectedOfferId: '',      // offer_id from offers/info
         expressClaimId: '',       // ID заявки Express API
         estimatedCost: 0,
         step: 1,
@@ -59,6 +60,7 @@ const YandexDeliveryWidget = (() => {
         state.expressClaimId = '';
         state.estimatedCost = 0;
         state.step = 1;
+        state.selectedOfferId = '';
         state.deliveryOrderCreated = false;
         state.confirmationTimer = null;
         state.timeRemaining = CONFIG.CONFIRMATION_TIMEOUT_SECONDS;
@@ -75,6 +77,7 @@ const YandexDeliveryWidget = (() => {
         CREATE_EXPRESS_URL: '/checkout/create-express-delivery/',
         CANCEL_EXPRESS_URL: '/checkout/cancel-express-delivery/',
         CALCULATE_DELIVERY_URL: '/checkout/calculate-delivery/',
+        OFFERS_INFO_URL: '/checkout/offers-info/',
         GEOCODE_URL: '/checkout/geocode-address/',
         PVZ_LOCATIONS_URL: '/checkout/pvz-locations/',
         DEBOUNCE_MS: 600,
@@ -267,6 +270,45 @@ const YandexDeliveryWidget = (() => {
         }
     }
 
+    async function getDeliveryOffers(coords, address, deliveryType, pvzId) {
+        // Get available delivery intervals via offers/info API
+        try {
+            if (cartState.items.length === 0) {
+                loadCartFromPage();
+            }
+            if (!cartState.packagesLoaded) {
+                await loadPackagesFromAPI();
+            }
+
+            const recipient = {
+                first_name: $('#id_first_name')?.value || '',
+                last_name: $('#id_last_name')?.value || '',
+                phone: $('#id_phone')?.value || '',
+                email: $('#id_email')?.value || '',
+            };
+
+            let parsedCoords = coords;
+            if (typeof coords === 'string') {
+                parsedCoords = coords.split(',').map(c => parseFloat(c.trim()));
+            }
+
+            const payload = {
+                destination_coords: parsedCoords,
+                destination_address: address,
+                pvz_id: pvzId || null,
+                delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
+                cart_items: cartState.items.length > 0 ? cartState.items : [],
+                recipient: recipient,
+            };
+
+            const data = await apiPost(CONFIG.OFFERS_INFO_URL, payload);
+            return data;
+        } catch (err) {
+            console.error('[YandexDelivery] Offers info error:', err);
+            return { success: false, error: 'Сетевая ошибка' };
+        }
+    }
+
     async function calculateDelivery(coords, address, deliveryType, pvzId) {
         try {
             // Load cart items from DOM if not already loaded
@@ -289,12 +331,21 @@ const YandexDeliveryWidget = (() => {
                 parsedCoords = coords.split(',').map(c => parseFloat(c.trim()));
             }
 
+            // Collect recipient info from checkout form
+            const recipient = {
+                first_name: $('#id_first_name')?.value || '',
+                last_name: $('#id_last_name')?.value || '',
+                phone: $('#id_phone')?.value || '',
+                email: $('#id_email')?.value || '',
+            };
+
             const payload = {
                 destination_coords: parsedCoords,
                 destination_address: address,
                 pvz_id: pvzId || null,
                 delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
                 cart_items: cartItemsToSend,
+                recipient: recipient,
             };
 
             // Логирование данных для отладки расчета доставки
@@ -778,6 +829,22 @@ const YandexDeliveryWidget = (() => {
         // Кнопка открытия
         $('#openDeliveryModal')?.addEventListener('click', (e) => {
             e.preventDefault();
+            // Validate recipient fields before opening modal
+            const firstName = $('#id_first_name')?.value?.trim() || '';
+            const lastName = $('#id_last_name')?.value?.trim() || '';
+            const phone = $('#id_phone')?.value?.trim() || '';
+            const email = $('#id_email')?.value?.trim() || '';
+
+            if (!firstName || !lastName || !phone || !email) {
+                alert('Пожалуйста, заполните контактные данные (имя, фамилия, телефон, email) перед выбором доставки.');
+                // Focus the first empty field
+                if (!firstName) $('#id_first_name')?.focus();
+                else if (!lastName) $('#id_last_name')?.focus();
+                else if (!phone) $('#id_phone')?.focus();
+                else if (!email) $('#id_email')?.focus();
+                return;
+            }
+
             openModal();
         });
 
@@ -900,6 +967,7 @@ const YandexDeliveryWidget = (() => {
         state.selectedPvzName = '';
         state.selectedWorkSchedule = '';
         state.selectedDistance = null;
+        state.selectedOfferId = '';
         state.expressClaimId = '';
         state.estimatedCost = 0;
         state.step = 1;
@@ -1209,6 +1277,20 @@ const YandexDeliveryWidget = (() => {
         YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
         YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
         YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
+        // Сохраняем selected offer_id для Other Day API
+        if (state.selectedOfferId) {
+            YandexDeliveryUtils.setFieldValue('id_yandex_offer_id', state.selectedOfferId);
+        }
+        // Сохраняем delivery_date/delivery_time если заказ создан через request/create
+        if (state.deliveryDate) {
+            YandexDeliveryUtils.setFieldValue('id_delivery_date', state.deliveryDate);
+        }
+        if (state.deliveryTime) {
+            YandexDeliveryUtils.setFieldValue('id_delivery_time', state.deliveryTime);
+        }
+        if (state.deliveryRequest_id) {
+            YandexDeliveryUtils.setFieldValue('id_yandex_request_id', state.deliveryRequest_id);
+        }
 
         const checkoutAddr = $('#id_delivery_address');
         if (checkoutAddr) checkoutAddr.value = state.selectedAddress;
@@ -1769,6 +1851,75 @@ const YandexDeliveryWidget = (() => {
         return '';
     }
 
+    /**
+     * Отображает доступные интервалы доставки для ПВЗ/Постомат.
+     */
+    function renderDeliveryOffers(offers) {
+        console.log('[YandexDelivery] renderDeliveryOffers called with:', offers);
+        const container = $('#deliveryOffersContainer');
+        if (!container) {
+            console.error('[YandexDelivery] renderDeliveryOffers: container #deliveryOffersContainer not found');
+            return;
+        }
+
+        if (!offers || offers.length === 0) {
+            console.warn('[YandexDelivery] renderDeliveryOffers: no offers to display');
+            hide(container);
+            return;
+        }
+
+        const listEl = container.querySelector('.offers-list');
+        if (!listEl) {
+            console.error('[YandexDelivery] renderDeliveryOffers: .offers-list not found');
+            return;
+        }
+
+        let html = '';
+        offers.forEach((offer, index) => {
+            console.log(`[YandexDelivery] Offer ${index}:`, offer);
+            const isSelected = index === 0 ? ' selected border-primary' : '';
+            html += `
+                <div class="list-group-item list-group-item-action${isSelected} delivery-offer-item" 
+                     data-offer-index="${index}" data-offer-id="${offer.offer_id || ''}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${offer.formatted_interval || '\u2014'}</strong>
+                            ${offer.formatted_date ? `<br><small class="text-muted">${offer.formatted_date}</small>` : ''}
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold text-success">${offer.formatted_price || '\u2014'}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+
+        listEl.innerHTML = html;
+        show(container);
+        hide($('#deliveryErrorBlock'));
+
+        console.log('[YandexDelivery] renderDeliveryOffers: rendered', offers.length, 'offers');
+
+        // Add click handlers
+        container.querySelectorAll('.delivery-offer-item').forEach(item => {
+            item.addEventListener('click', () => {
+                container.querySelectorAll('.delivery-offer-item').forEach(i => {
+                    i.classList.remove('selected', 'border-primary');
+                });
+                item.classList.add('selected', 'border-primary');
+                const idx = parseInt(item.dataset.offerIndex);
+                const offer = offers[idx];
+                state.estimatedCost = parseFloat(offer.price);
+                state.selectedOfferId = offer.offer_id || '';
+                const costEl = $('#widgetCost');
+                if (costEl) {
+                    YandexDeliveryUtils.setTextContent(costEl, offer.formatted_price || `${offer.price} \u20bd`);
+                }
+                updateConfirmButton();
+            });
+        });
+    }
+
     async function calculateDeliveryCost(coords, address) {
         const costEl = $('#widgetCost');
         const etaEl = $('#widgetEta');
@@ -1780,23 +1931,36 @@ const YandexDeliveryWidget = (() => {
         YandexDeliveryUtils.showLoading(costEl);
         if (confirmBtn) confirmBtn.disabled = true;
 
-        const calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
+        let calc;
 
-        console.log('[YandexDelivery] calculateDelivery result:', calc);
+        console.log('[YandexDelivery] calculateDeliveryCost: selectedType=', state.selectedType, 'selectedPvzId=', state.selectedPvzId);
 
-        if (calc.success && calc.price != null && parseFloat(calc.price) > 0) {
-            state.estimatedCost = parseFloat(calc.price);
-            // Сохраняем claim_id для Express API (чтобы использовать при оформлении)
-            if (calc.claim_id && state.selectedType === 'courier') {
-                state.expressClaimId = calc.claim_id;
-                console.log('[YandexDelivery] Express claim ID saved:', state.expressClaimId);
-            }
-            YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
-            YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
-            YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
+        if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+            // Для ПВЗ/Постомат используем offers/info для получения интервалов
+            console.log('[YandexDelivery] Getting offers/info for PVZ/postamat');
+            const offersData = await getDeliveryOffers(coords, address, state.selectedType, state.selectedPvzId);
 
-            // Показываем блок с информацией о выбранном ПВЗ/постомате
-            if (state.selectedType === 'pvz' || state.selectedType === 'postomat') {
+            console.log('[YandexDelivery] offers/info result:', offersData);
+
+            // Проверяем, создан ли заказ сразу (нет доступных интервалов)
+            if (offersData.created) {
+                console.log('[YandexDelivery] Order created via request/create:', offersData);
+
+                state.estimatedCost = parseFloat(offersData.price) || 0;
+                state.deliveryDate = offersData.delivery_date || '';
+                state.deliveryTime = offersData.delivery_time || '';
+                state.deliveryRequest_id = offersData.request_id || '';
+                state.deliveryStatus = offersData.status || '';
+
+                // Форматируем цену
+                const formattedPrice = YandexDeliveryUtils.formatPrice(state.estimatedCost);
+                const deliveryInfo = state.deliveryTime
+                    ? `${formattedPrice} ₽ • ${state.deliveryDate} ${state.deliveryTime}`
+                    : `${formattedPrice} ₽ • ${state.deliveryDate || 'ближайшее время'}`;
+
+                YandexDeliveryUtils.setTextContent(costEl, deliveryInfo);
+
+                // Показываем информацию о выбранном ПВЗ/постомате
                 const pvzInfo = $('#selectedPvzInfo');
                 const pvzNameEl = $('#selectedPvzNameDisplay');
                 if (pvzInfo && pvzNameEl && state.selectedPvzName) {
@@ -1806,20 +1970,126 @@ const YandexDeliveryWidget = (() => {
 
                 // Показываем детали расчета под картой
                 showCalcDetails();
+
+                // Активируем кнопку подтверждения
+                updateConfirmButton();
+
+                // Затемняем карту
+                setMapOverlay(true);
+                hide($('#deliveryErrorBlock'));
+                hide($('#deliveryOffersContainer'));
+                return;
             }
 
-            // Для курьера показываем блок с рассчитанной стоимостью
-            if (state.selectedType === 'courier') {
-                showCourierDeliveryCost(calc);
-            }
+            if (offersData.success && offersData.offers?.length) {
+                // Показываем интервалы
+                renderDeliveryOffers(offersData.offers);
+                hide($('#deliveryErrorBlock'));
 
-            // Активируем кнопку подтверждения
-            updateConfirmButton();
+                // Используем первый оффер для стоимости
+                state.estimatedCost = parseFloat(offersData.offers[0].price);
+                state.selectedOfferId = offersData.offers[0].offer_id || '';
+
+                YandexDeliveryUtils.setTextContent(costEl, offersData.offers[0].formatted_price || `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽`);
+
+                // Показываем информацию о выбранном ПВЗ/постомате
+                const pvzInfo = $('#selectedPvzInfo');
+                const pvzNameEl = $('#selectedPvzNameDisplay');
+                if (pvzInfo && pvzNameEl && state.selectedPvzName) {
+                    pvzNameEl.textContent = state.selectedAddress;
+                    show(pvzInfo);
+                }
+
+                // Показываем детали расчета под картой
+                showCalcDetails();
+
+                // Активируем кнопку подтверждения
+                updateConfirmButton();
+
+                // Затемняем карту
+                setMapOverlay(true);
+            } else {
+                // Показываем ошибку если offers/info вернул ошибку
+                const errorBlock = $('#deliveryErrorBlock');
+                const offersContainer = $('#deliveryOffersContainer');
+                if (offersData.error) {
+                    console.error('[YandexDelivery] offers/info error:', offersData.error);
+                    YandexDeliveryUtils.setTextContent(costEl, `❌ ${offersData.error}`);
+                    if (errorBlock) {
+                        errorBlock.textContent = `Ошибка получения интервалов: ${offersData.error}`;
+                        show(errorBlock);
+                    }
+                    if (offersContainer) hide(offersContainer);
+                    // Затемняем карту при ошибке
+                    setMapOverlay(true);
+                }
+                // Fallback к старому расчету
+                console.warn('[YandexDelivery] offers/info failed, falling back to calculateDelivery');
+                console.warn('[YandexDelivery] offers/info response:', offersData);
+                calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
+                if (calc.success && calc.price != null && parseFloat(calc.price) > 0) {
+                    state.estimatedCost = parseFloat(calc.price);
+                    YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
+                    if (errorBlock) hide(errorBlock);
+                    if (offersContainer) hide(offersContainer);
+                    showCalcDetails();
+                    updateConfirmButton();
+                    // Убираем затемнение при успешном расчёте
+                    setMapOverlay(false);
+                } else {
+                    console.error('[YandexDelivery] Both offers/info and calculateDelivery failed');
+                    console.error('[YandexDelivery] calculateDelivery result:', calc);
+                    YandexDeliveryUtils.setTextContent(costEl, calc?.error || 'Не удалось рассчитать доставку');
+                    if (errorBlock) {
+                        errorBlock.textContent = `Ошибка расчета: ${calc?.error || 'Неизвестная ошибка'}`;
+                        show(errorBlock);
+                    }
+                    if (offersContainer) hide(offersContainer);
+                    // Затемняем карту при ошибке
+                    setMapOverlay(true);
+                }
+            }
         } else {
+            // Для курьера — старый расчет
+            calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
+
+            console.log('[YandexDelivery] calculateDelivery result:', calc);
+
+            if (calc.success && calc.price != null && parseFloat(calc.price) > 0) {
+                state.estimatedCost = parseFloat(calc.price);
+                // Сохраняем claim_id для Express API (чтобы использовать при оформлении)
+                if (calc.claim_id && state.selectedType === 'courier') {
+                    state.expressClaimId = calc.claim_id;
+                    console.log('[YandexDelivery] Express claim ID saved:', state.expressClaimId);
+                }
+                YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
+                YandexDeliveryUtils.setTextContent(etaEl, calc.delivery_days ? `(${calc.delivery_days} дн.)` : '');
+                YandexDeliveryUtils.setTextContent(etaLabelEl, calc.delivery_days ? ` ETA: ${calc.delivery_days} дн.` : ' ETA: ');
+
+                // Показываем блок с рассчитанной стоимостью
+                if (state.selectedType === 'courier') {
+                    showCourierDeliveryCost(calc);
+                }
+
+                // Активируем кнопку подтверждения
+                updateConfirmButton();
+            }
+        }
+
+        // Обработка ошибки для курьера (не для ПВЗ/Постомат — там свой handling)
+        if (state.selectedType !== 'pvz' && state.selectedType !== 'postomat' && calc && !calc.success) {
             console.error('[YandexDelivery] Delivery calculation failed:', calc);
             const errorMsg = calc.error || 'Не удалось рассчитать стоимость доставки';
             YandexDeliveryUtils.setTextContent(costEl, errorMsg);
             if (confirmBtn) confirmBtn.disabled = true;
+        }
+    }
+
+    /* ==================== Map Overlay ==================== */
+    function setMapOverlay(show) {
+        const container = $('#yandexDeliveryWidgetContainer');
+        if (container) {
+            container.classList.toggle('has-offers-error', show);
         }
     }
 

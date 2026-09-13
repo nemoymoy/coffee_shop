@@ -45,6 +45,41 @@ def rate_limited(max_requests_per_minute=MAX_REQUESTS_PER_MINUTE):
     return decorator
 
 
+def retry_with_backoff(max_retries=3, base_delay=2):
+    """Decorator for retrying requests with exponential backoff."""
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(max_retries):
+                try:
+                    result = func(*args, **kwargs)
+                    return result
+                except requests.exceptions.HTTPError as e:
+                    status = e.response.status_code if e.response is not None else None
+                    if status == 429:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(
+                            'Rate limited on %s (attempt %d/%d), retrying in %ds',
+                            func.__name__, attempt + 1, max_retries, delay
+                        )
+                        time.sleep(delay)
+                        continue
+                    raise
+                except requests.exceptions.ConnectionError as e:
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(
+                            'Connection error on %s (attempt %d/%d), retrying in %ds: %s',
+                            func.__name__, attempt + 1, max_retries, delay, str(e)[:100]
+                        )
+                        time.sleep(delay)
+                        continue
+                    raise
+            return {'success': False, 'error': 'Max retries exceeded due to rate limiting'}
+        return wrapper
+    return decorator
+
+
 class YandexDeliveryService:
     """Service for Yandex Cargo Delivery API.
 
@@ -55,6 +90,7 @@ class YandexDeliveryService:
 
     # Other Day API endpoints
     BASE_URL = 'https://b2b.taxi.yandex.net/api/b2b/platform'
+    OFFERS_INFO_URL = f'{BASE_URL}/offers/info'
     CREATE_OFFER_URL = f'{BASE_URL}/offers/create'
     CONFIRM_OFFER_URL = f'{BASE_URL}/offers/confirm'
     GET_REQUEST_URL = f'{BASE_URL}/request/info'
@@ -121,6 +157,22 @@ class YandexDeliveryService:
 
     def _setup_pvz(self):
         """Configure PVZ (pickup point) settings."""
+        # Self-pickup station (source for PVZ/postamat delivery)
+        self.pickup_station_id = getattr(
+            settings, 'YANDEX_PICKUP_STATION_ID',
+            'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
+        )
+        self.pickup_station_lat = float(
+            getattr(settings, 'YANDEX_PICKUP_STATION_LAT', 53.21808624267578)
+        )
+        self.pickup_station_lon = float(
+            getattr(settings, 'YANDEX_PICKUP_STATION_LON', 50.16553497314453)
+        )
+        self.pickup_station_address = getattr(
+            settings, 'YANDEX_PICKUP_STATION_ADDRESS',
+            'Пункт выдачи заказов Яндекс Маркета — Самара улица Лукачёва 6'
+        )
+        # PVZ for backward compatibility
         self.pvz_id = getattr(
             settings, 'YANDEX_PVZ_ID',
             'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
@@ -176,7 +228,8 @@ class YandexDeliveryService:
         response = self.session.post(url, json=payload, timeout=15)
         if response.status_code == 429:
             logger.warning('Rate limited on %s', url)
-            raise requests.exceptions.HTTPError('429 Too Many Requests')
+            # Return response so retry_with_backoff can catch it
+            response.raise_for_status()
         if response.status_code != 200:
             logger.error(
                 '_post failed %s: status=%s body=%s',
@@ -521,12 +574,212 @@ class YandexDeliveryService:
     # Other Day API — scheduled delivery
     # ----------------------------------------------------------------
 
+    def _build_other_day_payload(self, items_data, places_data, client_order_id,
+                                 source_point, destination_point, recipient_name,
+                                 recipient_phone, email, delivery_cost,
+                                 payment_method='already_paid',
+                                 last_mile_policy='self_pickup') -> dict:
+        """Build a complete Other Day API payload (shared by offers/info, offers/create).
+
+        Args:
+            items_data: List of item dicts (items section)
+            places_data: List of place dicts (places section, top-level)
+            client_order_id: Internal order ID for idempotency
+            source_point: Source station dict (platform_station or custom_location)
+            destination_point: Destination station dict
+            recipient_name: Full name (will be split into first/last)
+            recipient_phone: Phone number
+            email: Email address
+            delivery_cost: Delivery cost in RUB
+            payment_method: 'already_paid' | 'recipient'
+            last_mile_policy: 'self_pickup' | 'time_interval'
+
+        Returns:
+            Complete payload dict for Other Day API
+        """
+        name_parts = recipient_name.split() if recipient_name else ['', '']
+        # Yandex requires valid phone format (+7XXXXXXXXXX)
+        phone = recipient_phone or '+79000000000'
+        if not phone.startswith('+'):
+            phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+        recipient_info = {
+            'first_name': name_parts[0] if name_parts else '',
+            'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
+            'phone': phone,
+            'email': email or '',
+        }
+
+        return {
+            'info': {
+                'operator_request_id': str(client_order_id),
+                'comment': 'Заказ интернет-магазина кофейни',
+            },
+            'source': source_point,
+            'destination': destination_point,
+            'items': items_data,
+            'places': places_data,
+            'billing_info': {
+                'payment_method': payment_method,
+                'delivery_cost': int(delivery_cost * 100),  # kopecks
+            },
+            'recipient_info': recipient_info,
+            'last_mile_policy': last_mile_policy,
+            'particular_items_refuse': False,
+            'forbid_unboxing': False,
+        }
+
+    def _build_source_destination(self, delivery_type, pvz_id=None):
+        """Build source and destination points for Other Day API.
+
+        For PVZ/postamat: source = default PVZ station, destination = user-selected station.
+        For courier: source = warehouse station, destination = custom location.
+
+        Returns:
+            (source_point, destination_point, last_mile_policy) tuple
+        """
+        if delivery_type in ('pickup', 'postamat'):
+            last_mile_policy = 'self_pickup'
+            source_point = {
+                'platform_station_id': self.pvz_id,
+            }
+            destination_point = {
+                'type': 'platform_station',
+                'platform_station_id': pvz_id or self.pvz_id,
+            }
+        else:
+            last_mile_policy = 'time_interval'
+            source_point = {
+                'platform_station_id': self.test_warehouse_id or self.pvz_id,
+            }
+            # For courier, destination will be set by caller (custom_location)
+            destination_point = None
+
+        return source_point, destination_point, last_mile_policy
+
+    @retry_with_backoff(max_retries=3, base_delay=3)
+    def get_offers_info(self, items_data, places_data, client_order_id,
+                        destination_coords, destination_address, delivery_type='courier',
+                        pvz_id=None, recipient_name='', recipient_phone='', email='') -> dict:
+        """Get available delivery intervals and offers (offers/info).
+
+        This is Step 1 of the Other Day API flow:
+        1. offers/info — get available intervals
+        2. offers/create — reserve a slot
+        3. offers/confirm — confirm the offer
+
+        Args:
+            items_data: List of item dicts
+            places_data: List of place dicts
+            client_order_id: Internal order ID
+            destination_coords: [longitude, latitude]
+            destination_address: Full delivery address
+            delivery_type: 'courier' | 'pickup' | 'postamat'
+            pvz_id: PVZ/terminal platform_id (for pickup/postamat)
+            recipient_name: Recipient full name
+            recipient_phone: Recipient phone
+            email: Recipient email
+
+        Returns:
+            {'success': True, 'offers': [...], 'raw': {...}}
+        """
+        if not self.is_configured():
+            logger.error('get_offers_info: not configured')
+            return {'success': False, 'error': 'Яндекс Доставка не настроена'}
+
+        # Cache key based on source, destination, and items
+        cache_key = f'offers_info_{pvz_id}_{delivery_type}_{destination_coords}_{client_order_id}'
+        cached = cache.get(cache_key)
+        if cached:
+            logger.info('[OtherDay] get_offers_info: returning cached result')
+            return cached
+
+        try:
+            source_point, dest_point, last_mile_policy = self._build_source_destination(
+                delivery_type, pvz_id
+            )
+
+            # For courier, add custom_location destination
+            if delivery_type == 'courier' and dest_point is None:
+                dest_point = {
+                    'type': 'custom_location',
+                    'custom_location': {
+                        'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
+                        'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
+                        'details': {'full_address': destination_address},
+                    },
+                }
+
+            payload = self._build_other_day_payload(
+                items_data=items_data,
+                places_data=places_data,
+                client_order_id=client_order_id,
+                source_point=source_point,
+                destination_point=dest_point,
+                recipient_name=recipient_name,
+                recipient_phone=recipient_phone,
+                email=email,
+                delivery_cost=0,
+                payment_method='already_paid',
+                last_mile_policy=last_mile_policy,
+            )
+
+            logger.info('[OtherDay] === get_offers_info payload ===')
+            logger.info('[OtherDay] source: %s', json.dumps(source_point, ensure_ascii=False))
+            logger.info('[OtherDay] destination: %s', json.dumps(dest_point, ensure_ascii=False))
+            logger.info('[OtherDay] last_mile_policy: %s', last_mile_policy)
+            logger.info('[OtherDay] items_data: %s', json.dumps(items_data, ensure_ascii=False)[:1000])
+            logger.info('[OtherDay] places_data: %s', json.dumps(places_data, ensure_ascii=False)[:1000])
+            logger.info('[OtherDay] recipient_name: %s', recipient_name)
+            logger.info('[OtherDay] recipient_phone: %s', recipient_phone)
+            logger.info('[OtherDay] recipient_email: %s', email)
+
+            # Use platform_base_url for production (b2b-authproxy) vs test (b2b.taxi)
+            offers_info_url = f'{self.platform_base_url}/offers/info'
+            logger.info('[OtherDay] Calling URL: %s', offers_info_url)
+
+            try:
+                response = self._post(offers_info_url, payload)
+                data = response.json()
+
+                logger.info('[OtherDay] get_offers_info response: %s',
+                           json.dumps(data, ensure_ascii=False)[:3000])
+
+            except requests.exceptions.HTTPError as e:
+                logger.error('[OtherDay] HTTP error: %s', e)
+                logger.error('[OtherDay] Response status: %s', e.response.status_code if e.response else 'N/A')
+                logger.error('[OtherDay] Response body: %s', e.response.text[:2000] if e.response else 'N/A')
+                logger.error('[OtherDay] Full payload: %s', json.dumps(payload, ensure_ascii=False)[:3000])
+                raise
+
+            result = {
+                'success': True,
+                'offers': data.get('offers', []),
+                'raw': data,
+            }
+
+            # Cache result for 5 minutes
+            cache.set(cache_key, result, 300)
+            return result
+
+        except requests.exceptions.RequestException as e:
+            logger.error('get_offers_info error: %s', e)
+            return {'success': False, 'error': str(e)}
+
     def create_order(self, items, client_order_id, destination_coords,
                      destination_address, delivery_type='courier', pvz_id=None,
                      recipient_name='', recipient_phone='', email='',
                      delivery_interval_from=None, delivery_interval_to=None,
                      delivery_cost=0, payment_method='already_paid') -> dict:
         """Create a delivery order via Other Day API.
+
+        Full flow: offers/info → offers/create → offers/confirm → request/info
+        or: offers/info → request/create (if no offers available)
+
+        For PVZ/postamat types:
+            1. offers/info — check available intervals
+            2a. If offers exist → offers/create → offers/confirm
+            2b. If no offers → request/create (nearest available time)
+            3. request/info — get price, date, status
 
         Args:
             items: Built items payload from build_items_payload
@@ -544,108 +797,611 @@ class YandexDeliveryService:
             payment_method: 'already_paid' | 'recipient'
 
         Returns:
-            {'success': True, 'request_id': '...', 'tracking_number': '...'}
+            {'success': True, 'request_id': '...', 'tracking_number': '...',
+             'offer_id': '...', 'status': '...', 'delivery_date': '...',
+             'delivery_time': '...', 'price': '...', 'currency': 'RUB'}
         """
         if not self.is_configured():
             logger.error('create_order: not configured')
             return {'success': False, 'error': 'Яндекс Доставка не настроена'}
 
+        # Only the PVZ/postamat flow uses offers/info → offers/create → request/info
+        if delivery_type not in ('pickup', 'postamat'):
+            return self._create_order_courier(
+                items, client_order_id, destination_coords, destination_address,
+                delivery_type, pvz_id, recipient_name, recipient_phone, email,
+                delivery_interval_from, delivery_interval_to, delivery_cost,
+                payment_method,
+            )
+
         try:
-            # Determine last_mile_policy based on delivery type
-            if delivery_type in ('pickup', 'postamat'):
-                last_mile_policy = 'self_pickup'
-            else:
-                last_mile_policy = 'time_interval'
+            # Build common parts for offers/info
+            source_pvz_id = pvz_id or self.pickup_station_id
+            common_source = {
+                'platform_station': {
+                    'platform_id': self.pickup_station_id,
+                },
+            }
+            common_destination = {
+                'type': 'platform_station',
+                'platform_station': {
+                    'platform_id': source_pvz_id,
+                },
+            }
+            common_billing = {
+                'payment_method': payment_method,
+                'delivery_cost': int(delivery_cost * 100),  # kopecks
+            }
 
-            # Build source point
-            if delivery_type == 'pickup':
-                # Use PVZ as origin
-                source_point = {
-                    'platform_station': {
-                        'platform_id': self.pvz_id,
-                    },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
-            else:
-                # Use shop as origin
-                source_point = {
-                    'platform_station': {
-                        'platform_id': self.test_warehouse_id or self.pvz_id,
-                    },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
+            # Build items and places
+            api_items, api_places = self._build_items_for_other_day(
+                items, delivery_type, pvz_id
+            )
 
-            # Build destination point
-            if delivery_type in ('pickup', 'postamat'):
-                dest_type = 'platform_station'
-                destination_point = {
-                    'type': dest_type,
-                    'platform_station': {
-                        'platform_id': pvz_id or self.pvz_id,
-                    },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
-            else:
-                dest_type = 'custom_location'
-                destination_point = {
-                    'type': dest_type,
-                    'custom_location': {
-                        'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
-                        'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
-                        'details': {
-                            'full_address': destination_address,
-                        },
-                    },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
-
-            # Build recipient info
+            # Recipient info
             name_parts = recipient_name.split() if recipient_name else ['', '']
+            phone = recipient_phone or '+79000000000'
+            if not phone.startswith('+'):
+                phone = '+7' + phone if phone.startswith('8') else '+7' + phone
             recipient_info = {
                 'first_name': name_parts[0] if name_parts else '',
                 'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-                'phone': recipient_phone,
+                'phone': phone,
                 'email': email or '',
             }
 
-            payload = {
-                'info': {
-                    'operator_request_id': str(client_order_id),
-                    'comment': 'Заказ интернет-магазина кофейни',
-                },
-                'source': source_point,
-                'destination': destination_point,
-                'items': items,
-                'billing_info': {
-                    'payment_method': payment_method,
-                    'delivery_cost': int(delivery_cost * 100),  # Convert to kopecks
-                },
-                'recipient_info': recipient_info,
-                'last_mile_policy': last_mile_policy,
-                'particular_items_refuse': False,
-                'forbid_unboxing': False,
+            # ── Step 1: offers/info — check available intervals ────────
+            logger.info('[OtherDay] === create_order: offers/info ===')
+            info_body = {
+                'info': {'operator_request_id': str(client_order_id)},
+                'source': {'platform_station_id': self.pickup_station_id},
+                'destination': {'platform_station_id': source_pvz_id},
+                'places': api_places,
+                'last_mile_policy': 'self_pickup',
             }
 
-            response = self._post(self.platform_base_url + '/request/create', payload)
-            data = response.json()
+            offers_info_url = f'{self.platform_base_url}/offers/info'
+            resp = self._post(offers_info_url, info_body)
+            info_data = resp.json()
+
+            logger.info('[OtherDay] offers/info response: %s',
+                       json.dumps(info_data, ensure_ascii=False)[:3000])
+
+            # Filter valid offers (must have offer_id and delivery_interval.from)
+            valid_offers = [
+                o for o in info_data.get('offers', [])
+                if o.get('offer_id') and o.get('delivery_interval', {}).get('from')
+            ]
+
+            request_id = None
+            method_used = None
+            offer_id = None
+
+            # ── Step 2a: Offers exist → offers/create → offers/confirm ─
+            if valid_offers:
+                logger.info('[OtherDay] Found %d intervals. Taking nearest.',
+                           len(valid_offers))
+
+                valid_offers.sort(
+                    key=lambda o: o['delivery_interval']['from']
+                )
+                nearest = valid_offers[0]
+
+                delivery_from = nearest['delivery_interval']['from']
+                delivery_to = nearest['delivery_interval']['to']
+                pickup_from = nearest.get('pickup_interval', {}).get(
+                    'min', delivery_from
+                )
+                pickup_to = nearest.get('pickup_interval', {}).get(
+                    'max', delivery_from
+                )
+
+                create_body = {
+                    'info': {
+                        'operator_request_id': str(client_order_id),
+                    },
+                    'source': {
+                        **common_source,
+                        'interval_utc': {'from': pickup_from, 'to': pickup_to},
+                    },
+                    'destination': {
+                        **common_destination,
+                        'interval_utc': {'from': delivery_from, 'to': delivery_to},
+                    },
+                    'items': api_items,
+                    'places': api_places,
+                    'recipient_info': recipient_info,
+                    'billing_info': common_billing,
+                    'last_mile_policy': 'self_pickup',
+                    'particular_items_refuse': False,
+                    'forbid_unboxing': False,
+                }
+
+                logger.info('[OtherDay] === create_order: offers/create ===')
+                create_url = f'{self.platform_base_url}/offers/create'
+                resp = self._post(create_url, create_body)
+                created = resp.json()
+
+                logger.info('[OtherDay] offers/create response: %s',
+                           json.dumps(created, ensure_ascii=False)[:2000])
+
+                offers = created.get('offers', [])
+                if not offers:
+                    return {
+                        'success': False,
+                        'error': 'Нет офферов в ответе offers/create',
+                    }
+
+                offer = offers[0]
+                offer_id = offer.get('offer_id')
+                expires_at = offer.get('expires_at')
+                logger.info('[OtherDay] Offer created: %s, expires: %s',
+                           offer_id, expires_at)
+
+                # ── Step 2a-ii: offers/confirm ──────────────────────────
+                logger.info('[OtherDay] === create_order: offers/confirm ===')
+                confirm_payload = {'offer_id': offer_id}
+                confirm_url = f'{self.platform_base_url}/offers/confirm'
+                resp = self._post(confirm_url, confirm_payload)
+                confirmed = resp.json()
+
+                logger.info('[OtherDay] offers/confirm response: %s',
+                           json.dumps(confirmed, ensure_ascii=False)[:1000])
+
+                request_id = confirmed.get('request_id')
+                method_used = 'offers'
+
+                if not request_id:
+                    return {
+                        'success': False,
+                        'error': 'Нет request_id в ответе offers/confirm',
+                    }
+
+            # ── Step 2b: No offers → request/create ─────────────────────
+            else:
+                logger.info('[OtherDay] No intervals available. '
+                           'Creating request for nearest time (request/create)...')
+
+                request_body = {
+                    'info': {
+                        'operator_request_id': str(client_order_id),
+                        'comment': 'Доставка ПВЗ→ПВЗ, ближайшее доступное время',
+                    },
+                    'source': common_source,
+                    'destination': common_destination,
+                    'items': api_items,
+                    'places': api_places,
+                    'recipient_info': recipient_info,
+                    'billing_info': common_billing,
+                    'last_mile_policy': 'self_pickup',
+                }
+
+                request_create_url = f'{self.platform_base_url}/request/create'
+                resp = self._post(request_create_url, request_body)
+                created = resp.json()
+
+                logger.info('[OtherDay] request/create response: %s',
+                           json.dumps(created, ensure_ascii=False)[:1000])
+
+                request_id = created.get('request_id')
+                method_used = 'request'
+
+                if not request_id:
+                    return {
+                        'success': False,
+                        'error': 'Нет request_id в ответе request/create',
+                    }
+
+            # ── Step 3: request/info — get price, date, status ──────────
+            logger.info('[OtherDay] Order created (%s). request_id: %s',
+                       method_used, request_id)
+            logger.info('[OtherDay] Waiting for price and interval calculation...')
+
+            order_info = None
+            order_info = None
+            has_price_or_interval = False
+            for attempt in range(10):
+                time.sleep(3)
+                tracking_info = self.get_request_info(request_id)
+                if not tracking_info.get('success'):
+                    logger.warning('[OtherDay] request/info attempt %d failed',
+                                 attempt + 1)
+                    continue
+
+                order_info = tracking_info.get('raw', {})
+                status = order_info.get('status', '')
+                pricing = order_info.get('pricing', {})
+                interval = order_info.get('delivery_interval', {})
+
+                # Wait until price appears, interval appears, or order failed
+                if (pricing.get('total') or interval.get('from') or
+                        status == 'failed'):
+                    has_price_or_interval = True
+                    break
+                logger.info('[OtherDay]   attempt %d: status=%s, waiting...',
+                           attempt + 1, status)
+
+            if not order_info or not has_price_or_interval:
+                return {
+                    'success': False,
+                    'error': 'timeout',
+                    'message': 'Не удалось получить данные заказа за отведённое время.',
+                }
+
+            if order_info.get('status') == 'failed':
+                return {
+                    'success': False,
+                    'error': 'order_failed',
+                    'message': str(order_info.get('error_messages', 'Заказ не создан.')),
+                    'request_id': request_id,
+                }
+
+            # ── Format result ───────────────────────────────────────────
+            di = order_info.get('delivery_interval', {})
+            d_from = di.get('from')
+            d_to = di.get('to')
+
+            delivery_date = ''
+            delivery_time = ''
+            if d_from:
+                try:
+                    from datetime import datetime, timezone, timedelta
+                    # Parse ISO format and convert to local timezone (UTC+4 Samara)
+                    tz_local = timezone(timedelta(hours=4))
+                    dt_from = datetime.fromisoformat(
+                        d_from.replace('Z', '+00:00')
+                    ).astimezone(tz_local)
+                    delivery_date = dt_from.strftime('%d.%m.%Y')
+                    if d_to:
+                        dt_to = datetime.fromisoformat(
+                            d_to.replace('Z', '+00:00')
+                        ).astimezone(tz_local)
+                        delivery_time = (
+                            f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                        )
+                    else:
+                        delivery_time = dt_from.strftime('%H:%M')
+                except Exception as e:
+                    logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
+
+            pricing = order_info.get('pricing', {})
+            price_total = pricing.get('total', 'N/A')
+            currency = pricing.get('currency', 'RUB')
 
             return {
                 'success': True,
-                'request_id': data.get('request_id', ''),
-                'tracking_number': data.get('tracking_number', ''),
-                'raw': data,
+                'request_id': request_id,
+                'method': method_used,
+                'status': order_info.get('status'),
+                'tracker_id': order_info.get('tracker_id'),
+                'offer_id': offer_id,
+                'delivery_date': delivery_date,
+                'delivery_time': delivery_time,
+                'price': price_total,
+                'currency': currency,
+                'raw': order_info,
             }
 
         except requests.exceptions.RequestException as e:
             logger.error('create_order error: %s', e)
+            return {'success': False, 'error': str(e)}
+
+    def _create_order_courier(self, items, client_order_id, destination_coords,
+                              destination_address, delivery_type, pvz_id,
+                              recipient_name, recipient_phone, email,
+                              delivery_interval_from, delivery_interval_to,
+                              delivery_cost, payment_method) -> dict:
+        """Create a courier delivery order via Other Day API.
+
+        Simplified flow: offers/create → offers/confirm → request/info
+        (courier doesn't use offers/info check)
+
+        Returns:
+            {'success': True, 'request_id': '...', 'tracking_number': '...',
+             'offer_id': '...', 'status': '...'}
+        """
+        try:
+            source_point, dest_point, last_mile_policy = self._build_source_destination(
+                delivery_type, pvz_id
+            )
+
+            # For courier, add custom_location destination with interval
+            if delivery_type == 'courier' and dest_point is None:
+                dest_point = {
+                    'type': 'custom_location',
+                    'custom_location': {
+                        'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
+                        'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
+                        'details': {'full_address': destination_address},
+                    },
+                }
+
+            # Build items and places from OrderItem data
+            api_items, api_places = self._build_items_for_other_day(
+                items, delivery_type, pvz_id
+            )
+
+            payload = self._build_other_day_payload(
+                items_data=api_items,
+                places_data=api_places,
+                client_order_id=client_order_id,
+                source_point=source_point,
+                destination_point=dest_point,
+                recipient_name=recipient_name,
+                recipient_phone=recipient_phone,
+                email=email,
+                delivery_cost=delivery_cost,
+                payment_method=payment_method,
+                last_mile_policy=last_mile_policy,
+            )
+
+            # Add interval_utc if provided
+            if delivery_interval_from and delivery_interval_to:
+                payload['source']['interval_utc'] = {
+                    'from': delivery_interval_from,
+                    'to': delivery_interval_to,
+                }
+                if dest_point and delivery_type in ('pickup', 'postamat'):
+                    payload['destination']['interval_utc'] = {
+                        'from': delivery_interval_from,
+                        'to': delivery_interval_to,
+                    }
+
+            # Step 1: offers/create — reserve a delivery slot
+            logger.info('[OtherDay] === create_order (courier): offers/create ===')
+            create_url = f'{self.platform_base_url}/offers/create'
+            create_response = self._post(create_url, payload)
+            create_data = create_response.json()
+
+            logger.info('[OtherDay] offers/create response: %s',
+                       json.dumps(create_data, ensure_ascii=False)[:2000])
+
+            offers = create_data.get('offers', [])
+            if not offers:
+                return {
+                    'success': False,
+                    'error': 'Нет доступных офферов при создании заказа',
+                }
+
+            # Take the first offer
+            offer = offers[0]
+            offer_id = offer.get('offer_id')
+            if not offer_id:
+                return {
+                    'success': False,
+                    'error': 'Нет offer_id в ответе offers/create',
+                }
+
+            logger.info('[OtherDay] Offer created: %s', offer_id)
+
+            # Step 2: offers/confirm — confirm the offer
+            logger.info('[OtherDay] === create_order (courier): offers/confirm ===')
+            confirm_payload = {'offer_id': offer_id}
+            confirm_url = f'{self.platform_base_url}/offers/confirm'
+            confirm_response = self._post(confirm_url, confirm_payload)
+            confirm_data = confirm_response.json()
+
+            logger.info('[OtherDay] offers/confirm response: %s',
+                       json.dumps(confirm_data, ensure_ascii=False)[:1000])
+
+            request_id = confirm_data.get('request_id')
+            if not request_id:
+                return {
+                    'success': False,
+                    'error': 'Нет request_id в ответе offers/confirm',
+                }
+
+            logger.info('[OtherDay] Order confirmed: request_id=%s', request_id)
+
+            # Step 3: request/info — get tracking number and status
+            time.sleep(1)
+            tracking_info = self.get_request_info(request_id)
+
+            return {
+                'success': True,
+                'request_id': request_id,
+                'tracking_number': tracking_info.get('tracking_number', ''),
+                'offer_id': offer_id,
+                'status': tracking_info.get('status', 'pending'),
+                'raw': confirm_data,
+            }
+
+        except requests.exceptions.RequestException as e:
+            logger.error('_create_order_courier error: %s', e)
+            return {'success': False, 'error': str(e)}
+
+    def _build_items_for_other_day(self, items, delivery_type, pvz_id):
+        """Build items and places for Other Day API from pre-built data.
+
+        Items and places should already be in Other Day format from the caller.
+        This method ensures proper structure with billing_details.
+
+        Returns:
+            (items_list, places_list) tuple
+        """
+        if not items:
+            return [], []
+
+        # Items and places are already in Other Day format from _build_items_payload
+        # Just ensure they have required fields
+        inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
+        nds = 20  # НДС 20%
+
+        # Ensure items have billing_details
+        for item in items:
+            if 'billing_details' not in item:
+                item['billing_details'] = {
+                    'inn': inn,
+                    'nds': nds,
+                }
+
+        # Ensure places have billing_details and proper structure
+        for place in items:  # places are derived from items
+            if 'billing_details' not in place:
+                place['billing_details'] = {
+                    'inn': inn,
+                    'nds': nds,
+                }
+
+        return items, items
+
+    def _build_items_payload_for_other_day(self, order_items, pvz_id=None):
+        """Build items and places for Other Day API from OrderItem queryset.
+
+        This creates properly formatted items and places for offers/create.
+
+        Args:
+            order_items: QuerySet of OrderItem
+            pvz_id: PVZ platform_id (used as barcode prefix)
+
+        Returns:
+            (items, places) tuple in Other Day API format
+        """
+        total_weight_grams = 0
+        total_quantity = 0
+        product_names = []
+
+        for item in order_items:
+            total_weight_grams += item.weight_grams if item.weight_grams else 0
+            total_quantity += item.quantity
+            if item.product:
+                product_names.append(item.product.name)
+
+        # Select ONE package for total weight
+        try:
+            package = Package.for_weight(total_weight_grams)
+            size = {
+                'dx': int(float(package.length) * 1000),
+                'dy': int(float(package.width) * 1000),
+                'dz': int(float(package.height) * 1000),
+            }
+        except Package.DoesNotExist:
+            size = {'dx': 120, 'dy': 60, 'dz': 60}
+
+        product_name = product_names[0] if product_names else 'Кофе'
+        inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
+
+        # Calculate total price for billing
+        total_price_kopecks = 0
+        for item in order_items:
+            if item.unit_price:
+                try:
+                    total_price_kopecks += int(float(item.unit_price) * 100)
+                except (ValueError, TypeError):
+                    total_price_kopecks += 150000  # fallback 1500 RUB
+
+        unit_price_kopecks = total_price_kopecks // total_quantity if total_quantity > 0 else 150000
+
+        # Common barcode — MUST match between items.place_barcode and places.barcode
+        place_barcode = f'BOX-{order_items.first().pk if order_items.first() else "001"}'
+
+        items = [{
+            'count': total_quantity,
+            'name': product_name,
+            'article': f'COFFEE-{order_items.first().pk if order_items.first() else "001"}',
+            'billing_details': {
+                'unit_price': unit_price_kopecks,
+                'assessed_unit_price': unit_price_kopecks,
+                'inn': inn,
+                'nds': 20,
+            },
+            'physical_dims': size,
+            'place_barcode': place_barcode,
+        }]
+
+        places = [{
+            'barcode': place_barcode,
+            'physical_dims': {
+                **size,
+                'weight_gross': total_weight_grams + 500,  # add tare weight
+            },
+        }]
+
+        return items, places
+
+    def get_offers(self, items, client_order_id, destination_coords,
+                   destination_address, delivery_type='courier', pvz_id=None,
+                   recipient_name='', recipient_phone='', email='',
+                   delivery_interval_from=None, delivery_interval_to=None,
+                   delivery_cost=0, payment_method='already_paid') -> dict:
+        """Get delivery offers (pricing options) — offers/create.
+
+        This is Step 2 of the flow (after offers/info).
+
+        Args: Same as create_order
+
+        Returns:
+            {'success': True, 'offers': [...], 'raw': {...}}
+        """
+        if not self.is_configured():
+            logger.error('get_offers: not configured')
+            return {'success': False, 'error': 'Яндекс Доставка не настроена'}
+
+        try:
+            source_point, dest_point, last_mile_policy = self._build_source_destination(
+                delivery_type, pvz_id
+            )
+
+            # For courier, add custom_location destination
+            if delivery_type == 'courier' and dest_point is None:
+                dest_point = {
+                    'type': 'custom_location',
+                    'custom_location': {
+                        'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
+                        'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
+                        'details': {'full_address': destination_address},
+                    },
+                }
+
+            payload = self._build_other_day_payload(
+                items_data=items,
+                places_data=items,  # places are same as items for price calculation
+                client_order_id=client_order_id,
+                source_point=source_point,
+                destination_point=dest_point,
+                recipient_name=recipient_name,
+                recipient_phone=recipient_phone,
+                email=email,
+                delivery_cost=delivery_cost,
+                payment_method=payment_method,
+                last_mile_policy=last_mile_policy,
+            )
+
+            logger.info('[OtherDay] === get_offers (offers/create) payload ===')
+            logger.info('[OtherDay] source: %s', json.dumps(source_point, ensure_ascii=False))
+            logger.info('[OtherDay] destination: %s', json.dumps(dest_point, ensure_ascii=False))
+            logger.info('[OtherDay] last_mile_policy: %s', last_mile_policy)
+
+            try:
+                create_url = f'{self.platform_base_url}/offers/create'
+                response = self._post(create_url, payload)
+                data = response.json()
+
+                logger.info('[OtherDay] get_offers response: %s',
+                           json.dumps(data, ensure_ascii=False)[:2000])
+
+                return {
+                    'success': True,
+                    'offers': data.get('offers', []),
+                    'raw': data,
+                }
+
+            except requests.exceptions.HTTPError as e:
+                logger.error('[OtherDay] HTTP error: %s', e)
+                logger.error('[OtherDay] Response status: %s',
+                           e.response.status_code if e.response else 'N/A')
+                logger.error('[OtherDay] Response body: %s',
+                           e.response.text[:2000] if e.response else 'N/A')
+                return {
+                    'success': False,
+                    'error': f'HTTP {e.response.status_code if e.response else "?"}: {e.response.text[:500] if e.response else str(e)}',
+                }
+            except Exception as e:
+                logger.error('[OtherDay] Unexpected error: %s', e, exc_info=True)
+                return {'success': False, 'error': str(e)}
+
+        except requests.exceptions.RequestException as e:
+            logger.error('get_offers error: %s', e)
             return {'success': False, 'error': str(e)}
 
     def get_offers(self, items, client_order_id, destination_coords,
@@ -664,54 +1420,86 @@ class YandexDeliveryService:
             return {'success': False, 'error': 'Яндекс Доставка не настроена'}
 
         try:
-            # Build the same payload as create_order
+            # Build Other Day API payload
+            # Frontend sends Express format (quantity, weight, size),
+            # Other Day API needs different structure with places at root level
+            if items and items[0]:
+                first_item = items[0]
+                if 'weight' in first_item and 'size' in first_item:
+                    # Convert from Express format to Other Day format
+                    place_barcode = 'BOX-001'
+                    other_day_items = [{
+                        'count': int(first_item.get('quantity', 1)),
+                        'name': first_item.get('title', 'Товар'),
+                        'article': 'coffee-item',
+                        'place_barcode': place_barcode,
+                        'billing_details': {
+                            'manufacturer_country': 'RU',
+                            'excise': False,
+                            'unit_price': 10000,
+                            'assessed_unit_price': 10000,
+                        },
+                        'physical_dims': {
+                            'dx': int(first_item.get('size', {}).get('length', 0.12) * 1000),
+                            'dy': int(first_item.get('size', {}).get('width', 0.06) * 1000),
+                            'dz': int(first_item.get('size', {}).get('height', 0.06) * 1000),
+                        },
+                    }]
+                    # places is a top-level field in Other Day API
+                    places = [{
+                        'count': int(first_item.get('quantity', 1)),
+                        'name': first_item.get('title', 'Товар'),
+                        'article': 'coffee-item',
+                        'barcode': place_barcode,
+                        'place_barcode': place_barcode,
+                        'billing_details': {
+                            'manufacturer_country': 'RU',
+                            'excise': False,
+                            'unit_price': 10000,
+                            'assessed_unit_price': 10000,
+                        },
+                        'physical_dims': {
+                            'dx': int(first_item.get('size', {}).get('length', 0.12) * 1000),
+                            'dy': int(first_item.get('size', {}).get('width', 0.06) * 1000),
+                            'dz': int(first_item.get('size', {}).get('height', 0.06) * 1000),
+                        },
+                    }]
+                else:
+                    other_day_items = items
+                    places = items
+            else:
+                other_day_items = items
+                places = items
+
+            # Build source and destination points
             if delivery_type in ('pickup', 'postamat'):
+                # For self_pickup: source is the default PVZ, destination is user-selected PVZ
                 last_mile_policy = 'self_pickup'
-                dest_type = 'platform_station'
+                source_point = {
+                    'platform_station_id': self.pvz_id,
+                }
                 destination_point = {
-                    'type': dest_type,
-                    'platform_station': {'platform_id': pvz_id or self.pvz_id},
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
+                    'platform_station_id': pvz_id or self.pvz_id,
                 }
             else:
+                # For courier: source is shop/warehouse, destination is customer address
                 last_mile_policy = 'time_interval'
-                dest_type = 'custom_location'
+                source_point = {
+                    'platform_station_id': self.test_warehouse_id or self.pvz_id,
+                }
                 destination_point = {
-                    'type': dest_type,
                     'custom_location': {
                         'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
                         'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
                         'details': {'full_address': destination_address},
                     },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
-
-            if delivery_type == 'pickup':
-                source_point = {
-                    'platform_station': {'platform_id': self.pvz_id},
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
-                }
-            else:
-                source_point = {
-                    'platform_station': {
-                        'platform_id': self.test_warehouse_id or self.pvz_id,
-                    },
-                    'interval_utc': self._build_interval_utc(
-                        delivery_interval_from, delivery_interval_to
-                    ),
                 }
 
             name_parts = recipient_name.split() if recipient_name else ['', '']
             recipient_info = {
-                'first_name': name_parts[0] if name_parts else '',
+                'first_name': name_parts[0] if name_parts else 'Клиент',
                 'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-                'phone': recipient_phone,
+                'phone': recipient_phone or '+79000000000',
                 'email': email or '',
             }
 
@@ -722,7 +1510,8 @@ class YandexDeliveryService:
                 },
                 'source': source_point,
                 'destination': destination_point,
-                'items': items,
+                'items': other_day_items,
+                'places': places,
                 'billing_info': {
                     'payment_method': payment_method,
                     'delivery_cost': int(delivery_cost * 100),
@@ -733,14 +1522,36 @@ class YandexDeliveryService:
                 'forbid_unboxing': False,
             }
 
-            response = self._post(self.CREATE_OFFER_URL, payload)
-            data = response.json()
+            logger.info('[OtherDay] === get_offers payload ===')
+            logger.info('[OtherDay] source: %s', json.dumps(source_point, ensure_ascii=False))
+            logger.info('[OtherDay] destination: %s', json.dumps(destination_point, ensure_ascii=False))
+            logger.info('[OtherDay] last_mile_policy: %s', last_mile_policy)
+            logger.info('[OtherDay] items (converted): %s', json.dumps(other_day_items, ensure_ascii=False))
+            logger.info('[OtherDay] recipient_info: %s', json.dumps(recipient_info, ensure_ascii=False))
+            logger.info('[OtherDay] billing_info: %s', json.dumps(payload['billing_info'], ensure_ascii=False))
+            logger.info('[OtherDay] Full payload: %s', json.dumps(payload, ensure_ascii=False))
 
-            return {
-                'success': True,
-                'offers': data.get('offers', []),
-                'raw': data,
-            }
+            try:
+                create_url = f'{self.platform_base_url}/offers/create'
+                response = self._post(create_url, payload)
+                data = response.json()
+
+                logger.info('[OtherDay] get_offers response: %s', json.dumps(data, ensure_ascii=False)[:2000])
+
+                return {
+                    'success': True,
+                    'offers': data.get('offers', []),
+                    'raw': data,
+                }
+
+            except requests.exceptions.HTTPError as e:
+                logger.error('[OtherDay] HTTP error: %s', e)
+                logger.error('[OtherDay] Response status: %s', e.response.status_code if e.response else 'N/A')
+                logger.error('[OtherDay] Response body: %s', e.response.text[:2000] if e.response else 'N/A')
+                return {'success': False, 'error': f'HTTP {e.response.status_code if e.response else "?"}: {e.response.text[:500] if e.response else str(e)}'}
+            except Exception as e:
+                logger.error('[OtherDay] Unexpected error: %s', e, exc_info=True)
+                return {'success': False, 'error': str(e)}
 
         except requests.exceptions.RequestException as e:
             logger.error('get_offers error: %s', e)
@@ -760,7 +1571,8 @@ class YandexDeliveryService:
 
         try:
             payload = {'offer_id': offer_id}
-            response = self._post(self.CONFIRM_OFFER_URL, payload)
+            confirm_url = f'{self.platform_base_url}/offers/confirm'
+            response = self._post(confirm_url, payload)
             data = response.json()
 
             return {
@@ -787,7 +1599,8 @@ class YandexDeliveryService:
 
         try:
             payload = {'request_id': request_id}
-            response = self._post(self.GET_REQUEST_URL, payload)
+            request_url = f'{self.platform_base_url}/request/info'
+            response = self._post(request_url, payload)
             data = response.json()
 
             return {
@@ -806,6 +1619,7 @@ class YandexDeliveryService:
     # Pickup Points API
     # ----------------------------------------------------------------
 
+    @retry_with_backoff(max_retries=3, base_delay=3)
     def get_pickup_points(self, operator_ids=None, point_type='pickup_point',
                           center_lat=None, center_lon=None, radius_km=50,
                           max_results=500) -> dict:
@@ -844,20 +1658,16 @@ class YandexDeliveryService:
                 'type': point_type,
             }
 
-            headers = {
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {self.token}',
-            }
+            pickup_points_url = f'{self.platform_base_url}/pickup-points/list'
 
-            response = requests.post(
-                self.PICKUP_POINTS_URL,
-                json=payload,
-                headers=headers,
-                timeout=15,
-            )
+            @retry_with_backoff(max_retries=3, base_delay=3)
+            def _fetch_pvz():
+                return self.session.post(pickup_points_url, json=payload, timeout=15)
 
-            if response.status_code == 429:
-                return {'success': False, 'error': 'Слишком много запросов'}
+            try:
+                response = _fetch_pvz()
+            except requests.exceptions.Timeout:
+                return {'success': False, 'error': 'Таймаут запроса к API'}
 
             if response.status_code != 200:
                 logger.error(
@@ -920,6 +1730,7 @@ class YandexDeliveryService:
             logger.error('get_pickup_points unexpected error: %s', e)
             return {'success': False, 'error': 'Внутренняя ошибка'}
 
+    @retry_with_backoff(max_retries=3, base_delay=3)
     def get_postamats(self, operator_ids=None, center_lat=None, center_lon=None,
                       radius_km=50, max_results=500) -> dict:
         """Get postamat (terminal) list from Yandex Delivery API.
@@ -972,32 +1783,16 @@ class YandexDeliveryService:
             'limit': page_size,
         }
 
-        headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.token}',
-        }
+        pickup_points_url = f'{self.platform_base_url}/pickup-points/list'
+
+        @retry_with_backoff(max_retries=3, base_delay=3)
+        def _fetch_page():
+            return self.session.post(pickup_points_url, json=payload, timeout=15)
 
         try:
-            response = requests.post(
-                self.PICKUP_POINTS_URL,
-                json=payload,
-                headers=headers,
-                timeout=15,
-            )
+            response = _fetch_page()
         except requests.exceptions.Timeout:
             return {'success': False, 'error': 'Таймаут запроса к API'}
-
-        if response.status_code == 429:
-            time.sleep(60)
-            try:
-                response = requests.post(
-                    self.PICKUP_POINTS_URL,
-                    json=payload,
-                    headers=headers,
-                    timeout=15,
-                )
-            except requests.exceptions.Timeout:
-                return {'success': False, 'error': 'Таймаут при повторном запросе'}
 
         if response.status_code == 401:
             return {'success': False, 'error': 'Невалидный OAuth-токен'}
@@ -1088,8 +1883,6 @@ class YandexDeliveryService:
         """Build interval_utc dict from datetime objects."""
         if from_dt is None or to_dt is None:
             return {}
-
-        from iso8601 import UnknownTzinfo
 
         result = {}
         if from_dt:

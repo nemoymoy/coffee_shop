@@ -42,6 +42,18 @@
                 {% endif %}
             </div>
             {% endif %}
+            {% if order.delivery_type in 'pickup postamat' and order.delivery_interval_from %}
+            <div class="alert alert-info">
+                <strong>📦 Доставка:</strong>
+                <br>
+                {% if order.delivery_interval_from %}
+                <strong>Дата:</strong> {{ order.delivery_interval_from|date:"d.m.Y" }}
+                {% endif %}
+                {% if order.delivery_interval_from and order.delivery_interval_to %}
+                    <br><strong>Время:</strong> {{ order.delivery_interval_from|date:"H:i" }} – {{ order.delivery_interval_to|date:"H:i" }}
+                {% endif %}
+            </div>
+            {% endif %}
             {% if order.comment %}
             <p><strong>Комментарий:</strong> {{ order.comment }}</p>
             {% endif %}
