@@ -241,7 +241,15 @@ class YandexDeliveryService:
     def _get(self, url):
         """HTTP GET with error handling."""
         response = self.session.get(url, timeout=15)
-        response.raise_for_status()
+        if response.status_code == 429:
+            logger.warning('Rate limited on %s', url)
+            response.raise_for_status()
+        if response.status_code != 200:
+            logger.error(
+                '_get failed %s: status=%s body=%s',
+                url, response.status_code, response.text[:500]
+            )
+            response.raise_for_status()
         return response
 
     # ----------------------------------------------------------------
@@ -1588,6 +1596,8 @@ class YandexDeliveryService:
     def get_request_info(self, request_id: str) -> dict:
         """Get Other Day delivery order status.
 
+        Uses GET with request_id as query parameter (Yandex API requires GET).
+
         Args:
             request_id: The request ID from create_order or confirm_offer
 
@@ -1598,9 +1608,8 @@ class YandexDeliveryService:
             return {'success': False, 'error': 'Яндекс Доставка не настроена'}
 
         try:
-            payload = {'request_id': request_id}
-            request_url = f'{self.platform_base_url}/request/info'
-            response = self._post(request_url, payload)
+            request_url = f'{self.platform_base_url}/request/info?request_id={request_id}'
+            response = self._get(request_url)
             data = response.json()
 
             return {
