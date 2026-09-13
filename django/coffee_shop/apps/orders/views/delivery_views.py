@@ -617,13 +617,13 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
         last_mile_policy = 'self_pickup'
         source_point = {
             'platform_station': {
-                'platform_id': service.pvz_id,
+                'platform_id': service.pickup_station_id,
             },
         }
         destination_point = {
             'type': 'platform_station',
             'platform_station': {
-                'platform_id': pvz_id or service.pvz_id,
+                'platform_id': pvz_id or service.pickup_station_id,
             },
         }
         logger.info('[OtherDay] === PAYLOAD ===')
@@ -649,10 +649,15 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
 
     # Build complete payload
     name_parts = recipient_name.split() if recipient_name else ['', '']
+    phone = recipient_phone or '+79000000000'
+    if not phone.startswith('+'):
+        phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+    # Remove all characters except digits and leading +
+    phone = '+' + ''.join(c for c in phone if c.isdigit())
     recipient_info = {
         'first_name': name_parts[0] if name_parts else 'Клиент',
         'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-        'phone': recipient_phone or '+79000000000',
+        'phone': phone,
         'email': email or '',
     }
 
@@ -873,13 +878,13 @@ def offers_info_view(request):
         if delivery_type in ('pickup', 'postamat'):
             source_point = {
                 'platform_station': {
-                    'platform_id': service.pvz_id,
+                    'platform_id': service.pickup_station_id,
                 },
             }
             destination_point = {
                 'type': 'platform_station',
                 'platform_station': {
-                    'platform_id': pvz_id or service.pvz_id,
+                    'platform_id': pvz_id or service.pickup_station_id,
                 },
             }
         else:
@@ -898,10 +903,15 @@ def offers_info_view(request):
             }
 
         name_parts = (recipient.get('first_name', '') + ' ' + recipient.get('last_name', '')).split()
+        phone = recipient.get('phone', '') or '+79000000000'
+        if not phone.startswith('+'):
+            phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+        # Remove all characters except digits and leading +
+        phone = '+' + ''.join(c for c in phone if c.isdigit())
         recipient_info = {
             'first_name': name_parts[0] if name_parts else 'Клиент',
             'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-            'phone': recipient.get('phone', '') or '+79000000000',
+            'phone': phone,
             'email': recipient.get('email', ''),
         }
 
@@ -943,121 +953,105 @@ def offers_info_view(request):
                 'error': result.get('error', 'Не удалось получить интервалы'),
             }, status=200)
 
-        # Filter offers with valid intervals (delivery_interval.from must exist)
+        # Filter offers with valid intervals (from/to must exist)
+        # API returns offers with delivery_interval.from/to (not min)
         valid_offers = [
             o for o in result.get('offers', [])
-            if o.get('offer_details', {}).get('delivery_interval', {}).get('min')
+            if o.get('offer_details', {}).get('delivery_interval', {}).get('from')
         ]
 
-        if not valid_offers:
-            # No valid intervals — create order via request/create
-            logger.info('[offers_info] No valid intervals, creating order via request/create')
+        logger.info('[offers_info] Total offers from API: %d, valid offers: %d',
+                   len(result.get('offers', [])), len(valid_offers))
 
-            # Build request/create payload
-            request_payload = {
-                'info': {
-                    'operator_request_id': 'request-create-' + str(timezone.now().timestamp()),
-                    'comment': 'Доставка ПВЗ→ПВЗ, ближайшее доступное время',
+        # offers/info не возвращает цену — используем offers/create для получения цены
+        # request/create создаёт заказ, но не содержит цены в ответе
+        logger.info('[offers_info] Using offers/create to get price (offers/info does not include pricing)')
+
+        # Build offers/create payload
+        create_payload = {
+            'info': {
+                'operator_request_id': 'offers-create-' + str(timezone.now().timestamp()),
+                'comment': 'Расчёт стоимости доставки',
+            },
+            'source': {
+                'platform_station': {
+                    'platform_id': service.pickup_station_id,
                 },
-                'source': {
-                    'platform_station': {
-                        'platform_id': service.pvz_id,
-                    },
+            },
+            'destination': {
+                'type': 'platform_station',
+                'platform_station': {
+                    'platform_id': pvz_id or service.pickup_station_id,
                 },
-                'destination': {
-                    'type': 'platform_station',
-                    'platform_station': {
-                        'platform_id': pvz_id or service.pvz_id,
-                    },
-                },
-                'items': other_day_items,
-                'places': other_day_places,
-                'recipient_info': recipient_info,
-                'billing_info': {
-                    'payment_method': 'already_paid',
-                    'delivery_cost': 0,
-                },
-                'last_mile_policy': 'self_pickup',
-            }
+            },
+            'items': other_day_items,
+            'places': other_day_places,
+            'recipient_info': recipient_info,
+            'billing_info': {
+                'payment_method': 'already_paid',
+                'delivery_cost': 0,
+            },
+            'last_mile_policy': 'self_pickup',
+        }
 
-            request_url = f'{service.platform_base_url}/request/create'
-            resp = service._post(request_url, request_payload)
-            created = resp.json()
+        create_url = f'{service.platform_base_url}/offers/create'
+        resp = service._post(create_url, create_payload)
+        created = resp.json()
 
-            request_id = created.get('request_id')
-            if not request_id:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Нет request_id в ответе request/create',
-                }, status=200)
+        logger.info('[offers_info] offers/create response: %s',
+                   json.dumps(created, ensure_ascii=False)[:2000])
 
-            # Poll request/info for price and interval
-            import time
-            order_info = None
-            for attempt in range(10):
-                time.sleep(3)
-                tracking = service.get_request_info(request_id)
-                if not tracking.get('success'):
-                    continue
-                order_info = tracking.get('raw', {})
-                status = order_info.get('status', '')
-                pricing = order_info.get('pricing', {})
-                interval = order_info.get('delivery_interval', {})
-                if pricing.get('total') or interval.get('from') or status == 'failed':
-                    break
-
-            if not order_info:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Не удалось получить данные заказа',
-                }, status=200)
-
-            if order_info.get('status') == 'failed':
-                return JsonResponse({
-                    'success': False,
-                    'error': 'order_failed',
-                    'message': str(order_info.get('error_messages', 'Заказ не создан')),
-                }, status=200)
-
-            # Format result
-            di = order_info.get('delivery_interval', {})
-            d_from = di.get('from')
-            d_to = di.get('to')
-
-            delivery_date = ''
-            delivery_time = ''
-            if d_from:
-                try:
-                    from datetime import datetime as dt_datetime, timedelta as dt_timedelta
-                    tz_local = timezone(dt_timedelta(hours=4))
-                    dt_from = dt_datetime.fromisoformat(
-                        d_from.replace('Z', '+00:00')
-                    ).astimezone(tz_local)
-                    delivery_date = dt_from.strftime('%d.%m.%Y')
-                    if d_to:
-                        dt_to = dt_datetime.fromisoformat(
-                            d_to.replace('Z', '+00:00')
-                        ).astimezone(tz_local)
-                        delivery_time = (
-                            f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                        )
-                    else:
-                        delivery_time = dt_from.strftime('%H:%M')
-                except Exception as e:
-                    logger.warning('[offers_info] Failed to parse interval: %s', e)
-
-            pricing = order_info.get('pricing', {})
-            price_total = pricing.get('total', '0')
-
+        offers = created.get('offers', [])
+        if not offers:
             return JsonResponse({
-                'success': True,
-                'created': True,
-                'request_id': request_id,
-                'price': price_total,
-                'delivery_date': delivery_date,
-                'delivery_time': delivery_time,
-                'status': order_info.get('status'),
-            })
+                'success': False,
+                'error': 'Нет доступных интервалов доставки',
+            }, status=200)
+
+        # Берём первый оффер (ближайшее время)
+        offer = offers[0]
+        offer_details = offer.get('offer_details', {})
+        pricing_raw = offer_details.get('pricing', '0')
+
+        # Parse price from string "161.65 RUB"
+        try:
+            price_value = float(pricing_raw.split()[0]) if isinstance(pricing_raw, str) else float(pricing_raw)
+        except (ValueError, IndexError, TypeError):
+            price_value = 0
+
+        logger.info('[offers_info] Price from offers/create: %s', price_value)
+
+        # Форматируем интервал
+        interval = offer_details.get('delivery_interval', {})
+        interval_min = interval.get('min', '')
+        interval_max = interval.get('max', '')
+        delivery_date = ''
+        delivery_time = ''
+        if interval_min and interval_max:
+            try:
+                from datetime import datetime as dt_datetime, timedelta as dt_timedelta
+                tz_local = timezone(dt_timedelta(hours=4))
+                dt_from = dt_datetime.fromisoformat(
+                    interval_min.replace('Z', '+00:00')
+                ).astimezone(tz_local)
+                dt_to = dt_datetime.fromisoformat(
+                    interval_max.replace('Z', '+00:00')
+                ).astimezone(tz_local)
+                delivery_date = dt_from.strftime('%d.%m.%Y')
+                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+            except Exception as e:
+                logger.warning('[offers_info] Failed to parse interval: %s', e)
+
+        return JsonResponse({
+            'success': True,
+            'created': True,
+            'request_id': offer.get('offer_id', ''),
+            'price': str(price_value),
+            'delivery_date': delivery_date,
+            'delivery_time': delivery_time,
+            'status': 'pending',
+            'offer_id': offer.get('offer_id', ''),
+        })
 
         # Valid offers exist — format and return them
         formatted_offers = []

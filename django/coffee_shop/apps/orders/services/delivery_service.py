@@ -610,6 +610,8 @@ class YandexDeliveryService:
         phone = recipient_phone or '+79000000000'
         if not phone.startswith('+'):
             phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+        # Remove all characters except digits and leading +
+        phone = '+' + ''.join(c for c in phone if c.isdigit())
         recipient_info = {
             'first_name': name_parts[0] if name_parts else '',
             'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
@@ -648,11 +650,11 @@ class YandexDeliveryService:
         if delivery_type in ('pickup', 'postamat'):
             last_mile_policy = 'self_pickup'
             source_point = {
-                'platform_station_id': self.pvz_id,
+                'platform_station_id': self.pickup_station_id,
             }
             destination_point = {
                 'type': 'platform_station',
-                'platform_station_id': pvz_id or self.pvz_id,
+                'platform_station_id': pvz_id or self.pickup_station_id,
             }
         else:
             last_mile_policy = 'time_interval'
@@ -773,7 +775,7 @@ class YandexDeliveryService:
             logger.error('get_offers_info error: %s', e)
             return {'success': False, 'error': str(e)}
 
-    def create_order(self, items, client_order_id, destination_coords,
+    def create_order(self, items, places, client_order_id, destination_coords,
                      destination_address, delivery_type='courier', pvz_id=None,
                      recipient_name='', recipient_phone='', email='',
                      delivery_interval_from=None, delivery_interval_to=None,
@@ -816,7 +818,7 @@ class YandexDeliveryService:
         # Only the PVZ/postamat flow uses offers/info → offers/create → request/info
         if delivery_type not in ('pickup', 'postamat'):
             return self._create_order_courier(
-                items, client_order_id, destination_coords, destination_address,
+                items, places, client_order_id, destination_coords, destination_address,
                 delivery_type, pvz_id, recipient_name, recipient_phone, email,
                 delivery_interval_from, delivery_interval_to, delivery_cost,
                 payment_method,
@@ -843,14 +845,17 @@ class YandexDeliveryService:
 
             # Build items and places
             api_items, api_places = self._build_items_for_other_day(
-                items, delivery_type, pvz_id
+                items, places, delivery_type, pvz_id
             )
 
             # Recipient info
             name_parts = recipient_name.split() if recipient_name else ['', '']
             phone = recipient_phone or '+79000000000'
+            # Normalize phone: remove all non-digit chars except leading +
             if not phone.startswith('+'):
                 phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+            # Remove all characters except digits and leading +
+            phone = '+' + ''.join(c for c in phone if c.isdigit())
             recipient_info = {
                 'first_name': name_parts[0] if name_parts else '',
                 'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
@@ -860,10 +865,13 @@ class YandexDeliveryService:
 
             # ── Step 1: offers/info — check available intervals ────────
             logger.info('[OtherDay] === create_order: offers/info ===')
+            logger.info('[OtherDay] api_items: %s', json.dumps(api_items, ensure_ascii=False)[:1000])
+            logger.info('[OtherDay] api_places: %s', json.dumps(api_places, ensure_ascii=False)[:1000])
             info_body = {
                 'info': {'operator_request_id': str(client_order_id)},
                 'source': {'platform_station_id': self.pickup_station_id},
                 'destination': {'platform_station_id': source_pvz_id},
+                'items': api_items,
                 'places': api_places,
                 'last_mile_policy': 'self_pickup',
             }
@@ -967,29 +975,60 @@ class YandexDeliveryService:
 
             # ── Step 2b: No offers → request/create ─────────────────────
             else:
-                logger.info('[OtherDay] No intervals available. '
-                           'Creating request for nearest time (request/create)...')
+                logger.info('[OtherDay] No valid offers. Creating request for nearest time (request/create)...')
+
+                logger.info('[OtherDay] api_items: %s', json.dumps(api_items, ensure_ascii=False)[:500])
+                logger.info('[OtherDay] api_places: %s', json.dumps(api_places, ensure_ascii=False)[:500])
+
+                # Use nearest interval from offers/info response
+                nearest_offer = info_data.get('offers', [{}])[0] if info_data.get('offers') else {}
+                delivery_from = nearest_offer.get('from', '')
+                delivery_to = nearest_offer.get('to', '')
+
+                logger.info('[OtherDay] request/create will be created without interval_utc')
+                logger.info('[OtherDay] System will auto-select nearest available interval')
 
                 request_body = {
                     'info': {
                         'operator_request_id': str(client_order_id),
                         'comment': 'Доставка ПВЗ→ПВЗ, ближайшее доступное время',
                     },
-                    'source': common_source,
-                    'destination': common_destination,
+                    'source': {
+                        **common_source,
+                    },
+                    'destination': {
+                        **common_destination,
+                    },
                     'items': api_items,
                     'places': api_places,
                     'recipient_info': recipient_info,
                     'billing_info': common_billing,
                     'last_mile_policy': 'self_pickup',
+                    'particular_items_refuse': False,
+                    'forbid_unboxing': False,
                 }
 
-                request_create_url = f'{self.platform_base_url}/request/create'
-                resp = self._post(request_create_url, request_body)
-                created = resp.json()
+                logger.info('[OtherDay] request/create body: %s', json.dumps(request_body, ensure_ascii=False)[:2000])
 
-                logger.info('[OtherDay] request/create response: %s',
-                           json.dumps(created, ensure_ascii=False)[:1000])
+                request_create_url = f'{self.platform_base_url}/request/create'
+                logger.info('[OtherDay] request/create URL: %s', request_create_url)
+                logger.info('[OtherDay] request/create FULL BODY: %s', json.dumps(request_body, ensure_ascii=False))
+                try:
+                    resp = self._post(request_create_url, request_body)
+                    created = resp.json()
+                    logger.info('[OtherDay] request/create response: %s',
+                               json.dumps(created, ensure_ascii=False)[:2000])
+                except requests.exceptions.HTTPError as e:
+                    error_body = e.response.text if e.response else 'N/A'
+                    logger.error('[OtherDay] request/create HTTP error: %s status=%s',
+                               error_body, e.response.status_code if e.response else 'N/A')
+                    logger.error('[OtherDay] request/create FULL BODY that caused error: %s',
+                               json.dumps(request_body, ensure_ascii=False))
+                    return {
+                        'success': False,
+                        'error': f'Yandex API error: {error_body}',
+                        'request_body': request_body,
+                    }
 
                 request_id = created.get('request_id')
                 method_used = 'request'
@@ -1018,12 +1057,12 @@ class YandexDeliveryService:
 
                 order_info = tracking_info.get('raw', {})
                 status = order_info.get('status', '')
-                pricing = order_info.get('pricing', {})
-                interval = order_info.get('delivery_interval', {})
+                pricing = order_info.get('pricing') or {}
+                interval = order_info.get('delivery_interval') or {}
 
-                # Wait until price appears, interval appears, or order failed
-                if (pricing.get('total') or interval.get('from') or
-                        status == 'failed'):
+                # Wait until price appears (not None), interval appears, or order failed
+                has_price = pricing.get('total') is not None
+                if has_price or interval.get('from') or status == 'failed':
                     has_price_or_interval = True
                     break
                 logger.info('[OtherDay]   attempt %d: status=%s, waiting...',
@@ -1072,9 +1111,52 @@ class YandexDeliveryService:
                 except Exception as e:
                     logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
 
-            pricing = order_info.get('pricing', {})
-            price_total = pricing.get('total', 'N/A')
+            pricing = order_info.get('pricing') or {}
+            price_total = pricing.get('total')
             currency = pricing.get('currency', 'RUB')
+
+            logger.info('[OtherDay] pricing object: %s', json.dumps(pricing, ensure_ascii=False)[:500])
+
+            # Если цена не в pricing.total, ищем в других полях
+            if price_total is None or price_total == 0 or price_total == '0':
+                # Path 1: pricing.cost.value
+                cost = pricing.get('cost') or {}
+                if isinstance(cost, dict):
+                    price_total = cost.get('value') or cost.get('total')
+                    logger.info('[OtherDay] Found price in pricing.cost: %s', price_total)
+
+                # Path 2: pricing.total_cost
+                if price_total is None or price_total in (0, '0'):
+                    price_total = pricing.get('total_cost')
+                    logger.info('[OtherDay] Found price in pricing.total_cost: %s', price_total)
+
+                # Path 3: order.pricing.total (вложенный order)
+                if price_total is None or price_total in (0, '0'):
+                    inner_order = order_info.get('order', {})
+                    if isinstance(inner_order, dict):
+                        inner_pricing = inner_order.get('pricing') or {}
+                        price_total = inner_pricing.get('total')
+                        logger.info('[OtherDay] Found price in order.pricing.total: %s', price_total)
+
+                # Path 4: order.cost.value
+                if price_total is None or price_total in (0, '0'):
+                    inner_order = order_info.get('order', {})
+                    if isinstance(inner_order, dict):
+                        cost = inner_order.get('cost') or {}
+                        if isinstance(cost, dict):
+                            price_total = cost.get('value') or cost.get('total')
+                            logger.info('[OtherDay] Found price in order.cost: %s', price_total)
+
+            # Конвертируем в строку для JSON
+            if price_total is None:
+                price_total = 'N/A'
+            else:
+                try:
+                    price_total = str(float(price_total))
+                except (ValueError, TypeError):
+                    price_total = str(price_total)
+
+            logger.info('[OtherDay] Final price_total: %s', price_total)
 
             return {
                 'success': True,
@@ -1094,7 +1176,7 @@ class YandexDeliveryService:
             logger.error('create_order error: %s', e)
             return {'success': False, 'error': str(e)}
 
-    def _create_order_courier(self, items, client_order_id, destination_coords,
+    def _create_order_courier(self, items, places, client_order_id, destination_coords,
                               destination_address, delivery_type, pvz_id,
                               recipient_name, recipient_phone, email,
                               delivery_interval_from, delivery_interval_to,
@@ -1126,7 +1208,7 @@ class YandexDeliveryService:
 
             # Build items and places from OrderItem data
             api_items, api_places = self._build_items_for_other_day(
-                items, delivery_type, pvz_id
+                items, places, delivery_type, pvz_id
             )
 
             payload = self._build_other_day_payload(
@@ -1218,11 +1300,17 @@ class YandexDeliveryService:
             logger.error('_create_order_courier error: %s', e)
             return {'success': False, 'error': str(e)}
 
-    def _build_items_for_other_day(self, items, delivery_type, pvz_id):
+    def _build_items_for_other_day(self, items, places, delivery_type, pvz_id):
         """Build items and places for Other Day API from pre-built data.
 
         Items and places should already be in Other Day format from the caller.
         This method ensures proper structure with billing_details.
+
+        Args:
+            items: List of item dicts (Other Day format)
+            places: List of place dicts (Other Day format)
+            delivery_type: 'courier' | 'pickup' | 'postamat'
+            pvz_id: PVZ platform_id
 
         Returns:
             (items_list, places_list) tuple
@@ -1230,12 +1318,10 @@ class YandexDeliveryService:
         if not items:
             return [], []
 
-        # Items and places are already in Other Day format from _build_items_payload
-        # Just ensure they have required fields
+        # Ensure items have billing_details
         inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
         nds = 20  # НДС 20%
 
-        # Ensure items have billing_details
         for item in items:
             if 'billing_details' not in item:
                 item['billing_details'] = {
@@ -1243,15 +1329,18 @@ class YandexDeliveryService:
                     'nds': nds,
                 }
 
-        # Ensure places have billing_details and proper structure
-        for place in items:  # places are derived from items
+        # Ensure places have proper structure
+        for place in places:
+            if 'barcode' not in place:
+                place['barcode'] = place.get('place_barcode', 'BOX-001')
+            # Ensure place has billing_details
             if 'billing_details' not in place:
                 place['billing_details'] = {
                     'inn': inn,
                     'nds': nds,
                 }
 
-        return items, items
+        return items, places
 
     def _build_items_payload_for_other_day(self, order_items, pvz_id=None):
         """Build items and places for Other Day API from OrderItem queryset.
@@ -1276,15 +1365,16 @@ class YandexDeliveryService:
                 product_names.append(item.product.name)
 
         # Select ONE package for total weight
+        # API requires dimensions in centimeters
         try:
             package = Package.for_weight(total_weight_grams)
             size = {
-                'dx': int(float(package.length) * 1000),
-                'dy': int(float(package.width) * 1000),
-                'dz': int(float(package.height) * 1000),
+                'dx': int(float(package.length) * 100),  # meters to cm
+                'dy': int(float(package.width) * 100),   # meters to cm
+                'dz': int(float(package.height) * 100),  # meters to cm
             }
         except Package.DoesNotExist:
-            size = {'dx': 120, 'dy': 60, 'dz': 60}
+            size = {'dx': 12, 'dy': 6, 'dz': 6}  # cm
 
         product_name = product_names[0] if product_names else 'Кофе'
         inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
@@ -1301,12 +1391,16 @@ class YandexDeliveryService:
         unit_price_kopecks = total_price_kopecks // total_quantity if total_quantity > 0 else 150000
 
         # Common barcode — MUST match between items.place_barcode and places.barcode
-        place_barcode = f'BOX-{order_items.first().pk if order_items.first() else "001"}'
+        first_item = order_items[0] if hasattr(order_items, '__getitem__') else order_items.first()
+        place_barcode = f'BOX-{first_item.pk if first_item else "001"}'
+
+        # Вес с учётом тары (в кг) — как в Express API
+        total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
 
         items = [{
             'count': total_quantity,
             'name': product_name,
-            'article': f'COFFEE-{order_items.first().pk if order_items.first() else "001"}',
+            'article': f'COFFEE-{first_item.pk if first_item else "001"}',
             'billing_details': {
                 'unit_price': unit_price_kopecks,
                 'assessed_unit_price': unit_price_kopecks,
@@ -1315,13 +1409,15 @@ class YandexDeliveryService:
             },
             'physical_dims': size,
             'place_barcode': place_barcode,
+            'weight': round(total_weight_kg, 3),
         }]
 
+        # weight_gross — суммарный вес посылки (все товары + тара) в граммах
         places = [{
             'barcode': place_barcode,
             'physical_dims': {
                 **size,
-                'weight_gross': total_weight_grams + int(float(package.tare_weight) * 1000),  # product + package tare
+                'weight_gross': total_weight_grams + int(float(package.tare_weight) * 1000),
             },
         }]
 
@@ -1611,6 +1707,9 @@ class YandexDeliveryService:
             request_url = f'{self.platform_base_url}/request/info?request_id={request_id}'
             response = self._get(request_url)
             data = response.json()
+
+            logger.info('[OtherDay] request/info full response for %s: %s',
+                       request_id, json.dumps(data, ensure_ascii=False)[:3000])
 
             return {
                 'success': True,

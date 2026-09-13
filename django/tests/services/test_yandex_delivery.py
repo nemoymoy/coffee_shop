@@ -1,26 +1,21 @@
-"""Tests for YandexDeliveryService (Cargo API)."""
+"""Tests for YandexDeliveryService (Other Day API)."""
 import pytest
 from unittest.mock import patch, MagicMock
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
-from coffee_shop.apps.orders.models import Order, OrderItem
+from coffee_shop.apps.orders.models import Order, OrderItem, Package
 
 
 pytestmark = pytest.mark.django_db
 
 
 class TestYandexDeliveryService:
-    """Tests for Yandex Cargo Delivery Service."""
+    """Tests for Yandex Delivery Service."""
 
-    def test_is_not_configured_no_token(self):
+    def test_is_not_configured_no_token(self, settings):
         # Without token — not configured
-        with patch('coffee_shop.apps.orders.services.delivery_service.settings', **{
-            'YANDEX_DELIVERY_TOKEN': '',
-            'YANDEX_SHOP_LAT': 53.1960,
-            'YANDEX_SHOP_LON': 49.3782,
-            'YANDEX_SHOP_ADDRESS': 'Test address',
-        }):
-            service = YandexDeliveryService()
-            assert service.is_configured() is False
+        settings.YANDEX_DELIVERY_TOKEN = ''
+        service = YandexDeliveryService()
+        assert service.is_configured() is False
 
     def test_is_configured_with_valid_token(self, settings):
         # With valid token — configured
@@ -40,130 +35,64 @@ class TestYandexDeliveryService:
         service = YandexDeliveryService()
         assert service.is_configured() is False
 
-    @patch.object(YandexDeliveryService, 'is_configured')
-    def test_calculate_price_not_configured(self, mock_is_configured):
+    def test_get_offers_info_not_configured(self):
         # Not configured — should return error without making API call
-        mock_is_configured.return_value = False
-        service = YandexDeliveryService()
-        result = service.calculate_price(
-            items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}}],
-            destination_coords=[49.35, 53.21],
-            destination_address='Test address',
-            delivery_type='courier',
-        )
-        assert result['success'] is False
-        assert 'not configured' in result['error'].lower() or 'не настроена' in result['error'].lower()
+        with patch.object(YandexDeliveryService, 'is_configured', return_value=False):
+            service = YandexDeliveryService()
+            result = service.get_offers_info(
+                items_data=[],
+                places_data=[],
+                client_order_id='test-123',
+                destination_coords=[49.35, 53.21],
+                destination_address='Test address',
+                delivery_type='courier',
+            )
+            assert result['success'] is False
+            assert 'not configured' in result['error'].lower() or 'не настроена' in result['error'].lower()
 
-    @patch.object(YandexDeliveryService, 'is_configured')
-    def test_get_order_status_not_configured(self, mock_is_configured):
+    def test_get_request_info_not_configured(self):
         # Not configured — should return error
-        mock_is_configured.return_value = False
-        service = YandexDeliveryService()
-        result = service.get_order_status('cargo-order-123')
-        assert result['success'] is False
+        with patch.object(YandexDeliveryService, 'is_configured', return_value=False):
+            service = YandexDeliveryService()
+            result = service.get_request_info('request-123')
+            assert result['success'] is False
 
-    def test_calculate_price_success(self, settings):
-        # Test successful price calculation with mocked session
+    def test_get_offers_info_success(self, settings):
+        # Test offers/info with mocked session
         settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            'price': '350.00',
-            'currency_rules': {'currency': 'RUB'},
-            'delivery_days': 2,
+            'offers': [
+                {
+                    'offer_id': 'offer-123',
+                    'delivery_interval': {'from': '2026-09-15T10:00:00Z', 'to': '2026-09-15T14:00:00Z'},
+                }
+            ],
         }
         mock_response.status_code = 200
 
         with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
             service = YandexDeliveryService()
             service.session.post = MagicMock(return_value=mock_response)
-            result = service.calculate_price(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}}],
+            result = service.get_offers_info(
+                items_data=[{'count': 1, 'name': 'Coffee'}],
+                places_data=[{'barcode': 'BOX-001'}],
+                client_order_id='test-123',
                 destination_coords=[49.35, 53.21],
                 destination_address='Test address',
                 delivery_type='courier',
             )
 
         assert result['success'] is True
-        assert result['price'] == '350.00'
-        assert result['delivery_days'] == 2
+        assert len(result['offers']) == 1
+        assert result['offers'][0]['offer_id'] == 'offer-123'
 
-    def test_calculate_price_pickup_type(self, settings):
-        # Test pickup delivery type
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'price': '250.00',
-            'currency_rules': {'currency': 'RUB'},
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.calculate_price(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}}],
-                destination_coords=[49.35, 53.21],
-                destination_address='PVZ address',
-                delivery_type='pickup',
-            )
-
-        assert result['success'] is True
-
-    def test_create_order_success(self, settings):
-        # Test order creation
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'id': 'cargo-order-123',
-            'tracking_number': 'YA-TRACK-456',
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.create_order(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}, 'title': 'Coffee'}],
-                client_order_id='shop-order-789',
-                destination_coords=[49.35, 53.21],
-                destination_address='Delivery address',
-                delivery_type='courier',
-            )
-
-        assert result['success'] is True
-        assert result['order_id'] == 'cargo-order-123'
-        assert result['tracking_number'] == 'YA-TRACK-456'
-
-    def test_create_order_with_pvz_id(self, settings):
-        # Test order creation with PVZ ID
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'id': 'cargo-order-456',
-            'tracking_number': 'YA-TRACK-789',
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.create_order(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}, 'title': 'Coffee'}],
-                client_order_id='shop-order-999',
-                destination_coords=[49.35, 53.21],
-                destination_address='PVZ address',
-                delivery_type='pickup',
-                pvz_id='pvz-12345',
-            )
-
-        assert result['success'] is True
-
-    def test_get_order_status_success(self, settings):
+    def test_get_request_info_success(self, settings):
         # Test status retrieval
         settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            'status': 'in_transit',
+            'status': 'in_work',
             'tracking_number': 'YA-TRACK-001',
         }
         mock_response.status_code = 200
@@ -171,16 +100,14 @@ class TestYandexDeliveryService:
         with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
             service = YandexDeliveryService()
             service.session.get = MagicMock(return_value=mock_response)
-            result = service.get_order_status('cargo-order-123')
+            result = service.get_request_info('request-123')
 
         assert result['success'] is True
-        assert result['status'] == 'in_transit'
+        assert result['status'] == 'in_work'
         assert result['tracking_number'] == 'YA-TRACK-001'
 
-    def test_build_items_payload_with_package(self, coffee_beans, user):
-        # Test building items payload from OrderItem with package
-        from coffee_shop.apps.orders.models import Package
-        
+    def test_build_items_payload_for_other_day_with_package(self, coffee_beans, user):
+        # Test building items and places from OrderItem with package
         package, created = Package.objects.get_or_create(
             weight_range='medium',
             defaults={
@@ -211,182 +138,24 @@ class TestYandexDeliveryService:
         )
 
         service = YandexDeliveryService()
-        items = service.build_items_payload([order_item])
+        items, places = service._build_items_payload_for_other_day([order_item])
 
         assert len(items) == 1
-        assert items[0]['quantity'] == order_item.quantity
-        assert items[0]['title'] == order_item.product.name
+        assert items[0]['count'] == order_item.quantity
+        assert items[0]['name'] == order_item.product.name
         # Вес = вес товара (0.25 кг) + вес тары (0.050 кг)
         assert items[0]['weight'] == pytest.approx(0.30, abs=0.001)
-        assert items[0]['size'] == {
-            'length': 0.20,
-            'width': 0.12,
-            'height': 0.12,
+        assert items[0]['physical_dims'] == {
+            'dx': 20,  # cm (0.20m * 100)
+            'dy': 12,  # cm (0.12m * 100)
+            'dz': 12,  # cm (0.12m * 100)
         }
+        # Places should have weight_gross
+        assert len(places) == 1
+        assert places[0]['physical_dims']['weight_gross'] == 250 + 50  # 250g product + 50g tare
 
-    def test_get_origin_point_pickup_uses_pvz(self, settings):
-        # Test that pickup delivery type uses PVZ coordinates
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        settings.YANDEX_PVZ_ID = 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
-        settings.YANDEX_PVZ_LAT = 53.200850
-        settings.YANDEX_PVZ_LON = 50.150500
-        settings.YANDEX_PVZ_ADDRESS = 'г. Самара, ул. Лукачева, д. 6'
-
-        service = YandexDeliveryService()
-        origin_lon, origin_lat, origin_address = service._get_origin_point('pickup')
-
-        assert origin_lat == 53.200850
-        assert origin_lon == 50.150500
-        assert origin_address == 'г. Самара, ул. Лукачева, д. 6'
-
-    def test_get_origin_point_courier_uses_shop(self, settings):
-        # Test that courier delivery type uses shop coordinates
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        settings.YANDEX_SHOP_LAT = 53.216940239129094
-        settings.YANDEX_SHOP_LON = 50.162688008923745
-        settings.YANDEX_SHOP_ADDRESS = 'Самара, ул. Революционная, д. 3'
-
-        service = YandexDeliveryService()
-        origin_lon, origin_lat, origin_address = service._get_origin_point('courier')
-
-        assert origin_lat == 53.216940239129094
-        assert origin_lon == 50.162688008923745
-        assert origin_address == 'Самара, ул. Революционная, д. 3'
-
-    def test_calculate_price_pickup_uses_pvz_origin(self, settings):
-        # Test that pickup delivery type sends PVZ coordinates as origin
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        settings.YANDEX_PVZ_ID = 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
-        settings.YANDEX_PVZ_LAT = 53.200850
-        settings.YANDEX_PVZ_LON = 50.150500
-        settings.YANDEX_PVZ_ADDRESS = 'г. Самара, ул. Лукачева, д. 6'
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'price': '250.00',
-            'currency_rules': {'currency': 'RUB'},
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.calculate_price(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}}],
-                destination_coords=[49.35, 53.21],
-                destination_address='Delivery address',
-                delivery_type='pickup',
-            )
-
-        assert result['success'] is True
-        # Verify the payload sent to the API
-        call_args = service.session.post.call_args
-        payload = call_args.kwargs['json']
-        route_points = payload['route_points']
-        # First route point (origin) should be PVZ coordinates
-        assert route_points[0]['coordinates'] == [50.150500, 53.200850]
-        assert route_points[0]['fullname'] == 'г. Самара, ул. Лукачева, д. 6'
-        # Second route point (destination) should be the destination
-        assert route_points[1]['coordinates'] == [49.35, 53.21]
-
-    def test_create_order_pickup_uses_pvz_origin_and_pvz_id(self, settings):
-        # Test that pickup delivery type uses PVZ as origin and includes pvz_id
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        settings.YANDEX_PVZ_ID = 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
-        settings.YANDEX_PVZ_LAT = 53.200850
-        settings.YANDEX_PVZ_LON = 50.150500
-        settings.YANDEX_PVZ_ADDRESS = 'г. Самара, ул. Лукачева, д. 6'
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'id': 'cargo-order-pvz',
-            'tracking_number': 'YA-TRACK-PVZ',
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.create_order(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}, 'title': 'Coffee'}],
-                client_order_id='shop-order-pvz',
-                destination_coords=[49.35, 53.21],
-                destination_address='PVZ address',
-                delivery_type='pickup',
-                pvz_id='d0222b1e-73ff-4274-9c68-42c79d4c7eae',
-            )
-
-        assert result['success'] is True
-        # Verify the payload sent to the API
-        call_args = service.session.post.call_args
-        payload = call_args.kwargs['json']
-        route_points = payload['route_points']
-        # First route point (origin) should be PVZ coordinates
-        assert route_points[0]['coordinates'] == [50.150500, 53.200850]
-        assert route_points[0]['address'] == 'г. Самара, ул. Лукачева, д. 6'
-        # Second route point (dropoff) should include pvz_id
-        assert route_points[1]['type'] == 'dropoff'
-        assert route_points[1]['pvz_id'] == 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
-
-    def test_create_order_courier_uses_shop_origin(self, settings):
-        # Test that courier delivery type uses shop coordinates as origin
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        settings.YANDEX_SHOP_LAT = 53.216940239129094
-        settings.YANDEX_SHOP_LON = 50.162688008923745
-        settings.YANDEX_SHOP_ADDRESS = 'Самара, ул. Революционная, д. 3'
-
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            'id': 'cargo-order-courier',
-            'tracking_number': 'YA-TRACK-COURIER',
-        }
-        mock_response.status_code = 200
-
-        with patch.object(YandexDeliveryService, 'is_configured', return_value=True):
-            service = YandexDeliveryService()
-            service.session.post = MagicMock(return_value=mock_response)
-            result = service.create_order(
-                items=[{'quantity': 1, 'weight': 0.5, 'size': {'length': 0.3, 'width': 0.2, 'height': 0.1}, 'title': 'Coffee'}],
-                client_order_id='shop-order-courier',
-                destination_coords=[49.35, 53.21],
-                destination_address='Delivery address',
-                delivery_type='courier',
-            )
-
-        assert result['success'] is True
-        # Verify the payload sent to the API
-        call_args = service.session.post.call_args
-        payload = call_args.kwargs['json']
-        route_points = payload['route_points']
-        # First route point (origin) should be shop coordinates
-        assert route_points[0]['coordinates'] == [50.162688008923745, 53.216940239129094]
-        assert route_points[0]['address'] == 'Самара, ул. Революционная, д. 3'
-        # Second route point (dropoff) should be the delivery address
-        assert route_points[1]['type'] == 'dropoff'
-        assert route_points[1]['address'] == 'Delivery address'
-
-    def test_pvz_config_defaults(self, settings):
-        # Test that PVZ config has correct default values
-        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
-        # Remove custom PVZ settings to test defaults
-        if hasattr(settings, 'YANDEX_PVZ_ID'):
-            delattr(settings, 'YANDEX_PVZ_ID')
-        if hasattr(settings, 'YANDEX_PVZ_LAT'):
-            delattr(settings, 'YANDEX_PVZ_LAT')
-        if hasattr(settings, 'YANDEX_PVZ_LON'):
-            delattr(settings, 'YANDEX_PVZ_LON')
-        if hasattr(settings, 'YANDEX_PVZ_ADDRESS'):
-            delattr(settings, 'YANDEX_PVZ_ADDRESS')
-
-        service = YandexDeliveryService()
-        assert service.pvz_id == 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
-        assert service.pvz_lat == 53.200850
-        assert service.pvz_lon == 50.150500
-        assert service.pvz_address == 'г. Самара, ул. Лукачева, д. 6'
-
-    def test_build_items_payload_without_package(self, coffee_beans, user):
+    def test_build_items_payload_for_other_day_without_package(self, coffee_beans, user):
         # Test building items payload without package
-        
         order = Order.objects.create(
             user=user,
             first_name='Test',
@@ -407,13 +176,111 @@ class TestYandexDeliveryService:
         )
 
         service = YandexDeliveryService()
-        items = service.build_items_payload([order_item])
+        items, places = service._build_items_payload_for_other_day([order_item])
 
         assert len(items) == 1
         # weight_grams=0, Package.for_weight(0) returns 'light' (tare=0.023kg)
         # weight_kg=0.0 + tare=0.023 = 0.023
         assert items[0]['weight'] == pytest.approx(0.023, abs=0.001)
-        assert items[0]['size']['length'] == pytest.approx(0.12, abs=0.001)
+        assert items[0]['physical_dims']['dx'] == pytest.approx(12, abs=1)  # cm
+
+    def test_build_source_destination_pickup_uses_pickup_station(self, settings):
+        # Test that pickup delivery type uses pickup_station_id as source
+        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
+        settings.YANDEX_PICKUP_STATION_ID = 'pickup-station-123'
+
+        service = YandexDeliveryService()
+        source, destination, policy = service._build_source_destination('pickup', pvz_id='pvz-user-selected')
+
+        assert source == {'platform_station_id': 'pickup-station-123'}
+        assert destination == {
+            'type': 'platform_station',
+            'platform_station_id': 'pvz-user-selected',
+        }
+        assert policy == 'self_pickup'
+
+    def test_build_source_destination_pickup_fallback_to_pickup_station(self, settings):
+        # Test that pickup uses pickup_station_id as fallback when pvz_id not provided
+        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
+        settings.YANDEX_PICKUP_STATION_ID = 'pickup-station-123'
+
+        service = YandexDeliveryService()
+        source, destination, policy = service._build_source_destination('pickup', pvz_id=None)
+
+        assert source == {'platform_station_id': 'pickup-station-123'}
+        assert destination == {
+            'type': 'platform_station',
+            'platform_station_id': 'pickup-station-123',
+        }
+
+    def test_build_source_destination_courier_uses_warehouse(self):
+        # Test that courier delivery type uses test_warehouse_id as source
+        from django.conf import settings as django_settings
+        from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
+
+        django_settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
+        django_settings.YANDEX_DELIVERY_TEST_MODE = True
+        django_settings.YANDEX_DELIVERY_TEST_WAREHOUSE_ID = 'warehouse-456'
+
+        # Create fresh service to pick up new settings
+        service = YandexDeliveryService()
+        source, destination, policy = service._build_source_destination('courier', pvz_id=None)
+
+        assert source == {'platform_station_id': 'warehouse-456'}
+        assert destination is None
+        assert policy == 'time_interval'
+
+    def test_build_items_for_other_day_preserves_places(self):
+        # Test that _build_items_for_other_day preserves separate items and places
+        items = [
+            {
+                'count': 2,
+                'name': 'Coffee',
+                'weight': 0.3,
+                'place_barcode': 'BOX-001',
+            }
+        ]
+        places = [
+            {
+                'barcode': 'BOX-001',
+                'physical_dims': {'weight_gross': 350},
+            }
+        ]
+
+        service = YandexDeliveryService()
+        result_items, result_places = service._build_items_for_other_day(
+            items, places, 'pickup', None
+        )
+
+        assert len(result_items) == 1
+        assert len(result_places) == 1
+        # Items should have billing_details added
+        assert 'billing_details' in result_items[0]
+        # Places should retain their own structure
+        assert result_places[0]['physical_dims']['weight_gross'] == 350
+        # Places should NOT have items fields mixed in
+        assert 'weight' not in result_places[0]
+
+    def test_pvz_config_defaults(self, settings):
+        # Test that PVZ config has correct default values
+        settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
+        # Remove custom PVZ settings to test defaults
+        if hasattr(settings, 'YANDEX_PVZ_ID'):
+            delattr(settings, 'YANDEX_PVZ_ID')
+        if hasattr(settings, 'YANDEX_PVZ_LAT'):
+            delattr(settings, 'YANDEX_PVZ_LAT')
+        if hasattr(settings, 'YANDEX_PVZ_LON'):
+            delattr(settings, 'YANDEX_PVZ_LON')
+        if hasattr(settings, 'YANDEX_PVZ_ADDRESS'):
+            delattr(settings, 'YANDEX_PVZ_ADDRESS')
+
+        service = YandexDeliveryService()
+        assert service.pvz_id == 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
+        assert service.pvz_lat == 53.200850
+        assert service.pvz_lon == 50.150500
+        assert service.pvz_address == 'г. Самара, ул. Лукачева, д. 6'
+        # pickup_station_id should also be available
+        assert service.pickup_station_id == 'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
 
 
 class TestRateLimiting:
@@ -423,3 +290,8 @@ class TestRateLimiting:
         # Verify decorator is importable
         from coffee_shop.apps.orders.services.delivery_service import rate_limited
         assert callable(rate_limited)
+
+    def test_retry_with_backoff_decorator_exists(self):
+        # Verify decorator is importable
+        from coffee_shop.apps.orders.services.delivery_service import retry_with_backoff
+        assert callable(retry_with_backoff)

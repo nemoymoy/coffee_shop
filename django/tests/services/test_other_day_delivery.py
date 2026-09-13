@@ -31,9 +31,9 @@ class TestOtherDayDeliveryService:
             'count': 2,
             'name': 'Кофе 250г',
             'physical_dims': {
-                'dx': 120,
-                'dy': 60,
-                'dz': 60,
+                'dx': 12,  # cm
+                'dy': 6,   # cm
+                'dz': 6,   # cm
             },
         }]
 
@@ -65,29 +65,30 @@ class TestOtherDayDeliveryService:
         side_effects = [
             offers_create_response,
             offers_confirm_response,
-            request_info_response,
         ]
 
         with patch.object(
             service.session, 'post', side_effect=side_effects
         ):
-            result = service.create_order(
-                items=other_day_items,
-                client_order_id='order-1',
-                destination_coords=[37.59, 55.75],
-                destination_address='Москва, ул. Арбат, 10',
-                delivery_type='courier',
-                recipient_name='Иван Петров',
-                recipient_phone='+79001234567',
-                email='ivan@example.com',
-                delivery_cost=350,
-                payment_method='already_paid',
-            )
+            with patch.object(service.session, 'get', return_value=request_info_response):
+                result = service.create_order(
+                    items=other_day_items,
+                    places=[{'barcode': 'BOX-001'}],
+                    client_order_id='order-1',
+                    destination_coords=[37.59, 55.75],
+                    destination_address='Москва, ул. Арбат, 10',
+                    delivery_type='courier',
+                    recipient_name='Иван Петров',
+                    recipient_phone='+79001234567',
+                    email='ivan@example.com',
+                    delivery_cost=350,
+                    payment_method='already_paid',
+                )
 
-        assert result['success'] is True
-        assert result['request_id'] == 'req-123'
-        assert result['tracking_number'] == 'TRACK-456'
-        assert result['offer_id'] == 'offer-courier-123'
+            assert result['success'] is True
+            assert result['request_id'] == 'req-123'
+            assert result['tracking_number'] == 'TRACK-456'
+            assert result['offer_id'] == 'offer-courier-123'
 
     def test_create_order_pvz_success_with_offers(self, service, other_day_items):
         """Test PVZ delivery with available offers (offers/info → offers/create → confirm)."""
@@ -148,34 +149,35 @@ class TestOtherDayDeliveryService:
             offers_info_response,
             offers_create_response,
             offers_confirm_response,
-            request_info_response,
         ]
 
         with patch.object(
             service.session, 'post', side_effect=side_effects
         ):
-            result = service.create_order(
-                items=other_day_items,
-                client_order_id='order-2',
-                destination_coords=[50.15, 53.20],
-                destination_address='Самара, ул. Ленина, 1',
-                delivery_type='pickup',
-                pvz_id='pvz-target-id',
-                recipient_name='Иван Петров',
-                recipient_phone='+79001234567',
-                email='ivan@example.com',
-            )
+            with patch.object(service.session, 'get', return_value=request_info_response):
+                result = service.create_order(
+                    items=other_day_items,
+                    places=[{'barcode': 'BOX-001'}],
+                    client_order_id='order-2',
+                    destination_coords=[50.15, 53.20],
+                    destination_address='Самара, ул. Ленина, 1',
+                    delivery_type='pickup',
+                    pvz_id='pvz-target-id',
+                    recipient_name='Иван Петров',
+                    recipient_phone='+79001234567',
+                    email='ivan@example.com',
+                )
 
-        assert result['success'] is True
-        assert result['request_id'] == 'req-pvz-456'
-        assert result['method'] == 'offers'
-        assert result['status'] == 'new'
-        assert result['offer_id'] == 'offer-pvz-created-456'
-        assert result['delivery_date'] == '15.09.2026'
-        # UTC 10:00-14:00 → Samara (UTC+4) 14:00-18:00
-        assert result['delivery_time'] == '14:00–18:00'
-        assert result['price'] == '192.15'
-        assert result['currency'] == 'RUB'
+            assert result['success'] is True
+            assert result['request_id'] == 'req-pvz-456'
+            assert result['method'] == 'offers'
+            assert result['status'] == 'new'
+            assert result['offer_id'] == 'offer-pvz-created-456'
+            assert result['delivery_date'] == '15.09.2026'
+            # UTC 10:00-14:00 → Samara (UTC+4) 14:00-18:00
+            assert result['delivery_time'] == '14:00–18:00'
+            assert result['price'] == '192.15'
+            assert result['currency'] == 'RUB'
 
     def test_create_order_pvz_success_with_request_create(self, service, other_day_items):
         """Test PVZ delivery when no offers available (uses request/create)."""
@@ -210,32 +212,33 @@ class TestOtherDayDeliveryService:
         side_effects = [
             offers_info_response,
             request_create_response,
-            request_info_response,
         ]
 
         with patch.object(
             service.session, 'post', side_effect=side_effects
         ):
-            result = service.create_order(
-                items=other_day_items,
-                client_order_id='order-3',
-                destination_coords=[50.15, 53.20],
-                destination_address='Самара, ул. Мира, 10',
-                delivery_type='postamat',
-                pvz_id='postamat-id-123',
-                recipient_name='Анна Сидорова',
-                recipient_phone='+79001234568',
-                email='anna@example.com',
-            )
+            with patch.object(service.session, 'get', return_value=request_info_response):
+                result = service.create_order(
+                    items=other_day_items,
+                    places=[{'barcode': 'BOX-001'}],
+                    client_order_id='order-3',
+                    destination_coords=[50.15, 53.20],
+                    destination_address='Самара, ул. Мира, 10',
+                    delivery_type='postamat',
+                    pvz_id='postamat-id-123',
+                    recipient_name='Анна Сидорова',
+                    recipient_phone='+79001234568',
+                    email='anna@example.com',
+                )
 
-        assert result['success'] is True
-        assert result['request_id'] == 'req-pvz-request-789'
-        assert result['method'] == 'request'
-        assert result['status'] == 'new'
-        assert result['delivery_date'] == '16.09.2026'
-        # UTC 12:00-16:00 → Samara (UTC+4) 16:00-20:00
-        assert result['delivery_time'] == '16:00–20:00'
-        assert result['price'] == '250.00'
+            assert result['success'] is True
+            assert result['request_id'] == 'req-pvz-request-789'
+            assert result['method'] == 'request'
+            assert result['status'] == 'new'
+            assert result['delivery_date'] == '16.09.2026'
+            # UTC 12:00-16:00 → Samara (UTC+4) 16:00-20:00
+            assert result['delivery_time'] == '16:00–20:00'
+            assert result['price'] == '250.0'
 
     def test_get_offers_success(self, service, other_day_items):
         mock_response = MagicMock()
@@ -292,7 +295,7 @@ class TestOtherDayDeliveryService:
             'tracking_number': 'TRACK-456',
         }
 
-        with patch.object(service.session, 'post', return_value=mock_response):
+        with patch.object(service.session, 'get', return_value=mock_response):
             result = service.get_request_info('req-123')
 
         assert result['success'] is True
@@ -360,6 +363,7 @@ class TestOtherDayDeliveryErrors:
         ):
             result = service.create_order(
                 items=[{'count': 1, 'name': 'Test'}],
+                places=[{'barcode': 'BOX-001'}],
                 client_order_id='order-error',
                 destination_coords=[],
                 destination_address='',
@@ -421,6 +425,7 @@ class TestOtherDayDeliveryErrors:
         ):
             result = service.create_order(
                 items=[{'count': 1, 'name': 'Test'}],
+                places=[{'barcode': 'BOX-001'}],
                 client_order_id='order-expired',
                 destination_coords=[],
                 destination_address='',
@@ -486,6 +491,7 @@ class TestOtherDayDeliveryErrors:
         ):
             result = service.create_order(
                 items=[{'count': 1, 'name': 'Test'}],
+                places=[{'barcode': 'BOX-001'}],
                 client_order_id='order-timeout',
                 destination_coords=[],
                 destination_address='',

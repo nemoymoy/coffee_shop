@@ -311,6 +311,21 @@ def checkout_view(request):
         
         cleaned = form.cleaned_data
         promo_code_str = cleaned.get('promo_code', '')
+
+        # Normalize phone to +7XXXXXXXXXX format
+        phone = cleaned.get('phone', '')
+        if phone:
+            # Remove all non-digit characters
+            digits = ''.join(c for c in phone if c.isdigit())
+            # If starts with 8, replace with 7
+            if digits.startswith('8') and len(digits) == 11:
+                digits = '7' + digits[1:]
+            # If starts with 7, keep as is
+            elif not digits.startswith('7') and len(digits) == 10:
+                digits = '7' + digits
+            # Add + prefix
+            phone = '+' + digits
+            cleaned['phone'] = phone
         
         # Валидация промокода
         applied_promo = None
@@ -483,7 +498,8 @@ def checkout_view(request):
 
                 # Создаём заказ в Яндекс Доставке только для безналичной оплаты
                 # Для онлайн-оплаты доставка создаётся после подтверждения платежа (в webhook)
-                if payment_method != Order.PaymentMethod.ONLINE:
+                # Для Other Day API (PVZ/postamat) заказ создаётся в payment_webhook после оплаты
+                if payment_method != Order.PaymentMethod.ONLINE and delivery_api_type == 'express':
                     try:
                         service = YandexDeliveryService()
                         if service.is_configured():
@@ -537,55 +553,9 @@ def checkout_view(request):
                                 )
                             else:
                                 # Other Day API — ПВЗ/Постмат
-                                # Полная логика: offers/info → offers/create → offers/confirm
-                                # или request/create если нет офферов
-                                other_day_items = list(
-                                    service._build_items_payload_for_other_day(
-                                        order.items.all(), pvz_id=order.pvz_id
-                                    )[0]
-                                )
-
-                                result = service.create_order(
-                                    items=other_day_items,
-                                    client_order_id=order.pk,
-                                    destination_coords=[],
-                                    destination_address=cleaned.get('delivery_address', ''),
-                                    delivery_type=order.delivery_type,
-                                    pvz_id=order.pvz_id,
-                                    recipient_name=order.recipient_name,
-                                    recipient_phone=order.recipient_phone,
-                                    email=order.email,
-                                    delivery_cost=float(delivery_price),
-                                    payment_method='already_paid',
-                                )
-
-                                if result.get('success'):
-                                    order.yandex_offer_id = result.get('offer_id')
-                                    messages.info(
-                                        request,
-                                        f'Заказ на доставку создан в Яндекс Доставке. '
-                                        f'Интервал: {result.get("delivery_date", "")} '
-                                        f'{result.get("delivery_time", "")}'
-                                    )
-                                else:
-                                    error_msg = result.get('error', 'неизвестная ошибка')
-                                    error_detail = result.get('message', '')
-                                    if error_msg == 'no_delivery_options':
-                                        messages.warning(
-                                            request,
-                                            error_detail or (
-                                                'Доставка недоступна. '
-                                                'Проверьте: 1) Календарь отгрузок; '
-                                                '2) Маршрут между ПВЗ; '
-                                                '3) Габариты грузомест.'
-                                            )
-                                        )
-                                    else:
-                                        messages.warning(
-                                            request,
-                                            f'Не удалось создать заказ в Яндекс Доставке: '
-                                            f'{error_detail or error_msg}'
-                                        )
+                                # Заказ создаётся в payment_webhook после успешной оплаты
+                                # Здесь только сохраняем delivery_cost
+                                logger.info('[Checkout] Other Day API: delivery will be created after payment confirmation')
 
                             if create_result.get('success'):
                                 if delivery_api_type == 'express':
@@ -595,12 +565,9 @@ def checkout_view(request):
                                     order.yandex_order_id = order.express_claim_id
                                     order.delivery_status = create_result.get('status', 'accepted')
                                     # Заявка уже подтверждена при расчёте цены, повторное подтверждение не нужно
-                                else:
-                                    order.yandex_order_id = create_result.get('request_id', '')
-                                    order.tracking_number = create_result.get('tracking_number', '')
-                                    order.delivery_status = 'pending'
-                                order.status = 'in_progress'
-                                messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                    order.status = 'in_progress'
+                                    messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                # Для Other Day API (PVZ/postamat) заказ создаётся в payment_webhook
                             else:
                                 messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
                     except Exception as e:
@@ -850,14 +817,15 @@ def payment_webhook(request):
                             else:
                                 # Other Day API — для онлайн-оплаты ПВЗ/Постмат
                                 # Используем новую логику: offers/info → offers/create → request/info
-                                other_day_items = list(
+                                other_day_items, other_day_places = (
                                     service._build_items_payload_for_other_day(
                                         order.items.all(), pvz_id=order.pvz_id
-                                    )[0]
+                                    )
                                 )
 
                                 result = service.create_order(
                                     items=other_day_items,
+                                    places=other_day_places,
                                     client_order_id=order.pk,
                                     destination_coords=[],
                                     destination_address=order.delivery_address,
@@ -890,6 +858,11 @@ def payment_webhook(request):
                                         'for order %s: %s',
                                         order.pk, result.get('error')
                                     )
+                                    if result.get('request_body'):
+                                        logger.error(
+                                            'payment_webhook: request_body that caused error: %s',
+                                            json.dumps(result.get('request_body'), ensure_ascii=False)[:2000]
+                                        )
                                     return HttpResponse('Delivery creation failed', status=400)
 
                     order.status = Order.Status.PAID
@@ -1098,14 +1071,15 @@ def payment_result(request):
                                     else:
                                         # Other Day API — для онлайн-оплаты ПВЗ/Постмат
                                         # Используем новую логику: offers/info → offers/create → request/info
-                                        other_day_items = list(
+                                        other_day_items, other_day_places = (
                                             service._build_items_payload_for_other_day(
                                                 order.items.all(), pvz_id=order.pvz_id
-                                            )[0]
+                                            )
                                         )
 
                                         result = service.create_order(
                                             items=other_day_items,
+                                            places=other_day_places,
                                             client_order_id=order.pk,
                                             destination_coords=[],
                                             destination_address=order.delivery_address,

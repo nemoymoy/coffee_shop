@@ -1253,6 +1253,8 @@ const YandexDeliveryWidget = (() => {
 
             YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
             YandexDeliveryUtils.setFieldValue('id_delivery_type', 'courier');
+            YandexDeliveryUtils.setFieldValue('id_pvz_id', state.selectedPvzId);
+            YandexDeliveryUtils.setFieldValue('id_destination_coords', state.selectedCoords.join(','));
             YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
             YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
             YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
@@ -1301,6 +1303,8 @@ const YandexDeliveryWidget = (() => {
 
         YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
         YandexDeliveryUtils.setFieldValue('id_delivery_type', backendDeliveryType);
+        YandexDeliveryUtils.setFieldValue('id_pvz_id', state.selectedPvzId);
+        YandexDeliveryUtils.setFieldValue('id_destination_coords', state.selectedCoords.join(','));
         YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
         YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
         YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
