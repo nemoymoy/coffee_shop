@@ -785,6 +785,10 @@ const YandexDeliveryWidget = (() => {
         modalEl.addEventListener('show.bs.modal', () => {
             resetState();
             goToStep(1);
+            // Очищаем стоимость доставки на главной странице,
+            // чтобы не показывать старую цену при открытии модалки
+            const orderDeliveryCost = $('#orderDeliveryCost');
+            if (orderDeliveryCost) orderDeliveryCost.textContent = '— ₽';
         });
 
         modalEl.addEventListener('hidden.bs.modal', () => {
