@@ -796,7 +796,14 @@ const YandexDeliveryWidget = (() => {
         const step1Container = modalEl.querySelector('#deliveryStep1');
         step1Container?.addEventListener('change', (e) => {
             if (e.target.matches('input[name="yandex_delivery_type"]')) {
+                // Сбрасываем выбранный пункт при смене типа доставки,
+                // чтобы старая цена и pvz_id не передавались на бэкенд
                 state.selectedType = e.target.value;
+                state.selectedPvzId = '';
+                state.selectedPvzName = '';
+                state.selectedAddress = '';
+                state.selectedCoords = [];
+                state.estimatedCost = 0;
                 updateMapHintText();
                 goToStep(2);
                 updateConfirmButton();
@@ -898,6 +905,9 @@ const YandexDeliveryWidget = (() => {
                 show(widgetContainer);
                 hide($('#selectedPvzInfo'));
                 hide($('#calcDetailsBlock'));
+                // Очищаем стоимость доставки — она будет пересчитана при выборе пункта
+                const costEl = $('#widgetCost');
+                if (costEl) costEl.textContent = 'Расчёт...';
                 updateMapHintText();
                 loadYmaps();
             }
@@ -1772,13 +1782,12 @@ const YandexDeliveryWidget = (() => {
 
         const costEl = $('#widgetCost');
         if (costEl) {
-            const originalText = costEl.textContent;
             costEl.innerHTML = `<span class="text-info">${hintMessage}</span>`;
             costEl.classList.add('border-info');
 
-            // Убираем подсказку через 3 секунды
+            // Убираем подсказку через 3 секунды, НЕ восстанавливая старую цену
             setTimeout(() => {
-                costEl.textContent = originalText;
+                costEl.textContent = 'Расчёт...';
                 costEl.classList.remove('border-info');
             }, 3000);
         }
