@@ -231,8 +231,24 @@ YANDEX_SHOP_ADDRESS = os.environ.get('YANDEX_SHOP_ADDRESS', 'Самара, ул.
 # Токен для Cargo API
 YANDEX_DELIVERY_TOKEN = os.environ.get('YANDEX_DELIVERY_TOKEN', '')
 
-# ПВЗ пункт отправления для способа доставки ПВЗ
-# г. Самара, ул. Лукачева 6, ID пункта выдачи
+# ПВЗ пункт отправления для способа доставки ПВЗ/Постомат (self_pickup)
+# г. Самара, ул. Лукачева 6, ID пункта выдачи Яндекс Маркета
+YANDEX_PICKUP_STATION_ID = os.environ.get(
+    'YANDEX_PICKUP_STATION_ID',
+    'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
+)
+YANDEX_PICKUP_STATION_LAT = float(
+    os.environ.get('YANDEX_PICKUP_STATION_LAT', '53.21808624267578')
+)
+YANDEX_PICKUP_STATION_LON = float(
+    os.environ.get('YANDEX_PICKUP_STATION_LON', '50.16553497314453')
+)
+YANDEX_PICKUP_STATION_ADDRESS = os.environ.get(
+    'YANDEX_PICKUP_STATION_ADDRESS',
+    'Пункт выдачи заказов Яндекс Маркета — Самара улица Лукачёва 6'
+)
+
+# ПВЗ пункт назначения (альтернативный, для обратной совместимости)
 YANDEX_PVZ_ID = os.environ.get(
     'YANDEX_PVZ_ID',
     'd0222b1e-73ff-4274-9c68-42c79d4c7eae'
