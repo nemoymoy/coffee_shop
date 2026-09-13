@@ -28,7 +28,8 @@ class OrderForm(CheckoutForm):
     delivery_type = forms.ChoiceField(
         choices=[
             ('courier', 'Курьер'),
-            ('pickup', 'ПВЗ/Постомат'),
+            ('pickup', 'ПВЗ'),
+            ('postamat', 'Постомат'),
         ],
         widget=forms.HiddenInput(),
         required=False,

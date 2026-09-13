@@ -1313,7 +1313,7 @@ class YandexDeliveryService:
             'barcode': place_barcode,
             'physical_dims': {
                 **size,
-                'weight_gross': total_weight_grams + 500,  # add tare weight
+                'weight_gross': total_weight_grams + int(float(package.tare_weight) * 1000),  # product + package tare
             },
         }]
 

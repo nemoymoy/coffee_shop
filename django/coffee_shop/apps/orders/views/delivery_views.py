@@ -351,7 +351,9 @@ def _build_items_from_cart(cart_items_frontend, session_cart):
 
         if total_weight_grams > 0:
             package = Package.for_weight(total_weight_grams)
-            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+            # Raw product weight only — tare from Package is added in
+            # _calculate_other_day_price / offers_info_view / order creation.
+            total_weight_kg = total_weight_grams / 1000.0
             return [{
                 'quantity': total_quantity,
                 'weight': round(total_weight_kg, 3),
@@ -380,7 +382,9 @@ def _build_items_from_cart(cart_items_frontend, session_cart):
 
         if total_weight_grams > 0:
             package = Package.for_weight(total_weight_grams)
-            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
+            # Raw product weight only — tare from Package is added in
+            # _calculate_other_day_price / offers_info_view / order creation.
+            total_weight_kg = total_weight_grams / 1000.0
             return [{
                 'quantity': total_quantity,
                 'weight': round(total_weight_kg, 3),
@@ -584,10 +588,21 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
 
         # Build places (top-level in Other Day API)
         # barcode MUST match place_barcode in items
+        # weight from _build_items_from_cart is raw product weight only
+        # Add package tare from Package model (not hardcoded +500)
+        try:
+            # Reconstruct product weight to find the right Package
+            product_weight_grams = int(weight * 1000)
+            pkg = Package.for_weight(product_weight_grams)
+            tare_grams = int(float(pkg.tare_weight) * 1000)
+        except Package.DoesNotExist:
+            pkg = None
+            tare_grams = 0
+
         other_day_places = [{
             'barcode': place_barcode,
             'physical_dims': {
-                'weight_gross': int(weight * 1000) + 500,  # add tare
+                'weight_gross': product_weight_grams + tare_grams,  # product + package tare
                 'dx': int(float(size.get('length', 0.12)) * 100),
                 'dy': int(float(size.get('width', 0.06)) * 100),
                 'dz': int(float(size.get('height', 0.06)) * 100),
@@ -832,9 +847,17 @@ def offers_info_view(request):
             'place_barcode': place_barcode,
         }]
 
-        # weight is in kg (from frontend Express format)
-        # Convert to grams - this is already total weight (product + tare)
-        total_weight_g = int(weight * 1000)
+        # weight is in kg (raw product weight from frontend)
+        # Add package tare from Package model — consistent with
+        # _calculate_other_day_price and _build_items_payload_for_other_day.
+        product_weight_grams = int(weight * 1000)
+        try:
+            pkg = Package.for_weight(product_weight_grams)
+            tare_grams = int(float(pkg.tare_weight) * 1000)
+        except Package.DoesNotExist:
+            pkg = None
+            tare_grams = 0
+        total_weight_g = product_weight_grams + tare_grams
 
         other_day_places = [{
             'barcode': place_barcode,

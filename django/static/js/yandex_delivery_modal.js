@@ -292,11 +292,15 @@ const YandexDeliveryWidget = (() => {
                 parsedCoords = coords.split(',').map(c => parseFloat(c.trim()));
             }
 
+            // Map frontend delivery type to backend values
+            const deliveryTypeMap = { courier: 'courier', pvz: 'pickup', postomat: 'postamat' };
+            const backendDeliveryType = deliveryTypeMap[deliveryType] || deliveryType || 'courier';
+
             const payload = {
                 destination_coords: parsedCoords,
                 destination_address: address,
                 pvz_id: pvzId || null,
-                delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
+                delivery_type: backendDeliveryType,
                 cart_items: cartState.items.length > 0 ? cartState.items : [],
                 recipient: recipient,
             };
@@ -339,11 +343,15 @@ const YandexDeliveryWidget = (() => {
                 email: $('#id_email')?.value || '',
             };
 
+            // Map frontend delivery type to backend values
+            const deliveryTypeMap = { courier: 'courier', pvz: 'pickup', postomat: 'postamat' };
+            const backendDeliveryType = deliveryTypeMap[deliveryType] || deliveryType || 'courier';
+
             const payload = {
                 destination_coords: parsedCoords,
                 destination_address: address,
                 pvz_id: pvzId || null,
-                delivery_type: deliveryType === 'pvz' ? 'pickup' : (deliveryType || 'courier'),
+                delivery_type: backendDeliveryType,
                 cart_items: cartItemsToSend,
                 recipient: recipient,
             };
@@ -1230,7 +1238,7 @@ const YandexDeliveryWidget = (() => {
             clearError();
 
             YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
-            YandexDeliveryUtils.setFieldValue('id_yandex_delivery_type', state.selectedType);
+            YandexDeliveryUtils.setFieldValue('id_delivery_type', 'courier');
             YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
             YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
             YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
@@ -1272,8 +1280,13 @@ const YandexDeliveryWidget = (() => {
 
         clearError();
 
+        // Map frontend type to backend Order.DeliveryType values
+        // 'postomat' (frontend) -> 'postamat' (backend model)
+        const deliveryTypeMap = { courier: 'courier', pvz: 'pickup', postomat: 'postamat' };
+        const backendDeliveryType = deliveryTypeMap[state.selectedType] || state.selectedType;
+
         YandexDeliveryUtils.setFieldValue('id_delivery_address', state.selectedAddress);
-        YandexDeliveryUtils.setFieldValue('id_yandex_delivery_type', state.selectedType);
+        YandexDeliveryUtils.setFieldValue('id_delivery_type', backendDeliveryType);
         YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
         YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
         YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);

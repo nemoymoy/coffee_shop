@@ -326,6 +326,7 @@ def checkout_view(request):
             applied_promo = promo
         
         # Сохраняем тип доставки и PVZ ID из формы (если передан)
+        # JS виджет устанавливает значение в delivery_type (hidden field)
         delivery_type_raw = cleaned.get('delivery_type', '') or request.POST.get('delivery_type', '')
         if delivery_type_raw not in dict(Order.DeliveryType.choices):
             delivery_type_raw = 'courier'

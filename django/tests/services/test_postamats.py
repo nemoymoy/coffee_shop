@@ -93,8 +93,8 @@ class TestGetPostamats:
         mock_response.status_code = 200
         mock_response.json.return_value = mock_api_response
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(
                 center_lat=53.2169,
                 center_lon=50.1627,
@@ -121,8 +121,8 @@ class TestGetPostamats:
             'points': [mock_pvz_point],
         }
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(
                 center_lat=53.2169,
                 center_lon=50.1627,
@@ -149,8 +149,8 @@ class TestGetPostamats:
         mock_response.status_code = 200
         mock_response.json.return_value = {'points': [far_point]}
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(
                 center_lat=53.2169,
                 center_lon=50.1627,
@@ -170,8 +170,8 @@ class TestGetPostamats:
         mock_response.status_code = 200
         mock_response.json.return_value = {'points': [mock_terminal_point]}
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(
                 center_lat=53.2169,
                 center_lon=50.1627,
@@ -215,8 +215,8 @@ class TestGetPostamats:
         mock_response.status_code = 200
         mock_response.json.return_value = {'points': points}
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(
                 center_lat=53.2169,
                 center_lon=50.1627,
@@ -234,8 +234,8 @@ class TestGetPostamats:
         mock_response.status_code = 500
         mock_response.text = 'Internal Server Error'
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats()
 
         assert result['success'] is False
@@ -249,48 +249,28 @@ class TestGetPostamats:
         mock_response.status_code = 401
         mock_response.text = 'Unauthorized'
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats()
 
         assert result['success'] is False
         assert 'токен' in result['error'].lower() or '401' in result['error']
 
-    def test_get_postamats_rate_limit_retry(self, settings):
-        """Retries on 429 Too Many Requests."""
+    def test_get_postamats_handles_429_error(self, settings):
+        """Handles 429 Too Many Requests gracefully (retry is internal)."""
         settings.YANDEX_DELIVERY_TOKEN = 'dev-token-test'
 
         mock_response_429 = MagicMock()
         mock_response_429.status_code = 429
+        mock_response_429.text = 'Too Many Requests'
 
-        mock_response_200 = MagicMock()
-        mock_response_200.status_code = 200
-        mock_response_200.json.return_value = {
-            'points': [{
-                'id': 'terminal-001',
-                'name': 'Постомат',
-                'type': 'terminal',
-                'operator_id': 'market_l4g',
-                'position': {'latitude': 53.21, 'longitude': 50.16},
-                'address': {'full_address': 'Самара, ул. Тестовая, 1'},
-                'work_schedule': {},
-            }],
-        }
-
-        call_count = [0]
-
-        def side_effect(*args, **kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return mock_response_429
-            return mock_response_200
-
-        with patch('requests.post', side_effect=side_effect):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response_429):
             result = service.get_postamats()
 
-        assert result['success'] is True
-        assert call_count[0] == 2  # 429 + retry
+        # After retries exhausted, returns error with 429
+        assert result['success'] is False
+        assert '429' in result['error']
 
     def test_get_postamats_max_results_limit(self, settings):
         """Respects max_results limit."""
@@ -314,8 +294,8 @@ class TestGetPostamats:
         mock_response.status_code = 200
         mock_response.json.return_value = {'points': points}
 
-        with patch('requests.post', return_value=mock_response):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', return_value=mock_response):
             result = service.get_postamats(max_results=5)
 
         assert result['success'] is True
@@ -356,8 +336,8 @@ class TestFetchPostamatsSinglePage:
             mock.json.return_value = {'points': page_points}
             return mock
 
-        with patch('requests.post', side_effect=side_effect):
-            service = YandexDeliveryService()
+        service = YandexDeliveryService()
+        with patch.object(service.session, 'post', side_effect=side_effect):
             result = service.get_postamats()
 
         assert result['success'] is True

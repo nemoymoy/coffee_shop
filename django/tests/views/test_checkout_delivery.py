@@ -187,13 +187,19 @@ class TestCheckoutWithDeliveryType:
             'comment': 'Быстрее',
             'station_id': '123456789',
             'station_name': 'ПВЗ Тестовый',
+            'yandex_delivery_type': 'courier',
         }
 
         mock_instance = MagicMock()
-        mock_instance.create_order.return_value = {
+        mock_instance.create_express_claim.return_value = {
             'success': True,
-            'order_id': 'YDO-12345',
-            'tracking_number': 'YA-TRACK-001',
+            'claim_id': 'CLAIM-001',
+            'request_id': 'REQ-001',
+            'status': 'accepted',
+        }
+        mock_instance.accept_express_claim.return_value = {
+            'success': True,
+            'status': 'accepted',
         }
 
         with patch(
@@ -211,13 +217,13 @@ class TestCheckoutWithDeliveryType:
         assert Order.objects.count() == 1
         order = Order.objects.first()
 
-        assert order.yandex_order_id == 'YDO-12345'
-        assert order.tracking_number == 'YA-TRACK-001'
-        assert order.delivery_status == 'pending'
+        assert order.yandex_order_id == 'CLAIM-001'
+        assert order.express_claim_id == 'CLAIM-001'
+        assert order.delivery_status == 'accepted'
         assert order.status == 'in_progress'
         assert order.delivery_method == 'delivery'
         assert order.payment_method == 'cash'
-        mock_instance.create_order.assert_called_once()
+        mock_instance.create_express_claim.assert_called_once()
 
     def test_checkout_cash_payment_pickup_no_yandex(self, client, coffee_beans):
         """Checkout с самовывозом — Яндекс Доставка не создаётся."""
