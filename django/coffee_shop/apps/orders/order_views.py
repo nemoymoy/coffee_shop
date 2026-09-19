@@ -19,6 +19,7 @@ from coffee_shop.apps.orders.services.stock_service import StockService
 from coffee_shop.apps.orders.services.promo_service import PromoService
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
+from coffee_shop.apps.users.models import UserEmailVerification
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem, Package
@@ -232,6 +233,27 @@ def cart_add(request):
             'error': 'login_required',
             'redirect': '/accounts/login/'
         }, status=403)
+
+    # Проверка подтверждённого email
+    try:
+        if not request.user.email_verification.is_valid:
+            return JsonResponse({
+                'error': 'email_not_verified',
+                'message': 'Для добавления товаров в корзину необходимо подтвердить email',
+                'redirect': '/accounts/verification-pending/',
+            }, status=403)
+    except UserEmailVerification.DoesNotExist:
+        # OAuth-пользователи — email уже подтверждён Яндексом
+        from social_django.models import UserSocialAuth
+        has_social_auth = UserSocialAuth.objects.filter(
+            user=request.user
+        ).exists()
+        if not has_social_auth:
+            return JsonResponse({
+                'error': 'email_not_verified',
+                'message': 'Для добавления товаров в корзину необходимо подтвердить email',
+                'redirect': '/accounts/verification-pending/',
+            }, status=403)
 
     product_id = request.POST.get('product_id')
     weight = request.POST.get('weight')

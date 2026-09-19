@@ -15,10 +15,8 @@ class EmailVerificationService:
     @classmethod
     def generate_token(cls, user):
         """Генерирует новый токен для пользователя (пересоздаёт старый)."""
-        # Удаляем старый активный токен
-        UserEmailVerification.objects.filter(
-            user=user, is_used=False
-        ).delete()
+        # Удаляем ВСЕ старые токены для пользователя
+        UserEmailVerification.objects.filter(user=user).delete()
 
         return UserEmailVerification.objects.create(
             user=user,

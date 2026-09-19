@@ -55,7 +55,12 @@ var Cart = (function () {
                 CoffeeShop.showToast('Товар добавлен в корзину', 'success');
             })
             .catch(function (error) {
-                if (error && error.redirect) {
+                if (error && error.error === 'email_not_verified') {
+                    CoffeeShop.showToast(error.message || 'Необходимо подтвердить email', 'warning');
+                    if (error.redirect) {
+                        window.location.href = error.redirect;
+                    }
+                } else if (error && error.redirect) {
                     CoffeeShop.showToast('Войдите, чтобы добавить товар в корзину', 'warning');
                     window.location.href = error.redirect;
                 } else {

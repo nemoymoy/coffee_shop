@@ -46,14 +46,17 @@ class TestEmailVerificationService:
         assert v2.token != v1.token
 
     def test_generate_token_keeps_used(self):
-        """Использованный токен не удаляется."""
+        """При генерации нового токена старые удаляются (OneToOne constraint)."""
         user = self._create_user()
         v1 = EmailVerificationService.generate_token(user)
         v1.is_used = True
         v1.save(update_fields=['is_used'])
 
+        # generate_token удаляет все записи для пользователя (OneToOne constraint)
         v2 = EmailVerificationService.generate_token(user)
-        assert UserEmailVerification.objects.filter(user=user).count() == 2
+        # Должна быть только одна запись — новая
+        assert UserEmailVerification.objects.filter(user=user).count() == 1
+        assert v2.token != v1.token
 
     def test_verify_token_success(self):
         """Успешная верификация токена."""

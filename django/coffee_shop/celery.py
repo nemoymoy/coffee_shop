@@ -10,8 +10,15 @@ app = Celery('coffee_shop')
 # Читаем настройки Celery из настроек Django
 app.config_from_object('django.conf:settings', namespace='CELERY')
 
-# Автоматически находим задачи во всех приложениях
-app.autodiscover_tasks()
+# Указываем задачи для автообнаружения в приложениях
+app.autodiscover_tasks(
+    packages=['coffee_shop.apps.catalog', 'coffee_shop.apps.orders',
+              'coffee_shop.apps.users', 'coffee_shop.apps.news'],
+    related_name='tasks'
+)
+
+# Явно подключаем задачи из корневого модуля tasks.py
+import coffee_shop.tasks  # noqa: F401
 
 
 @app.task(bind=True, ignore_result=True)

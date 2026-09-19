@@ -1,7 +1,9 @@
 """Celery tasks for Coffee Shop."""
+from django.conf import settings
+from django.contrib.auth.models import User
 from django.core.mail import send_mail
 from django.template.loader import render_to_string
-from django.conf import settings
+from django.urls import reverse
 from django.utils import timezone
 
 from celery import shared_task
@@ -311,3 +313,57 @@ def release_expired_reservations():
     """Освобождение истёкших резервов заказов."""
     from coffee_shop.apps.orders.services.stock_service import StockService
     return StockService.release_expired_reservations()
+
+
+# ------------------------------------------------------------------
+# Email verification tasks
+# ------------------------------------------------------------------
+
+@shared_task(bind=True, max_retries=3)
+def send_verification_email(self, user_id, token_uuid):
+    """Отправляет письмо с токеном подтверждения email."""
+    try:
+        user = User.objects.get(pk=user_id)
+    except User.DoesNotExist:
+        return f'User {user_id} not found'
+
+    from coffee_shop.apps.users.models import UserEmailVerification
+
+    try:
+        verification = UserEmailVerification.objects.get(
+            user=user, token=token_uuid
+        )
+    except UserEmailVerification.DoesNotExist:
+        return f'Verification token {token_uuid} not found for user {user_id}'
+
+    verification_url = (
+        f"{settings.SITE_URL}"
+        f"{reverse('users:verify_email', args=[token_uuid])}"
+    )
+
+    context = {
+        'user': user,
+        'verification_url': verification_url,
+    }
+
+    subject = 'Подтверждение email — Coffee Shop'
+    html_message = render_to_string(
+        'users/email_verification.html', context
+    )
+    plain_message = (
+        f'Здравствуйте, {user.get_full_name() or user.username}!\n'
+        f'Перейдите по ссылке для подтверждения email:\n'
+        f'{verification_url}\n'
+        f'Ссылка действительна 24 часа.'
+    )
+
+    send_mail(
+        subject=subject,
+        message=plain_message,
+        from_email=settings.EMAIL_FROM,
+        recipient_list=[user.email],
+        html_message=html_message,
+        fail_silently=False,
+    )
+
+    return f'Email sent to {user.email}'

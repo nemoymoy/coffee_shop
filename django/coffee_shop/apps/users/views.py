@@ -7,9 +7,11 @@ from django.contrib.auth.forms import AuthenticationForm
 from django.contrib import messages
 from django.utils.decorators import decorator_from_middleware
 from django.middleware.csrf import CsrfViewMiddleware
+from django.views.generic import TemplateView
 
 from coffee_shop.apps.users.forms import UserRegistrationForm
-from coffee_shop.apps.users.models import PersonalDataConsent
+from coffee_shop.apps.users.models import PersonalDataConsent, UserEmailVerification
+from coffee_shop.apps.users.services.email_verification_service import EmailVerificationService
 
 
 # Тексты согласия для версионирования
@@ -49,7 +51,6 @@ def register_view(request):
         form = UserRegistrationForm(data=request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, f'Добро пожаловать, {user.first_name or user.username}!')
 
             # Создаем запись согласия на обработку ПД
@@ -70,7 +71,31 @@ def register_view(request):
                 user_agent=user_agent,
             )
 
-            return redirect('catalog:catalog')
+            # Генерируем токен верификации email
+            verification = EmailVerificationService.generate_token(user)
+
+            # Отправляем письмо асинхронно через Celery
+            # Если Celery недоступен — отправляем синхронно
+            try:
+                from coffee_shop.tasks import send_verification_email
+                result = send_verification_email.delay(user.pk, verification.token)
+                # Проверяем, выполнена ли задача сразу (fallback)
+                if result.status == 'SUCCESS':
+                    pass  # задача выполнена асинхронно
+                else:
+                    # Celery недоступен — пробуем синхронно
+                    send_verification_email(user.pk, verification.token)
+            except Exception:
+                # Celery недоступен — отправляем синхронно
+                from coffee_shop.tasks import send_verification_email
+                send_verification_email(user.pk, verification.token)
+
+            messages.info(
+                request,
+                'На ваш email отправлено письмо с подтверждением. '
+                'Пожалуйста, подтвердите email для доступа ко всем функциям сайта.'
+            )
+            return redirect('users:email_verification_pending')
         else:
             messages.error(request, 'Пожалуйста, исправьте ошибки ниже.')
     else:
@@ -83,3 +108,33 @@ def register_view(request):
 def personal_data_consent_text_view(request):
     """Отображение текста согласия на обработку персональных данных."""
     return render(request, 'users/personal_data_consent_text.html')
+
+
+def verify_email_view(request, token):
+    """Подтверждение email по токену."""
+    success, error = EmailVerificationService.verify_token(token)
+
+    if success:
+        messages.success(request, 'Email успешно подтверждён! Теперь доступны все функции сайта.')
+        return redirect('users:email_verified')
+    else:
+        messages.error(request, error)
+        return redirect('users:email_verification_error')
+
+
+@decorator_from_middleware(CsrfViewMiddleware)
+def resend_verification_view(request):
+    """Повторная отправка токена подтверждения (для авторизованных)."""
+    if not request.user.is_authenticated:
+        return redirect('users:login')
+
+    if request.method == 'POST':
+        verification = EmailVerificationService.resend_token(request.user)
+        from coffee_shop.tasks import send_verification_email
+        send_verification_email.delay(request.user.pk, verification.token)
+        messages.success(
+            request,
+            'Новое письмо с подтверждением отправлено. Проверьте почту.'
+        )
+
+    return redirect('users:email_verification_pending')

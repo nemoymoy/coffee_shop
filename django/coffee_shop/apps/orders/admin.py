@@ -4,6 +4,14 @@ from django.utils import timezone
 from .models import Order, OrderItem, Package, PromoCode
 
 
+@admin.register(OrderItem)
+class OrderItemAdmin(admin.ModelAdmin):
+    list_display = ['order', 'product', 'quantity', 'unit_price', 'created_at']
+    list_filter = ['coffee_form', 'coffee_weight_grams']
+    search_fields = ['product__name']
+    readonly_fields = ['created_at']
+
+
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0

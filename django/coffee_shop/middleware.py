@@ -1,8 +1,12 @@
 """Middleware for Coffee Shop."""
 import logging
 import time
+
 from django.conf import settings
+from django.shortcuts import redirect
 from django.utils.deprecation import MiddlewareMixin
+
+from coffee_shop.apps.users.models import UserEmailVerification
 
 logger = logging.getLogger(__name__)
 
@@ -199,3 +203,69 @@ class RateLimitingMiddleware(MiddlewareMixin):
             # Fail open — allow the request if Redis is down
 
         return None
+
+
+class EmailVerificationMiddleware(MiddlewareMixin):
+    """
+    Перенаправляет пользователей с неподтверждённым email
+    на страницу pending. Исключения: login, register, verify, health, static.
+    """
+
+    EXEMPT_PATTERNS = [
+        '/accounts/login/',
+        '/accounts/register/',
+        '/accounts/verify-email/',
+        '/accounts/verification-pending/',
+        '/accounts/verification-success/',
+        '/accounts/verification-error/',
+        '/accounts/resend-verification/',
+        '/health/',
+        '/accounts/oauth/',
+        '/static/',
+        '/media/',
+    ]
+
+    def __call__(self, request):
+        # Skip for test environment
+        if getattr(settings, 'TESTING', False):
+            return self.get_response(request)
+
+        if (
+            request.user.is_authenticated
+            and not self._is_email_verified(request.user)
+        ):
+            path = request.path
+            if not self._is_exempt(path):
+                # Only use messages if MessageMiddleware is installed
+                if hasattr(request, 'session'):
+                    from django.contrib import messages
+                    messages.info(
+                        request,
+                        'Для доступа к функционалу сайта подтвердите ваш email.'
+                    )
+                return redirect('users:email_verification_pending')
+
+        return self.get_response(request)
+
+    @staticmethod
+    def _is_email_verified(user):
+        """Проверяет, что email подтверждён.
+
+        OAuth-пользователи считаются верифицированными автоматически,
+        т.к. email уже подтверждён провайдером (Яндекс).
+        """
+        try:
+            return user.email_verification.is_valid
+        except UserEmailVerification.DoesNotExist:
+            # OAuth-пользователи — email уже подтверждён Яндексом
+            from social_django.models import UserSocialAuth
+            has_social_auth = UserSocialAuth.objects.filter(
+                user=user
+            ).exists()
+            if has_social_auth:
+                return True
+            return False
+
+    @staticmethod
+    def _is_exempt(path):
+        return any(path.startswith(p) for p in EmailVerificationMiddleware.EXEMPT_PATTERNS)

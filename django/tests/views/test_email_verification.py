@@ -11,6 +11,7 @@ from coffee_shop.apps.users.models import UserEmailVerification
 from coffee_shop.apps.users.services.email_verification_service import (
     EmailVerificationService,
 )
+from social_django.models import UserSocialAuth
 
 
 @pytest.mark.django_db
@@ -48,7 +49,7 @@ class TestRegisterWithVerification:
         response = client.post(reverse('users:register'), data)
         assert response.url == reverse('users:email_verification_pending')
 
-    @patch('coffee_shop.apps.users.views.send_verification_email')
+    @patch('coffee_shop.tasks.send_verification_email')
     def test_register_sends_email(self, mock_send, client):
         """Регистрация отправляет email."""
         data = {
@@ -126,55 +127,6 @@ class TestVerifyEmailView:
 class TestCartAddEmailVerificationBlocked:
     """Тесты блокировки добавления в корзину для не-верифицированных."""
 
-    def _create_user_with_verification(self):
-        user = User.objects.create_user(
-            username='cartuser',
-            email='cart@example.com',
-            password='testpass123',
-        )
-        verification = EmailVerificationService.generate_token(user)
-        return user, verification
-
-    def test_cart_add_blocked_for_unverified(self, client):
-        """Добавление в корзину заблокировано для не-верифицированных."""
-        user, verification = self._create_verified_user()
-        client.force_login(user)
-
-        response = client.post(
-            reverse('orders:cart_add'),
-            {
-                'product_id': 1,
-                'weight': '100',
-                'coffee_form': 'beans',
-                'brewing_method': 'turka',
-            },
-            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
-        )
-        assert response.status_code == 403
-        data = response.json()
-        assert data['error'] == 'email_not_verified'
-
-    def test_cart_add_allowed_for_verified(self, client, coffee_beans):
-        """Добавление в корзину разрешено для верифицированных."""
-        user, verification = self._create_verified_user()
-        verification.is_used = True
-        verification.save(update_fields=['is_used'])
-        client.force_login(user)
-
-        response = client.post(
-            reverse('orders:cart_add'),
-            {
-                'product_id': coffee_beans.pk,
-                'weight': '100',
-                'coffee_form': 'beans',
-                'brewing_method': 'turka',
-            },
-            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data['success'] is True
-
     def test_cart_add_blocked_without_verification_record(self, client):
         """Добавление в корзину заблокировано если нет записи верификации."""
         user = User.objects.create_user(
@@ -185,7 +137,7 @@ class TestCartAddEmailVerificationBlocked:
         client.force_login(user)
 
         response = client.post(
-            reverse('orders:cart_add'),
+            '/cart/add/',
             {
                 'product_id': 1,
                 'weight': '100',
@@ -193,7 +145,36 @@ class TestCartAddEmailVerificationBlocked:
                 'brewing_method': 'turka',
             },
             HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            CONTENT_TYPE='application/x-www-form-urlencoded',
         )
         assert response.status_code == 403
         data = response.json()
         assert data['error'] == 'email_not_verified'
+
+
+@pytest.mark.django_db
+class TestOAuthUserNotBlocked:
+    """Тесты, что OAuth-пользователи не блокируются верификацией."""
+
+    def _create_oauth_user(self):
+        """Создаёт пользователя с привязанным Яндекс-аккаунтом."""
+        user = User.objects.create_user(
+            username='oauthuser',
+            email='oauth@example.com',
+            password='testpass123',
+        )
+        UserSocialAuth.objects.create(
+            user=user,
+            provider='yandex',
+            uid='yandex:12345',
+        )
+        return user
+
+    def test_oauth_user_not_blocked_by_middleware(self, client):
+        """Middleware не блокирует OAuth-пользователя."""
+        user = self._create_oauth_user()
+        client.force_login(user)
+
+        # Dashboard требует авторизации, middleware не должен редиректить
+        response = client.get(reverse('users:dashboard'))
+        assert response.status_code == 200

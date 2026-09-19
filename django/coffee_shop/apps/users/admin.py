@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import User
 
-from coffee_shop.apps.users.models import PersonalDataConsent
+from coffee_shop.apps.users.models import PersonalDataConsent, UserEmailVerification
 
 
 @admin.register(PersonalDataConsent)
@@ -25,3 +25,11 @@ class UserAdmin(BaseUserAdmin):
 # Регистрация переопределённого UserAdmin
 admin.site.unregister(User)
 admin.site.register(User, UserAdmin)
+
+
+@admin.register(UserEmailVerification)
+class UserEmailVerificationAdmin(admin.ModelAdmin):
+    list_display = ['user', 'token', 'is_used', 'is_expired', 'created_at']
+    list_filter = ['is_used']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['created_at', 'expires_at', 'token']

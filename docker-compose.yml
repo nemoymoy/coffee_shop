@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: django/Dockerfile
 
+    env_file:
+      - .env
+
     volumes:
       - ./django:/app
       - static_data:/app/staticfiles
@@ -105,7 +108,10 @@ services:
     build:
       context: .
       dockerfile: django/Dockerfile
-    command: celery -A coffee_shop worker -l info
+    entrypoint: ["sh", "/app/celery_entrypoint.sh"]
+    command: ""
+    env_file:
+      - .env
     volumes:
       - ./django:/app
       - media_data:/app/media
