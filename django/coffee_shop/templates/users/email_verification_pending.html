@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+
+{% block title %}Подтверждение email — Coffee Shop{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-5 text-center">
+                <div class="mb-4">
+                    <span style="font-size: 4rem;">📧</span>
+                </div>
+                <h2 class="mb-3">Подтвердите ваш email</h2>
+                <p class="text-muted mb-4">
+                    Мы отправили письмо с ссылкой подтверждения на ваш email.
+                    Пожалуйста, проверьте почту и перейдите по ссылке из письма.
+                </p>
+                <div class="alert alert-info" role="alert">
+                    <strong>Ссылка действительна 24 часа.</strong><br>
+                    Если вы не получили письмо, нажмите кнопку ниже.
+                </div>
+                <form method="post" action="{% url 'users:resend_verification' %}">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-coffee btn-lg">
+                        Отправить повторно
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
