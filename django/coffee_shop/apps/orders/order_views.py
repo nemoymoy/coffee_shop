@@ -236,7 +236,7 @@ def cart_add(request):
 
     # Проверка подтверждённого email
     try:
-        if not request.user.email_verification.is_valid:
+        if not request.user.email_verification.is_email_verified:
             return JsonResponse({
                 'error': 'email_not_verified',
                 'message': 'Для добавления товаров в корзину необходимо подтвердить email',

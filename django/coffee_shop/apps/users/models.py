@@ -105,7 +105,13 @@ class UserEmailVerification(models.Model):
 
     @property
     def is_valid(self):
+        """Токен валиден для использования (не использован и не истёк)."""
         return not self.is_used and not self.is_expired
+
+    @property
+    def is_email_verified(self):
+        """Email подтверждён (токен использован и не истёк)."""
+        return self.is_used and not self.is_expired
 
     def __str__(self):
         return f'Email verification for {self.user.email}'

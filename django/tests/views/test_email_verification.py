@@ -79,17 +79,34 @@ class TestVerifyEmailView:
         return user, verification
 
     def test_verify_email_success(self, client):
-        """Успешное подтверждение email."""
+        """Успешное подтверждение email с автоматическим входом."""
         user, verification = self._create_verified_user()
 
         response = client.get(
             reverse('users:verify_email', args=[verification.token])
         )
-        assert response.status_code == 302  # redirect to success
-        assert response.url == reverse('users:email_verified')
+        assert response.status_code == 302
+        # После верификации пользователь должен быть залогинен и редирект на каталог
+        assert response.url == reverse('catalog:catalog')
+        # Проверка, что пользователь залогинен
+        assert response.wsgi_request.user.pk == user.pk
 
         verification.refresh_from_db()
         assert verification.is_used is True
+
+    def test_verify_email_already_used_redirects_to_login(self, client):
+        """Повторный переход по использованному токену — редирект на каталог с автологином."""
+        user, verification = self._create_verified_user()
+        verification.is_used = True
+        verification.save(update_fields=['is_used'])
+
+        response = client.get(
+            reverse('users:verify_email', args=[verification.token])
+        )
+        # Токен уже использован, но пользователь должен быть залогинен
+        assert response.status_code == 302
+        assert response.url == reverse('catalog:catalog')
+        assert response.wsgi_request.user.pk == user.pk
 
     def test_verify_email_invalid_token(self, client):
         """Подтверждение с невалидным токеном."""
@@ -112,7 +129,7 @@ class TestVerifyEmailView:
         assert response.url == reverse('users:email_verification_error')
 
     def test_verify_email_already_used(self, client):
-        """Подтверждение уже использованного токена."""
+        """Подтверждение уже использованного токена — редирект с автологином."""
         user, verification = self._create_verified_user()
         verification.is_used = True
         verification.save(update_fields=['is_used'])
@@ -120,7 +137,10 @@ class TestVerifyEmailView:
         response = client.get(
             reverse('users:verify_email', args=[verification.token])
         )
-        assert response.url == reverse('users:email_verification_error')
+        # Токен уже использован — редирект на каталог с автологином
+        assert response.status_code == 302
+        assert response.url == reverse('catalog:catalog')
+        assert response.wsgi_request.user.pk == user.pk
 
 
 @pytest.mark.django_db

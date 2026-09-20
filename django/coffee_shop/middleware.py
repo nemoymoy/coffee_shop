@@ -255,7 +255,8 @@ class EmailVerificationMiddleware(MiddlewareMixin):
         т.к. email уже подтверждён провайдером (Яндекс).
         """
         try:
-            return user.email_verification.is_valid
+            # is_email_verified — True если токен использован (email подтверждён)
+            return user.email_verification.is_email_verified
         except UserEmailVerification.DoesNotExist:
             # OAuth-пользователи — email уже подтверждён Яндексом
             from social_django.models import UserSocialAuth
