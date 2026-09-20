@@ -1,9 +1,5 @@
 """Celery configuration for Coffee Shop."""
-import os
 from celery import Celery
-
-# Устанавливаем модуль настроек Django по умолчанию
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'coffee_shop.settings.dev')
 
 app = Celery('coffee_shop')
 
@@ -17,8 +13,9 @@ app.autodiscover_tasks(
     related_name='tasks'
 )
 
-# Явно подключаем задачи из корневого модуля tasks.py
-import coffee_shop.tasks  # noqa: F401
+# Подключаем задачи из корневого модуля tasks.py через conf.imports
+# (отложенный импорт — Django уже инициализирован к моменту запуска воркера)
+app.conf.imports = ('coffee_shop.tasks',)
 
 
 @app.task(bind=True, ignore_result=True)
