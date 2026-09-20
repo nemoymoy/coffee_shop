@@ -123,12 +123,24 @@ const Checkout = (() => {
     }
 
     /* ==================== Yandex Widget ==================== */
+    function isValidPhone() {
+        if (!state.elements.phone) return true;
+        const digits = state.elements.phone.value.replace(/\D/g, '');
+        return digits.length >= CONFIG.MIN_PHONE_DIGITS;
+    }
+
     function initYandexWidget() {
         const radios = state.elements.deliveryRadios;
         if (!radios?.length) return;
         radios.forEach((radio) => {
             radio.addEventListener('change', () => {
                 if (radio.checked && radio.value === 'delivery') {
+                    if (!isValidPhone()) {
+                        state.elements.phone.classList.add('is-invalid');
+                        showToast('Пожалуйста, введите номер телефона', 'warning');
+                        state.elements.phone.focus();
+                        return;
+                    }
                     setTimeout(() => {
                         if (typeof YandexDeliveryWidget !== 'undefined' && YandexDeliveryWidget.openModal) {
                             YandexDeliveryWidget.openModal();

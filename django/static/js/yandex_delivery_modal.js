@@ -864,6 +864,19 @@ const YandexDeliveryWidget = (() => {
                 return;
             }
 
+            // Validate phone format
+            const phoneDigits = phone.replace(/\D/g, '');
+            // Handle Russian phone: 8 at start → replace with 7
+            let normalizedDigits = phoneDigits;
+            if (normalizedDigits.startsWith('8') && normalizedDigits.length === 11) {
+                normalizedDigits = '7' + normalizedDigits.substring(1);
+            }
+            if (!/^7\d{10}$/.test(normalizedDigits)) {
+                alert('Пожалуйста, введите корректный номер телефона (11 цифр, начиная с +7 или 8).');
+                $('#id_phone')?.focus();
+                return;
+            }
+
             openModal();
         });
 

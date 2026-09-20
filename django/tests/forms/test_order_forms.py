@@ -70,6 +70,61 @@ class TestCheckoutForm:
         assert form.is_valid() is False
         assert 'first_name' in form.errors
 
+    def test_valid_phone_formats(self):
+        """Валидные форматы телефона."""
+        valid_phones = [
+            '+79991234567',
+            '+7 (999) 123-45-67',
+            '89991234567',
+            '79991234567',
+            '+79991234567',
+        ]
+        for phone in valid_phones:
+            data = {
+                'first_name': 'Иван',
+                'last_name': 'Иванов',
+                'phone': phone,
+                'email': 'test@example.com'
+            }
+            form = CheckoutForm(data=data)
+            assert form.is_valid() is True, f'Phone {phone} should be valid'
+
+    def test_invalid_phone_too_short(self):
+        """Невалильный телефон — слишком короткий."""
+        data = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+7999123',
+            'email': 'test@example.com'
+        }
+        form = CheckoutForm(data=data)
+        assert form.is_valid() is False
+        assert 'phone' in form.errors
+
+    def test_invalid_phone_wrong_country(self):
+        """Невалидный телефон — неправильный код страны."""
+        data = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '+19991234567',
+            'email': 'test@example.com'
+        }
+        form = CheckoutForm(data=data)
+        assert form.is_valid() is False
+        assert 'phone' in form.errors
+
+    def test_empty_phone(self):
+        """Пустой номер телефона."""
+        data = {
+            'first_name': 'Иван',
+            'last_name': 'Иванов',
+            'phone': '',
+            'email': 'test@example.com'
+        }
+        form = CheckoutForm(data=data)
+        assert form.is_valid() is False
+        assert 'phone' in form.errors
+
 
 class TestOrderForm:
     """Тесты расширенной формы заказа."""

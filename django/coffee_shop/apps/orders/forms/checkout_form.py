@@ -1,5 +1,8 @@
 """Checkout form for orders."""
+import re
+
 from django import forms
+from django.core.exceptions import ValidationError
 
 
 class CheckoutForm(forms.Form):
@@ -40,3 +43,25 @@ class CheckoutForm(forms.Form):
         }),
         required=False
     )
+
+    def clean_phone(self):
+        """Validate phone number format."""
+        phone = self.cleaned_data.get('phone', '')
+        if not phone:
+            return phone
+
+        # Extract digits from phone
+        digits = ''.join(c for c in phone if c.isdigit())
+
+        # Handle Russian phone: 8 at start → replace with 7
+        if digits.startswith('8') and len(digits) == 11:
+            digits = '7' + digits[1:]
+
+        # Validate: must be 11 digits starting with 7
+        if not re.match(r'^7\d{10}$', digits):
+            raise ValidationError(
+                'Номер телефона должен содержать 11 цифр и '
+                'начинаться с +7 (или 8 в начале)'
+            )
+
+        return phone

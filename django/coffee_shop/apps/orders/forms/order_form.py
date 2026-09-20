@@ -1,7 +1,10 @@
 """Order form."""
+import re
+
 from decimal import Decimal
 
 from django import forms
+from django.core.exceptions import ValidationError
 from .checkout_form import CheckoutForm
 
 
@@ -89,6 +92,16 @@ class OrderForm(CheckoutForm):
         cleaned_data = super().clean()
         delivery_method = cleaned_data.get('delivery_method')
         delivery_address = cleaned_data.get('delivery_address')
+        phone = cleaned_data.get('phone', '')
+
+        # Validate phone format
+        if phone:
+            digits = ''.join(c for c in phone if c.isdigit())
+            # Handle Russian phone: 8 at start → replace with 7
+            if digits.startswith('8') and len(digits) == 11:
+                digits = '7' + digits[1:]
+            if not re.match(r'^7\d{10}$', digits):
+                self.add_error('phone', 'Номер телефона должен содержать 11 цифр и начинаться с +7')
 
         if delivery_method == 'delivery':
             # Для курьера нужен адрес
