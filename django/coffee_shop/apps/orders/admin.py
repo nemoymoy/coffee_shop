@@ -1,6 +1,10 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils import timezone
+from django.db import models
+
+from coffee_shop.tasks import send_order_status_changed_email
+
 from .models import Order, OrderItem, Package, PromoCode
 
 
@@ -26,7 +30,7 @@ class OrderItemInline(admin.TabularInline):
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = [
-        'id', 'status_badge', 'full_name', 'phone', 'total_amount',
+        'id', 'status', 'status_badge', 'full_name', 'phone', 'total_amount',
         'delivery_method', 'payment_method', 'created_at'
     ]
     list_filter = ['status', 'delivery_method', 'payment_method', 'created_at']
@@ -35,6 +39,7 @@ class OrderAdmin(admin.ModelAdmin):
                        'yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost']
     inlines = [OrderItemInline]
     actions = ['mark_awaiting_payment', 'mark_in_progress', 'mark_ready', 'mark_delivered', 'mark_cancelled', 'mark_refunded', 'export_to_csv']
+    list_editable = ['status', 'delivery_method', 'payment_method']
 
     date_hierarchy = 'created_at'
     list_per_page = 20
@@ -84,34 +89,68 @@ class OrderAdmin(admin.ModelAdmin):
     full_name.short_description = 'Customer'
 
     def mark_awaiting_payment(self, request, queryset):
-        count = queryset.filter(status='new').update(status='awaiting_payment')
+        orders = queryset.filter(status='new')
+        count = orders.update(status='awaiting_payment')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'awaiting_payment')
         self.message_user(request, f'Updated: {count}')
     mark_awaiting_payment.short_description = 'Set to Awaiting Payment'
 
     def mark_in_progress(self, request, queryset):
-        count = queryset.update(status='in_progress')
+        orders = queryset.all()
+        count = orders.update(status='in_progress')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'in_progress')
         self.message_user(request, f'Updated: {count}')
     mark_in_progress.short_description = 'Set to In Progress'
 
     def mark_ready(self, request, queryset):
-        count = queryset.update(status='ready')
+        orders = queryset.all()
+        count = orders.update(status='ready')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'ready')
         self.message_user(request, f'Updated: {count}')
     mark_ready.short_description = 'Set to Ready'
 
     def mark_delivered(self, request, queryset):
-        count = queryset.update(status='delivered')
+        orders = queryset.all()
+        count = orders.update(status='delivered')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'delivered')
         self.message_user(request, f'Updated: {count}')
     mark_delivered.short_description = 'Set to Delivered'
 
     def mark_cancelled(self, request, queryset):
-        count = queryset.update(status='cancelled')
+        orders = queryset.all()
+        count = orders.update(status='cancelled')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'cancelled')
         self.message_user(request, f'Updated: {count}')
     mark_cancelled.short_description = 'Set to Cancelled'
 
     def mark_refunded(self, request, queryset):
-        count = queryset.update(status='refunded')
+        orders = queryset.all()
+        count = orders.update(status='refunded')
+        for order in orders:
+            send_order_status_changed_email.delay(order.pk, 'refunded')
         self.message_user(request, f'Updated: {count}')
     mark_refunded.short_description = 'Set to Refunded'
+
+    def save_model(self, request, obj, form, change):
+        """Отправляем email при изменении статуса заказа."""
+        old_status = None
+        if change:
+            try:
+                old_obj = Order.objects.get(pk=obj.pk)
+                old_status = old_obj.status
+            except Order.DoesNotExist:
+                pass
+
+        super().save_model(request, obj, form, change)
+
+        # Отправляем email, если статус изменился
+        if change and old_status and old_status != obj.status:
+            send_order_status_changed_email.delay(obj.pk, obj.status)
 
     def export_to_csv(self, request, queryset):
         import csv

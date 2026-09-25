@@ -23,6 +23,7 @@ from coffee_shop.apps.users.models import UserEmailVerification
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem, Package
+from coffee_shop.tasks import send_order_confirmation_email, send_order_status_changed_email
 
 
 def _get_express_claim_status(service, claim_id):
@@ -619,6 +620,9 @@ def checkout_view(request):
         if 'cart' in request.session:
             del request.session['cart']
         
+        # Отправляем email подтверждения заказа
+        send_order_confirmation_email.delay(order.pk)
+        
         return redirect('orders:order_success', order_id=order.pk)
     
     # Автозаполнение контактных данных из профиля пользователя
@@ -711,8 +715,12 @@ def order_success(request, order_id):
 
 def order_detail(request, pk):
     """Детальная страница заказа."""
+    from decimal import Decimal
+    
     order = get_object_or_404(Order, pk=pk)
-    context = {'order': order}
+    # Стоимость товаров = итог минус доставка
+    goods_total = order.total_amount - order.delivery_cost
+    context = {'order': order, 'goods_total': float(goods_total)}
     return render(request, 'order_detail.html', context)
 
 
@@ -902,6 +910,9 @@ def payment_webhook(request):
                         save_fields.append('yandex_offer_id')
                     order.save(update_fields=save_fields)
                     logger.info('Order status updated to PAID: %s', order.pk)
+
+                    # Отправляем email об изменении статуса
+                    send_order_status_changed_email.delay(order.pk, 'in_progress')
 
             except (Order.DoesNotExist, ValueError) as e:
                 logger.error('Error processing webhook: %s', e)
@@ -1143,6 +1154,9 @@ def payment_result(request):
                             
                             # Резервируем stock
                             StockService.reserve_stock(order.pk)
+
+                            # Отправляем email об изменении статуса
+                            send_order_status_changed_email.delay(order.pk, 'in_progress')
                             
                     messages.success(request, 'Оплата прошла успешно!')
                 elif payment_status.get('status') == 'pending':

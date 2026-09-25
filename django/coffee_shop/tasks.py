@@ -50,25 +50,78 @@ def send_order_status_changed_email(order_id, new_status):
     except Order.DoesNotExist:
         return
 
-    status_messages = {
-        'new': 'Ваш заказ принят в обработку',
-        'in_progress': 'Ваш заказ в обработке',
-        'ready': 'Ваш заказ готов к выдаче',
-        'delivered': 'Ваш заказ доставлен',
-        'cancelled': 'Ваш заказ отменён',
+    status_config = {
+        'new': {
+            'message': 'Ваш заказ принят в обработку',
+            'icon': '📝',
+            'color': '#1565c0',
+            'bg': '#e3f2fd',
+        },
+        'in_progress': {
+            'message': 'Ваш заказ в обработке',
+            'icon': '☕',
+            'color': '#e65100',
+            'bg': '#fff3e0',
+        },
+        'ready': {
+            'message': 'Ваш заказ готов к выдаче',
+            'icon': '✅',
+            'color': '#2e7d32',
+            'bg': '#e8f5e9',
+        },
+        'delivered': {
+            'message': 'Ваш заказ доставлен',
+            'icon': '🚚',
+            'color': '#00695c',
+            'bg': '#e0f2f1',
+        },
+        'cancelled': {
+            'message': 'Ваш заказ отменён',
+            'icon': '❌',
+            'color': '#c62828',
+            'bg': '#ffebee',
+        },
+        'refunded': {
+            'message': 'Возврат средств по заказу оформлен',
+            'icon': '💰',
+            'color': '#607d8b',
+            'bg': '#eceff1',
+        },
     }
+
+    config = status_config.get(new_status, {
+        'message': 'Статус заказа обновлён',
+        'icon': '☕',
+        'color': '#616161',
+        'bg': '#f5f5f5',
+    })
 
     subject = f'Статус заказа #{order_id} обновлён'
     from_email = settings.EMAIL_FROM or 'noreply@coffeeshop.local'
     recipient_list = [order.email]
 
-    message = status_messages.get(new_status, 'Статус заказа обновлён')
+    context = {
+        'order': order,
+        'status_color': config['color'],
+        'status_message': config['message'],
+        'status_icon': config['icon'],
+        'status_bg': config['bg'],
+    }
+
+    html_message = render_to_string(
+        'emails/order_status_changed.html', context
+    )
+    plain_message = (
+        f'Заказ #{order_id}: {config["message"]}. '
+        f'Текущий статус: {order.get_status_display()}'
+    )
 
     send_mail(
         subject=subject,
-        message=message,
+        message=plain_message,
         from_email=from_email,
         recipient_list=recipient_list,
+        html_message=html_message,
     )
     return f'Email статуса отправлен на {order.email}'
 
@@ -176,9 +229,15 @@ def sync_yandex_delivery_status():
         )
 
         if order_status:
+            old_status = order.status
             order.status = order_status
 
-        order.save(update_fields=['delivery_status', 'status'])
+            order.save(update_fields=['delivery_status', 'status'])
+
+            # Отправляем email, если статус изменился
+            if old_status != order_status:
+                send_order_status_changed_email.delay(order.pk, order_status)
+
         synced += 1
 
     # Sync Other Day API requests
@@ -202,9 +261,15 @@ def sync_yandex_delivery_status():
         )
 
         if order_status:
+            old_status = order.status
             order.status = order_status
 
-        order.save(update_fields=['delivery_status', 'status'])
+            order.save(update_fields=['delivery_status', 'status'])
+
+            # Отправляем email, если статус изменился
+            if old_status != order_status:
+                send_order_status_changed_email.delay(order.pk, order_status)
+
         synced += 1
 
     return f'Synced {synced} of ' \
