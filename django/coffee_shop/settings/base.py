@@ -210,6 +210,10 @@ else:
     EMAIL_HOST_PASSWORD = os.environ.get('RUSENDER_PASSWORD', '')
 EMAIL_FROM = os.environ.get('EMAIL_FROM', 'noreply@' + DOMAIN)
 
+# Магазин — контактные данные для email-уведомлений
+STORE_PHONE = os.environ.get('STORE_PHONE', '+7 (937) 986-48-98')
+STORE_EMAIL = os.environ.get('STORE_EMAIL', 'info@coffeeshop.ru')
+
 # YooKassa (ЮКасса)
 YOOKASSA_SHOP_ID = os.environ.get('YOOKASSA_SHOP_ID', '')
 YOOKASSA_SECRET_KEY = os.environ.get('YOOKASSA_SECRET_KEY', '')

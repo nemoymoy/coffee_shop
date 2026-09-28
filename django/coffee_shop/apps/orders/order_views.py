@@ -23,7 +23,11 @@ from coffee_shop.apps.users.models import UserEmailVerification
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem, Package
-from coffee_shop.tasks import send_order_confirmation_email, send_order_status_changed_email
+from coffee_shop.tasks import (
+    send_order_confirmation_email,
+    send_order_status_changed_email,
+    send_order_to_store_email,
+)
 
 
 def _get_express_claim_status(service, claim_id):
@@ -620,8 +624,17 @@ def checkout_view(request):
         if 'cart' in request.session:
             del request.session['cart']
         
-        # Отправляем email подтверждения заказа
+        # Рассчитываем стоимость товаров (без доставки)
+        goods_total = sum(
+            (item.total_price for item in order.items.all()),
+            Decimal('0')
+        )
+        
+        # Отправляем email подтверждения клиенту
         send_order_confirmation_email.delay(order.pk)
+        
+        # Отправляем уведомление на email магазина
+        send_order_to_store_email.delay(order.pk, goods_total)
         
         return redirect('orders:order_success', order_id=order.pk)
     

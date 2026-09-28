@@ -25,7 +25,11 @@ def send_order_confirmation_email(order_id):
     recipient_list = [order.email]
 
     html_message = render_to_string(
-        'emails/order_confirmation.html', {'order': order}
+        'emails/order_confirmation.html', {
+            'order': order,
+            'STORE_PHONE': settings.STORE_PHONE,
+            'STORE_EMAIL': settings.STORE_EMAIL,
+        }
     )
     plain_message = (
         f'Заказ #{order_id} успешно оформлен. '
@@ -40,6 +44,44 @@ def send_order_confirmation_email(order_id):
         html_message=html_message,
     )
     return f'Email отправлен на {order.email}'
+
+
+@shared_task
+def send_order_to_store_email(order_id, goods_total):
+    """Отправка уведомления о новом заказе на email магазина."""
+    try:
+        order = Order.objects.get(pk=order_id)
+    except Order.DoesNotExist:
+        return
+
+    subject = f'Новый заказ #{order.order_number}'
+    from_email = settings.EMAIL_FROM or 'noreply@coffeeshop.local'
+    recipient_list = [settings.STORE_EMAIL]
+
+    html_message = render_to_string(
+        'emails/order_to_store.html', {
+            'order': order,
+            'goods_total': goods_total,
+            'STORE_PHONE': settings.STORE_PHONE,
+            'STORE_EMAIL': settings.STORE_EMAIL,
+        }
+    )
+    plain_message = (
+        f'Новый заказ #{order.order_number}\n'
+        f'Сумма: {order.total_amount} ₽\n'
+        f'Клиент: {order.first_name} {order.last_name}\n'
+        f'Email: {order.email}\n'
+        f'Телефон: {order.phone}'
+    )
+
+    send_mail(
+        subject=subject,
+        message=plain_message,
+        from_email=from_email,
+        recipient_list=recipient_list,
+        html_message=html_message,
+    )
+    return f'Уведомление отправлено на {settings.STORE_EMAIL}'
 
 
 @shared_task
@@ -106,6 +148,8 @@ def send_order_status_changed_email(order_id, new_status):
         'status_message': config['message'],
         'status_icon': config['icon'],
         'status_bg': config['bg'],
+        'STORE_PHONE': settings.STORE_PHONE,
+        'STORE_EMAIL': settings.STORE_EMAIL,
     }
 
     html_message = render_to_string(
