@@ -234,6 +234,53 @@ var CoffeeShop = window.CoffeeShop || {};
         if (alertEl) {
             CoffeeShop.showToast(alertEl.textContent.trim(), 'info');
         }
+
+        // Phone formatting for profile form
+        var phoneInput = document.querySelector('#id_phone');
+        if (phoneInput) {
+            phoneInput.addEventListener('input', function (e) {
+                var formatted = CoffeeShop.formatPhone(e.target.value);
+                e.target.value = formatted;
+            });
+        }
+
+        // Birth date auto-formatting and display
+        var birthDay = document.querySelector('#birth_day');
+        var birthMonth = document.querySelector('#birth_month');
+        var birthYear = document.querySelector('#birth_year');
+
+        if (birthDay && birthMonth && birthYear) {
+            // Pre-fill from existing date (if stored as YYYY-MM-DD)
+            var existingDate = '{{ profile_form.birth_date.value|date:"Y-m-d"|escapejs }}';
+            if (existingDate && existingDate !== 'None' && existingDate !== '') {
+                var parts = existingDate.split('-');
+                if (parts.length === 3) {
+                    birthDay.value = parts[2];
+                    birthMonth.value = parts[1];
+                    birthYear.value = parts[0];
+                }
+            }
+
+            // Auto-advance to next field
+            birthDay.addEventListener('input', function () {
+                if (this.value.length >= 2) birthMonth.focus();
+            });
+            birthMonth.addEventListener('input', function () {
+                if (this.value.length >= 2) birthYear.focus();
+            });
+
+            // Validate ranges
+            birthDay.addEventListener('blur', function () {
+                var val = parseInt(this.value);
+                if (val < 1) this.value = '';
+                if (val > 31) this.value = '31';
+            });
+            birthMonth.addEventListener('blur', function () {
+                var val = parseInt(this.value);
+                if (val < 1) this.value = '';
+                if (val > 12) this.value = '12';
+            });
+        }
     });
 
 })();
