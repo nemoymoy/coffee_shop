@@ -97,6 +97,7 @@ TEMPLATES = [
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
                 'coffee_shop.context_processors.yandex_metrika',
+                'coffee_shop.context_processors.store_info',
             ],
         },
     },
