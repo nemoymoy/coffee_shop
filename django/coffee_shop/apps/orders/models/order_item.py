@@ -90,6 +90,8 @@ class OrderItem(models.Model):
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создана')
 
     class Meta:
+        verbose_name = 'Позиция заказа'
+        verbose_name_plural = 'Позиции заказа'
         indexes = [
             models.Index(fields=['order', 'product']),
         ]

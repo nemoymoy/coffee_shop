@@ -25,6 +25,8 @@ class News(models.Model):
 
     class Meta:
         ordering = ['-published_at']
+        verbose_name = 'Новость'
+        verbose_name_plural = 'Новости'
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['is_published', 'published_at']),
@@ -59,6 +61,8 @@ class Promotion(models.Model):
 
     class Meta:
         ordering = ['-start_date']
+        verbose_name = 'Акция'
+        verbose_name_plural = 'Акции'
         indexes = [
             models.Index(fields=['is_active', 'start_date', 'end_date']),
         ]

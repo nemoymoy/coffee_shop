@@ -127,6 +127,8 @@ class Product(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Товар'
+        verbose_name_plural = 'Товары'
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['category', 'is_available']),

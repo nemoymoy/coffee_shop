@@ -126,9 +126,9 @@ class ProductAdmin(admin.ModelAdmin):
     # Price display
     def price_display(self, obj):
         if obj.product_type == 'coffee':
-            return f'{obj.price_per_50g} rub / 50g'
-        return f'{obj.base_price} rub'
-    price_display.short_description = 'Price'
+            return f'{obj.price_per_50g} руб / 50г'
+        return f'{obj.base_price} руб'
+    price_display.short_description = 'Цена'
 
     # SCA score badge
     def sca_score_badge(self, obj):
@@ -157,7 +157,7 @@ class ProductAdmin(admin.ModelAdmin):
             return format_html('<span style="color: #f9a825;">{}</span>', obj.stock)
         else:
             return format_html('<span style="color: #c62828;">{}</span>', obj.stock)
-    stock_color.short_description = 'Stock'
+    stock_color.short_description = 'Остаток'
 
     fieldsets = (
         ('Основное', {
@@ -184,20 +184,20 @@ class ProductAdmin(admin.ModelAdmin):
 
     def make_available(self, request, queryset):
         queryset.update(is_available=True)
-    make_available.short_description = 'Available'
+    make_available.short_description = 'Сделать доступными'
 
     def unmake_available(self, request, queryset):
         queryset.update(is_available=False)
-    unmake_available.short_description = 'Hidden'
+    unmake_available.short_description = 'Скрыть'
 
     def recalculate_stock(self, request, queryset):
         """Recalculate stock from sold quantities (requires orders app integration)."""
         self.message_user(
             request,
-            '⚠ Recalculate stock requires integration with orders.app. '
-            'Currently only a placeholder action.'
+            '⚠ Пересчёт остатков требует интеграции с orders.app. '
+            'В данный момент это заглушка.'
         )
-    recalculate_stock.short_description = 'Recalculate Stock (TODO: implement with orders)'
+    recalculate_stock.short_description = 'Пересчитать остатки (TODO: implement with orders)'
 
 
 @admin.register(Product)
@@ -216,13 +216,13 @@ class ReviewAdmin(admin.ModelAdmin):
 
     def approve_reviews(self, request, queryset):
         queryset.update(is_approved=True)
-    approve_reviews.short_description = 'Approve reviews'
+    approve_reviews.short_description = 'Одобрить отзывы'
 
     def unapprove_reviews(self, request, queryset):
         queryset.update(is_approved=False)
-    unapprove_reviews.short_description = 'Unapprove reviews'
+    unapprove_reviews.short_description = 'Не одобрить отзывы'
 
 
-admin.site.site_header = 'Coffee Shop Admin'
-admin.site.site_title = 'Coffee Shop Administration'
-admin.site.index_title = 'Welcome to Coffee Shop Admin'
+admin.site.site_header = 'Административная панель кофейни'
+admin.site.site_title = 'Кофейня — админ-панель'
+admin.site.index_title = 'Добро пожаловать в админ-панель кофейни'

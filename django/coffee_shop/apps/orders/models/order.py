@@ -208,6 +208,8 @@ class Order(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Заказ'
+        verbose_name_plural = 'Заказы'
         indexes = [
             models.Index(fields=['status']),
             models.Index(fields=['user', 'status']),

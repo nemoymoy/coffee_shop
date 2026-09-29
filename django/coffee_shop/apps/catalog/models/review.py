@@ -28,6 +28,8 @@ class Review(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        verbose_name = 'Отзыв'
+        verbose_name_plural = 'Отзывы'
         indexes = [
             models.Index(fields=['product', 'is_approved']),
         ]

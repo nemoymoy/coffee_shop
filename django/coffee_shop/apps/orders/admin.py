@@ -45,23 +45,23 @@ class OrderAdmin(admin.ModelAdmin):
     list_per_page = 20
 
     fieldsets = (
-        ('Customer info', {
+        ('Информация о покупателе', {
             'fields': ('user', 'first_name', 'last_name', 'phone', 'email')
         }),
-        ('Order', {
+        ('Заказ', {
             'fields': ('status', 'total_amount', 'payment_method', 'delivery_method')
         }),
-        ('Delivery', {
+        ('Доставка', {
             'fields': ('delivery_address', 'delivery_date', 'delivery_time')
         }),
-        ('Yandex Delivery info', {
+        ('Информация о Яндекс Доставке', {
             'fields': ('yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost'),
             'classes': ('collapse',)
         }),
-        ('Comment', {
+        ('Комментарий', {
             'fields': ('comment',)
         }),
-        ('System', {
+        ('Системная информация', {
             'fields': ('order_number', 'created_at', 'updated_at', 'reserved_at', 'payment_id'),
             'classes': ('collapse',)
         }),
@@ -82,59 +82,59 @@ class OrderAdmin(admin.ModelAdmin):
             '<span style="background: {}; color: #fff; padding: 4px 12px; border-radius: 12px; font-size: 0.8em; font-weight: bold; white-space: nowrap;">{}</span>',
             color, obj.get_status_display()
         )
-    status_badge.short_description = 'Status'
+    status_badge.short_description = 'Статус'
 
     def full_name(self, obj):
         return f'{obj.last_name} {obj.first_name}'
-    full_name.short_description = 'Customer'
+    full_name.short_description = 'Покупатель'
 
     def mark_awaiting_payment(self, request, queryset):
         orders = queryset.filter(status='new')
         count = orders.update(status='awaiting_payment')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'awaiting_payment')
-        self.message_user(request, f'Updated: {count}')
-    mark_awaiting_payment.short_description = 'Set to Awaiting Payment'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_awaiting_payment.short_description = 'Установить "Ожидает оплаты"'
 
     def mark_in_progress(self, request, queryset):
         orders = queryset.all()
         count = orders.update(status='in_progress')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'in_progress')
-        self.message_user(request, f'Updated: {count}')
-    mark_in_progress.short_description = 'Set to In Progress'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_in_progress.short_description = 'Установить "Оплачен"'
 
     def mark_ready(self, request, queryset):
         orders = queryset.all()
         count = orders.update(status='ready')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'ready')
-        self.message_user(request, f'Updated: {count}')
-    mark_ready.short_description = 'Set to Ready'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_ready.short_description = 'Установить "Готов"'
 
     def mark_delivered(self, request, queryset):
         orders = queryset.all()
         count = orders.update(status='delivered')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'delivered')
-        self.message_user(request, f'Updated: {count}')
-    mark_delivered.short_description = 'Set to Delivered'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_delivered.short_description = 'Установить "Доставлен"'
 
     def mark_cancelled(self, request, queryset):
         orders = queryset.all()
         count = orders.update(status='cancelled')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'cancelled')
-        self.message_user(request, f'Updated: {count}')
-    mark_cancelled.short_description = 'Set to Cancelled'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_cancelled.short_description = 'Установить "Отменён"'
 
     def mark_refunded(self, request, queryset):
         orders = queryset.all()
         count = orders.update(status='refunded')
         for order in orders:
             send_order_status_changed_email.delay(order.pk, 'refunded')
-        self.message_user(request, f'Updated: {count}')
-    mark_refunded.short_description = 'Set to Refunded'
+        self.message_user(request, f'Обновлено: {count}')
+    mark_refunded.short_description = 'Установить "Возврат"'
 
     def save_model(self, request, obj, form, change):
         """Отправляем email при изменении статуса заказа."""
@@ -159,8 +159,8 @@ class OrderAdmin(admin.ModelAdmin):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="orders.csv"'
         writer = csv.writer(response)
-        writer.writerow(['ID', 'Customer', 'Phone', 'Email', 'Status', 'Total',
-                         'Delivery', 'Payment', 'Created'])
+        writer.writerow(['ID', 'Покупатель', 'Телефон', 'Email', 'Статус', 'Итого',
+                         'Доставка', 'Оплата', 'Создан'])
         for order in queryset:
             writer.writerow([
                 order.id, f'{order.last_name} {order.first_name}',
@@ -168,9 +168,9 @@ class OrderAdmin(admin.ModelAdmin):
                 order.total_amount, order.get_delivery_method_display(),
                 order.get_payment_method_display(), order.created_at
             ])
-        self.message_user(request, f'Exported: {queryset.count()} orders')
+        self.message_user(request, f'Экспортировано: {queryset.count()} заказов')
         return response
-    export_to_csv.short_description = 'Export CSV'
+    export_to_csv.short_description = 'Экспорт в CSV'
 
 
 @admin.register(PromoCode)
@@ -189,42 +189,42 @@ class PromoCodeAdmin(admin.ModelAdmin):
     def discount_display(self, obj):
         if obj.discount_type == 'percent':
             return f'{obj.discount_value}%'
-        return f'{obj.discount_value} rub'
-    discount_display.short_description = 'Discount'
+        return f'{obj.discount_value} руб'
+    discount_display.short_description = 'Скидка'
 
     def remaining_uses_badge(self, obj):
         remaining = obj.remaining_uses
         if obj.max_uses == 0:
-            return format_html('<span style="color: #2e7d32;">infinity</span>')
+            return format_html('<span style="color: #2e7d32;">∞</span>')
         elif remaining > 0:
             return format_html('<span style="color: #2e7d32;">{}</span>', remaining)
         else:
-            return format_html('<span style="color: #c62828;">Expired</span>')
-    remaining_uses_badge.short_description = 'Remaining'
+            return format_html('<span style="color: #c62828;">Истёк</span>')
+    remaining_uses_badge.short_description = 'Осталось'
 
     def valid_period(self, obj):
         now = timezone.now()
         if now < obj.valid_from:
-            return format_html('<span style="color: #f9a825;">Not started</span>')
+            return format_html('<span style="color: #f9a825;">Не начата</span>')
         elif now > obj.valid_to:
-            return format_html('<span style="color: #c62828;">Expired</span>')
+            return format_html('<span style="color: #c62828;">Истекла</span>')
         elif obj.is_active:
-            return format_html('<span style="color: #2e7d32;">Active</span>')
+            return format_html('<span style="color: #2e7d32;">Активна</span>')
         else:
-            return format_html('<span style="color: #616161;">Inactive</span>')
-    valid_period.short_description = 'Validity'
+            return format_html('<span style="color: #616161;">Неактивна</span>')
+    valid_period.short_description = 'Действие'
 
     actions = ['activate_codes', 'deactivate_codes']
 
     def activate_codes(self, request, queryset):
         count = queryset.update(is_active=True)
-        self.message_user(request, f'Activated: {count}')
-    activate_codes.short_description = 'Activate'
+        self.message_user(request, f'Активировано: {count}')
+    activate_codes.short_description = 'Активировать промокоды'
 
     def deactivate_codes(self, request, queryset):
         count = queryset.update(is_active=False)
-        self.message_user(request, f'Deactivated: {count}')
-    deactivate_codes.short_description = 'Deactivate'
+        self.message_user(request, f'Деактивировано: {count}')
+    deactivate_codes.short_description = 'Деактивировать промокоды'
 
 
 @admin.register(Package)
@@ -234,6 +234,6 @@ class PackageAdmin(admin.ModelAdmin):
     ordering = ['weight_range']
 
 
-admin.site.site_header = 'Coffee Shop Admin'
-admin.site.site_title = 'Coffee Shop Administration'
-admin.site.index_title = 'Welcome to Coffee Shop Admin'
+admin.site.site_header = 'Административная панель кофейни'
+admin.site.site_title = 'Кофейня — админ-панель'
+admin.site.index_title = 'Добро пожаловать в админ-панель кофейни'

@@ -21,6 +21,8 @@ class Category(models.Model):
 
     class Meta:
         ordering = ['order', 'name']
+        verbose_name = 'Категория'
+        verbose_name_plural = 'Категории'
         indexes = [
             models.Index(fields=['slug']),
             models.Index(fields=['parent', 'is_active']),
