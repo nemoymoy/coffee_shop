@@ -1,5 +1,7 @@
 """Views for users app."""
 import hashlib
+import json
+import logging
 
 from django.shortcuts import render, redirect
 from django.contrib.auth import login, authenticate, authenticate as _authenticate
@@ -8,11 +10,18 @@ from django.contrib import messages
 from django.utils.decorators import decorator_from_middleware
 from django.middleware.csrf import CsrfViewMiddleware
 from django.views.generic import TemplateView
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST, require_http_methods
 
-from coffee_shop.apps.users.forms import UserRegistrationForm
-from coffee_shop.apps.users.models import PersonalDataConsent, UserEmailVerification
+from coffee_shop.apps.users.forms import UserRegistrationForm, DeliveryAddressForm
+from coffee_shop.apps.users.models import (
+    PersonalDataConsent, UserEmailVerification, DeliveryAddress,
+)
 from coffee_shop.apps.users.services.email_verification_service import EmailVerificationService
+from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
 
+logger = logging.getLogger(__name__)
 
 # Тексты согласия для версионирования
 CONSENT_TEXTS = {
@@ -123,7 +132,7 @@ def verify_email_view(request, token):
     success, error = EmailVerificationService.verify_token(token)
 
     if success:
-        # Автоматический вход после подтверждения email
+        # Автома��ический вход после подтверждения email
         if user:
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(
@@ -164,3 +173,184 @@ def resend_verification_view(request):
         )
 
     return redirect('users:email_verification_pending')
+
+
+# ==================== Delivery Address API Views ====================
+
+@login_required
+@require_http_methods(['GET', 'POST'])
+def delivery_addresses_view(request):
+    """
+    API для управления адресами доставки.
+
+    GET — список адресов пользователя
+    POST — создание нового адреса
+    """
+    if request.method == 'GET':
+        return _list_addresses(request)
+    return _create_address(request)
+
+
+@login_required
+@require_http_methods(['GET', 'PUT', 'PATCH'])
+def delivery_address_detail_view(request, address_id):
+    """
+    API для детального управления адресом доставки.
+
+    GET — получение адреса
+    PUT/PATCH — обновление адреса
+    """
+    try:
+        address = DeliveryAddress.objects.get(
+            id=address_id,
+            user=request.user
+        )
+    except DeliveryAddress.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Адрес не найден',
+        }, status=404)
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'address': _address_to_dict(address),
+        })
+
+    return _update_address(request, address)
+
+
+@login_required
+@require_POST
+def delivery_address_delete_view(request, address_id):
+    """Удаление адреса доставки."""
+    try:
+        address = DeliveryAddress.objects.get(
+            id=address_id,
+            user=request.user
+        )
+    except DeliveryAddress.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Адрес не найден',
+        }, status=404)
+
+    address.delete()
+    return JsonResponse({
+        'success': True,
+        'message': 'Адрес удалён',
+    })
+
+
+def _list_addresses(request):
+    """Возвращает список адресов пользователя."""
+    addresses = DeliveryAddress.objects.filter(user=request.user)
+    return JsonResponse({
+        'success': True,
+        'addresses': [_address_to_dict(addr) for addr in addresses],
+    })
+
+
+def _create_address(request):
+    """Создаёт новый адрес пользователя."""
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+    except (json.JSONDecodeError, ValueError):
+        data = request.POST
+
+    label = data.get('label', '')
+    full_address = data.get('full_address', '')
+    coordinates = data.get('coordinates', '')
+    apartment = data.get('apartment', '')
+    is_default = data.get('is_default', False)
+
+    if not label or not full_address:
+        return JsonResponse({
+            'success': False,
+            'error': 'Укажите метку и адрес',
+        }, status=400)
+
+    # Если координаты не переданы, попробуем геокодировать адрес
+    if not coordinates and full_address:
+        geocoder = YandexGeocoderService()
+        geo_result = geocoder.geocode_first(full_address)
+        if geo_result.get('success'):
+            coords = geo_result.get('coords', [])
+            if coords and len(coords) >= 2:
+                coordinates = f'{coords[0]},{coords[1]}'
+                full_address = geo_result.get('text', full_address)
+
+    form = DeliveryAddressForm(data={
+        'label': label,
+        'full_address': full_address,
+        'apartment': apartment,
+    })
+
+    if not form.is_valid():
+        return JsonResponse({
+            'success': False,
+            'error': 'Ошибка в данных адреса',
+            'errors': form.errors,
+        }, status=400)
+
+    address = form.save(commit=False)
+    address.user = request.user
+    address.coordinates = coordinates
+    address.is_default = is_default
+    address.save()
+
+    return JsonResponse({
+        'success': True,
+        'address': _address_to_dict(address),
+    }, status=201)
+
+
+def _update_address(request, address):
+    """Обновляет адрес пользователя."""
+    try:
+        data = json.loads(request.body) if request.content_type == 'application/json' else request.POST
+    except (json.JSONDecodeError, ValueError):
+        data = request.POST
+
+    label = data.get('label', address.label)
+    apartment = data.get('apartment', address.apartment)
+    is_default = data.get('is_default', address.is_default)
+
+    form = DeliveryAddressForm(
+        instance=address,
+        data={'label': label, 'full_address': address.full_address, 'apartment': apartment},
+    )
+
+    if not form.is_valid():
+        return JsonResponse({
+            'success': False,
+            'error': 'Ошибка в данных адреса',
+            'errors': form.errors,
+        }, status=400)
+
+    # Сохраняем данные из формы
+    form.save()
+
+    # Обновляем is_default (не через form, т.к. это не в fields)
+    if is_default != address.is_default:
+        address.is_default = is_default
+        address.save()
+
+    return JsonResponse({
+        'success': True,
+        'address': _address_to_dict(address),
+    })
+
+
+def _address_to_dict(address):
+    """Конвертирует модель адреса в словарь для JSON."""
+    return {
+        'id': address.pk,
+        'label': address.label,
+        'full_address': address.full_address,
+        'apartment': address.apartment,
+        'coordinates': address.coordinates,
+        'is_default': address.is_default,
+        'display_address': address.display_address,
+        'created_at': address.created_at.isoformat(),
+    }

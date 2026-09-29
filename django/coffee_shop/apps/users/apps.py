@@ -21,3 +21,6 @@ class UsersConfig(AppConfig):
             self._social_user_instance = value
 
         User.add_to_class('social_user', property(_get_social_user, _set_social_user))
+
+        # Import signals to register post_save handlers
+        import coffee_shop.apps.users.signals  # noqa: F401

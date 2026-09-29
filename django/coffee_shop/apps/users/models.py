@@ -9,6 +9,46 @@ from datetime import timedelta
 from django.contrib.auth.models import User
 
 
+class UserProfile(models.Model):
+    """Дополнительная информация о пользователе."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile',
+        verbose_name='Пользователь',
+    )
+    phone = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        verbose_name='Телефон',
+    )
+    birth_date = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name='Дата рождения',
+    )
+    GENDER_CHOICES = [
+        ('M', 'Мужской'),
+        ('F', 'Женский'),
+    ]
+    gender = models.CharField(
+        max_length=1,
+        choices=GENDER_CHOICES,
+        blank=True,
+        default='',
+        verbose_name='Пол',
+    )
+
+    class Meta:
+        verbose_name = 'Профиль пользователя'
+        verbose_name_plural = 'Профили пользователей'
+
+    def __str__(self):
+        return f'Profile of {self.user.get_full_name() or self.user.username}'
+
+
 class PersonalDataConsent(models.Model):
     """
     Модель для хранения подтверждений согласия на обработку персональных данных.
@@ -115,3 +155,88 @@ class UserEmailVerification(models.Model):
 
     def __str__(self):
         return f'Email verification for {self.user.email}'
+
+
+class DeliveryAddress(models.Model):
+    """
+    Сохранённый адрес доставки пользователя.
+
+    Формат хранения соответствует требованиям Яндекс Доставки:
+    - full_address — полный адрес (из геокодера Яндекс)
+    - coordinates — координаты [lon,lat] для расчёта стоимости доставки
+    - label — метка пользователя ("Дом", "Офис", "Дача")
+    - apartment — номер квартиры/офиса
+    - is_default — адрес по умолчанию
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='delivery_addresses',
+        verbose_name='Пользователь',
+    )
+    label = models.CharField(
+        max_length=50,
+        verbose_name='Метка',
+        help_text='Например: Дом, Офис, Дача',
+    )
+    full_address = models.CharField(
+        max_length=500,
+        verbose_name='Полный адрес',
+        help_text='Полный адрес из геокодера Яндекс (например: Самара ул Революционная 3)',
+    )
+    coordinates = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name='Координаты [lon,lat]',
+        help_text='Координаты адреса в формате longitude,latitude',
+    )
+    apartment = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name='Квартира/офис',
+    )
+    is_default = models.BooleanField(
+        default=False,
+        verbose_name='По умолчанию',
+        help_text='Используется по умолчанию при оформлении заказа',
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Создан',
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name='Обновлён',
+    )
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+        verbose_name = 'Адрес доставки'
+        verbose_name_plural = 'Адреса доставки'
+        indexes = [
+            models.Index(fields=['user', 'is_default']),
+        ]
+
+    def __str__(self):
+        return f'{self.user.get_full_name() or self.user.username}: {self.label} ({self.full_address})'
+
+    def save(self, *args, **kwargs):
+        """Убедимся, что только один адрес пользователя является дефолтным."""
+        if self.is_default:
+            DeliveryAddress.objects.filter(
+                user=self.user,
+                is_default=True
+            ).exclude(pk=self.pk).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    @property
+    def display_address(self):
+        """Формирование адреса для отображения в интерфейсе."""
+        parts = [self.full_address]
+        if self.apartment:
+            parts.append(f'кв. {self.apartment}')
+        return ' | '.join(parts)

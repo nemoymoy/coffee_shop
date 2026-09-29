@@ -7,6 +7,8 @@
 <link rel="stylesheet" href="{% static 'css/components.css' %}">
 {% endblock %}
 
+
+
 {% block content %}
 <div class="row">
     <!-- Sidebar -->
@@ -73,6 +75,44 @@
 
                             <hr>
 
+                            <h6 class="mb-3">Дополнительная информация</h6>
+
+                            <div class="mb-3">
+                                <label for="{{ profile_form.phone.id_for_label }}" class="form-label">Телефон</label>
+                                {{ profile_form.phone }}
+                                {% if profile_form.phone.errors %}
+                                <div class="text-danger small">{{ profile_form.phone.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="{{ profile_form.birth_date.id_for_label }}" class="form-label">Дата рождения</label>
+                                <div class="row g-2">
+                                    <div class="col-4">
+                                        <input type="number" name="birth_day" id="birth_day" class="form-control"
+                                               placeholder="ДД" min="1" max="31" maxlength="2" inputmode="numeric">
+                                    </div>
+                                    <div class="col-4">
+                                        <input type="number" name="birth_month" id="birth_month" class="form-control"
+                                               placeholder="ММ" min="1" max="12" maxlength="2" inputmode="numeric">
+                                    </div>
+                                    <div class="col-4">
+                                        <input type="number" name="birth_year" id="birth_year" class="form-control"
+                                               placeholder="ГГГГ" min="1900" max="2099" maxlength="4" inputmode="numeric">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="{{ profile_form.gender.id_for_label }}" class="form-label">Пол</label>
+                                {{ profile_form.gender }}
+                                {% if profile_form.gender.errors %}
+                                <div class="text-danger small">{{ profile_form.gender.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <hr>
+
                             <h6 class="mb-3">Изменить пароль</h6>
 
                             <div class="mb-3">
@@ -101,26 +141,31 @@
                 <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span>Адреса доставки</span>
-                        <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+                        <button class="btn btn-coffee-outline btn-sm" id="addAddressBtn">
                             + Добавить
                         </button>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" id="addressesList">
                         {% if addresses %}
                         {% for addr in addresses %}
-                        <div class="card mb-2 border-start border-4 border-secondary">
+                        <div class="card mb-2 border-start border-4 {% if addr.is_default %}border-primary{% else %}border-secondary{% endif %}" data-address-id="{{ addr.id }}">
                             <div class="card-body p-3">
                                 <div class="d-flex justify-content-between align-items-start">
-                                    <div>
-                                        <strong>{{ addr.label|default:"Дом" }}</strong>
+                                    <div class="flex-grow-1">
+                                        <div class="d-flex align-items-center gap-2">
+                                            <strong>{{ addr.label|default:"Дом" }}</strong>
+                                            {% if addr.is_default %}
+                                            <span class="badge bg-primary" title="Адрес по умолчанию">⭐ По умолчанию</span>
+                                            {% endif %}
+                                        </div>
                                         <p class="mb-1 mt-2 small">{{ addr.address }}</p>
                                         {% if addr.apartment %}
                                         <small class="text-muted">Кв. {{ addr.apartment }}</small>
                                         {% endif %}
                                     </div>
-                                    <div>
-                                        <button class="btn btn-sm text-primary me-1" title="Редактировать">✏️</button>
-                                        <button class="btn btn-sm text-danger" title="Удалить">🗑️</button>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary me-1 btn-edit-address" data-address-id="{{ addr.id }}" title="Редактировать">✏️</button>
+                                        <button class="btn btn-outline-danger btn-delete-address" data-address-id="{{ addr.id }}" title="Удалить">🗑️</button>
                                     </div>
                                 </div>
                             </div>
@@ -129,7 +174,7 @@
                         {% else %}
                         <div class="text-center py-4">
                             <p class="text-muted">У вас пока нет сохранённых адресов</p>
-                            <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#addAddressModal">
+                            <button class="btn btn-coffee-outline btn-sm" id="addAddressBtnEmpty">
                                 Добавить адрес
                             </button>
                         </div>
@@ -141,10 +186,40 @@
                 <div class="card mt-4">
                     <div class="card-header">Телефон</div>
                     <div class="card-body">
-                        <p class="mb-3">{{ user.phone|default:"Не указан" }}</p>
-                        <button class="btn btn-coffee-outline btn-sm" data-bs-toggle="modal" data-bs-target="#editPhoneModal">
-                            Изменить
-                        </button>
+                        {% if user_profile.phone %}
+                        <p class="mb-3">{{ user_profile.phone }}</p>
+                        {% else %}
+                        <p class="mb-3">Не указан</p>
+                        {% endif %}
+                        <small class="text-muted">Измените телефон в форме слева и нажмите "Сохранить изменения"</small>
+                    </div>
+                </div>
+
+                <!-- Birth Date -->
+                <div class="card mt-4">
+                    <div class="card-header">Дата рождения</div>
+                    <div class="card-body">
+                        {% if user_profile.birth_date %}
+                        <p class="mb-3">{{ user_profile.birth_date|date:"d/m/Y" }}</p>
+                        {% else %}
+                        <p class="mb-3">Не указана</p>
+                        {% endif %}
+                        <small class="text-muted">Измените дату рождения в форме слева и нажмите "Сохранить изменения"</small>
+                    </div>
+                </div>
+
+                <!-- Gender -->
+                <div class="card mt-4">
+                    <div class="card-header">Пол</div>
+                    <div class="card-body">
+                        {% if user_profile.gender == 'M' %}
+                        <p class="mb-3">Мужской</p>
+                        {% elif user_profile.gender == 'F' %}
+                        <p class="mb-3">Женский</p>
+                        {% else %}
+                        <p class="mb-3">Не указан</p>
+                        {% endif %}
+                        <small class="text-muted">Измените пол в форме слева и нажмите "Сохранить изменения"</small>
                     </div>
                 </div>
             </div>
@@ -152,59 +227,84 @@
     </div>
 </div>
 
-<!-- Modal: Add Address -->
-<div class="modal fade" id="addAddressModal" tabindex="-1">
+<!-- Modal: Add/Edit Address -->
+<div class="modal fade" id="addressModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Новый адрес</h5>
+                <h5 class="modal-title" id="addressModalTitle">Новый адрес</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form>
+                <form id="addressForm">
+                    <input type="hidden" id="addressEditId" value="">
+
                     <div class="mb-3">
-                        <label class="form-label">Метка</label>
-                        <input type="text" class="form-control" placeholder="Дом, Офис, Дача">
+                        <label class="form-label">Метка <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="addressLabel" placeholder="Дом, Офис, Дача" required>
                     </div>
+
                     <div class="mb-3">
-                        <label class="form-label">Адрес</label>
-                        <textarea class="form-control" rows="3" placeholder="Город, улица, дом"></textarea>
+                        <label class="form-label">Адрес <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="addressAutocompleteInput" placeholder="Начните вводить адрес...">
+                        <div class="form-text">Начните вводить адрес и выберите из списка подсказок Яндекс</div>
+                        <div id="addressSuggestions" class="list-group mt-2" style="display:none;"></div>
                     </div>
+
                     <div class="mb-3">
-                        <label class="form-label">Квартира (необязательно)</label>
-                        <input type="text" class="form-control" placeholder="кв.">
+                        <label class="form-label">Полный адрес</label>
+                        <textarea class="form-control" id="addressFullAddress" rows="2" readonly placeholder="Адрес будет выбран из подсказок"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Квартира/офис (необязательно)</label>
+                        <input type="text" class="form-control" id="addressApartment" placeholder="кв. / оф.">
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="addressIsDefault">
+                        <label class="form-check-label" for="addressIsDefault">Использовать по умолчанию</label>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-coffee">Сохранить</button>
+                <button type="button" class="btn btn-coffee" id="saveAddressBtn">Сохранить</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Modal: Edit Phone -->
-<div class="modal fade" id="editPhoneModal" tabindex="-1">
-    <div class="modal-dialog">
+<!-- Modal: Confirm Delete -->
+<div class="modal fade" id="deleteAddressModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Изменить телефон</h5>
+                <h5 class="modal-title">Удалить адрес?</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form>
-                    <div class="mb-3">
-                        <label class="form-label">Телефон</label>
-                        <input type="tel" class="form-control" placeholder="+7 (___) ___-__-__">
-                    </div>
-                </form>
+                <p id="deleteAddressText">Вы действительно хотите удалить этот адрес?</p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
-                <button type="button" class="btn btn-coffee">Сохранить</button>
+                <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Отмена</button>
+                <button type="button" class="btn btn-danger btn-sm" id="confirmDeleteBtn">Удалить</button>
             </div>
         </div>
     </div>
 </div>
+
 {% endblock %}
+
+{% block extra_js %}
+{% if addresses %}
+{{ addresses|json_script:"profile-addresses-data" }}
+{% else %}
+<script id="profile-addresses-data" type="application/json">[]</script>
+{% endif %}
+<script>
+    window.PROFILE_ADDRESSES = JSON.parse(document.getElementById('profile-addresses-data').textContent);
+</script>
+<script src="{% static 'js/delivery_address_manager.js' %}"></script>
+{% endblock %}
+

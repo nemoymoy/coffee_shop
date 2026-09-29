@@ -223,6 +223,7 @@ class EmailVerificationMiddleware(MiddlewareMixin):
         '/accounts/oauth/',
         '/static/',
         '/media/',
+        '/users/api/',
     ]
 
     def __call__(self, request):

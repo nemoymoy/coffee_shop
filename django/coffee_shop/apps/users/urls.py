@@ -46,4 +46,21 @@ urlpatterns = [
         views.resend_verification_view,
         name='resend_verification',
     ),
+
+    # Delivery addresses API
+    path(
+        'api/addresses/',
+        views.delivery_addresses_view,
+        name='delivery_addresses_api',
+    ),
+    path(
+        'api/addresses/<int:address_id>/',
+        views.delivery_address_detail_view,
+        name='delivery_address_detail_api',
+    ),
+    path(
+        'api/addresses/<int:address_id>/delete/',
+        views.delivery_address_delete_view,
+        name='delivery_address_delete_api',
+    ),
 ]

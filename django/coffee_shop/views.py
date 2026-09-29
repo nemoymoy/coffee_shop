@@ -6,6 +6,8 @@ from django.http import JsonResponse, FileResponse
 from django.conf import settings
 from django.utils import timezone
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
+from datetime import date
 import os
 
 from coffee_shop.apps.catalog.models import Category, Product
@@ -24,7 +26,10 @@ def home(request):
 
 def about(request):
     """About page with history, contacts, map."""
-    return render(request, 'about.html')
+    return render(request, 'about.html', {
+        'STORE_PHONE': settings.STORE_PHONE,
+        'STORE_EMAIL': settings.STORE_EMAIL,
+    })
 
 
 def json_response(data, status=200):
@@ -76,15 +81,44 @@ def dashboard_view(request):
 
 def profile_view(request):
     """Редактирование профиля."""
-    from coffee_shop.apps.users.forms import UserUpdateForm
+    from coffee_shop.apps.users.forms import UserUpdateForm, UserProfileForm
 
     if not request.user.is_authenticated:
         return redirect('users:login')
 
+    # Ensure profile exists (safety net for existing users)
+    if not hasattr(request.user, 'profile'):
+        from coffee_shop.apps.users.models import UserProfile
+        UserProfile.objects.get_or_create(user=request.user)
+
     if request.method == 'POST':
-        form = UserUpdateForm(instance=request.user, data=request.POST)
-        if form.is_valid():
-            form.save()
+        user_form = UserUpdateForm(instance=request.user, data=request.POST)
+        profile_form = UserProfileForm(
+            instance=request.user.profile,
+            data=request.POST,
+        )
+
+        if user_form.is_valid() and profile_form.is_valid():
+            user_form.save()
+            # Handle birth_date from separate day/month/year fields
+            birth_day = request.POST.get('birth_day', '').strip()
+            birth_month = request.POST.get('birth_month', '').strip()
+            birth_year = request.POST.get('birth_year', '').strip()
+
+            if birth_day and birth_month and birth_year:
+                try:
+                    birth_date = date(
+                        int(birth_year),
+                        int(birth_month),
+                        int(birth_day)
+                    )
+                    profile_form.instance.birth_date = birth_date
+                except (ValueError, TypeError):
+                    profile_form.instance.birth_date = None
+            else:
+                profile_form.instance.birth_date = None
+
+            profile_form.save()
             messages.success(request, 'Профиль обновлён')
 
             # Change password if requested
@@ -108,10 +142,26 @@ def profile_view(request):
 
             return redirect('users:profile')
     else:
-        form = UserUpdateForm(instance=request.user)
+        user_form = UserUpdateForm(instance=request.user)
+        profile_form = UserProfileForm(instance=request.user.profile)
+
+    # Загружаем адреса доставки для отображения в шаблоне
+    addresses = []
+    if hasattr(request.user, 'delivery_addresses'):
+        for addr in request.user.delivery_addresses.all():
+            addresses.append({
+                'id': addr.pk,
+                'label': addr.label,
+                'address': addr.full_address,
+                'apartment': addr.apartment,
+                'is_default': addr.is_default,
+            })
 
     return render(request, 'profile.html', {
-        'user_form': form,
+        'user_form': user_form,
+        'profile_form': profile_form,
+        'user_profile': request.user.profile,
+        'addresses': addresses,
     })
 
 
