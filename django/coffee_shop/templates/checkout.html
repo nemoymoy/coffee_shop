@@ -50,7 +50,7 @@
                 <div class="col-md-6">
                     <label class="form-label">Телефон *</label>
                     <input type="tel" name="phone" id="id_phone" class="form-control"
-                           value="{% if form.is_bound %}{{ form.phone.value|default:'' }}{% else %}{% endif %}"
+                           value="{% if form.is_bound %}{{ form.phone.value|default:'' }}{% else %}{{ user_data.phone|default:'' }}{% endif %}"
                            placeholder="+7 (999) 123-45-67" required>
                 </div>
                 <div class="col-md-6">

@@ -19,7 +19,7 @@ from coffee_shop.apps.orders.services.stock_service import StockService
 from coffee_shop.apps.orders.services.promo_service import PromoService
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
-from coffee_shop.apps.users.models import UserEmailVerification
+from coffee_shop.apps.users.models import UserEmailVerification, UserProfile
 
 from coffee_shop.apps.orders.forms.order_form import OrderForm
 from coffee_shop.apps.orders.models import Order, OrderItem, Package
@@ -646,6 +646,13 @@ def checkout_view(request):
             'last_name': request.user.last_name,
             'email': request.user.email,
         }
+        # Подтягиваем телефон из профиля пользователя
+        try:
+            phone = request.user.profile.phone
+            if phone:
+                user_data['phone'] = phone
+        except UserProfile.DoesNotExist:
+            pass
 
     # Расчёт стоимости товаров и добавление product в cart_items
     total = 0
