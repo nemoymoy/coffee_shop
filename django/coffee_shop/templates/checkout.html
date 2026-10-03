@@ -249,7 +249,26 @@
                 <!-- Шаг 2: Адрес -->
                 <div id="deliveryStep2" class="d-none">
                     <h6 class="fw-bold">Шаг 2. Адрес доставки</h6>
-                    
+
+                    <!-- Сохранённые адреса -->
+                    <div id="savedAddressesSection" class="mb-3 d-none">
+                        <h6 class="fw-bold mb-2">
+                            <i class="bi bi-geo-alt-fill"></i> Сохранённые адреса
+                        </h6>
+                        <!-- Loading state -->
+                        <div id="savedAddressesLoading" class="text-center py-2 d-none">
+                            <span class="spinner-border spinner-border-sm text-muted"></span>
+                            <span class="text-muted small">Загрузка адресов...</span>
+                        </div>
+                        <!-- Addresses horizontal scrollable tiles -->
+                        <div id="savedAddressesList" class="saved-addresses-scroll mb-2"></div>
+                        <!-- Empty state -->
+                        <div id="savedAddressesEmpty" class="text-muted small d-none">
+                            У вас пока нет сохранённых адресов.
+                            <a href="/accounts/profile/" target="_blank">Добавить адрес</a> в профиле.
+                        </div>
+                    </div>
+
                     <!-- Контейнер для виджета Яндекс Доставки (карта показывается здесь) -->
                     <div id="yandexDeliveryWidgetContainer" class="mt-2 d-none">
                         <!-- Адрес для курьерской доставки (строка поиска с автокомплитом) -->

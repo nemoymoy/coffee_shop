@@ -673,3 +673,108 @@
     background: #e3f2fd;
     border-color: #2196f3 !important;
 }
+
+/* ======================= Saved Addresses in Delivery Modal ======================= */
+
+/* Horizontal scrollable container for saved addresses */
+.saved-addresses-scroll {
+    display: flex;
+    gap: 0.75rem;
+    overflow-x: auto;
+    overflow-y: visible;
+    padding-bottom: 1rem;
+    padding-top: 0.25rem;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Custom scrollbar styling */
+.saved-addresses-scroll::-webkit-scrollbar {
+    height: 6px;
+}
+
+.saved-addresses-scroll::-webkit-scrollbar-track {
+    background: var(--coffee-bg-alt);
+    border-radius: 3px;
+}
+
+.saved-addresses-scroll::-webkit-scrollbar-thumb {
+    background: var(--coffee-lighter);
+    border-radius: 3px;
+}
+
+.saved-addresses-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--coffee-medium);
+}
+
+/* Address tile */
+.saved-address-tile {
+    flex: 0 0 auto;
+    width: 220px;
+    min-height: 90px;
+    padding: 0.875rem;
+    border: 1px solid var(--coffee-lighter);
+    border-radius: 0.5rem;
+    background: #fff;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    position: relative;
+}
+
+.saved-address-tile:hover {
+    border-color: var(--coffee-dark);
+    background: var(--coffee-bg-alt);
+    box-shadow: 0 4px 12px rgba(62, 39, 35, 0.12);
+    transform: translateY(-2px);
+}
+
+.saved-address-tile:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(62, 39, 35, 0.08);
+}
+
+/* Default address badge */
+.saved-address-tile .default-badge {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    font-size: 0.65rem;
+    padding: 2px 8px;
+}
+
+/* Address label (Home, Office, etc.) */
+.saved-address-tile .address-label {
+    font-weight: 700;
+    color: var(--coffee-dark);
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.saved-address-tile .address-label::before {
+    content: '📍';
+    font-size: 0.85rem;
+}
+
+/* Address full text */
+.saved-address-tile .address-full {
+    font-size: 0.8rem;
+    color: var(--coffee-light);
+    line-height: 1.4;
+    margin-top: 4px;
+}
+
+/* Apartment number */
+.saved-address-tile .address-apartment {
+    font-size: 0.75rem;
+    color: var(--coffee-medium);
+    margin-top: 2px;
+    font-style: italic;
+}

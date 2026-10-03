@@ -403,6 +403,180 @@ const YandexDeliveryWidget = (() => {
         }
     }
 
+    /* ==================== Saved Addresses ==================== */
+
+    /**
+     * Fetches saved addresses from the API and renders them.
+     * Only called when courier delivery type is selected.
+     */
+    async function loadSavedAddresses() {
+        const section = $('#savedAddressesSection');
+        const loadingEl = $('#savedAddressesLoading');
+        const listEl = $('#savedAddressesList');
+        const emptyEl = $('#savedAddressesEmpty');
+
+        if (!section) return;
+
+        // Show loading, hide previous content
+        show(section);
+        show(loadingEl);
+        hide(listEl);
+        hide(emptyEl);
+
+        try {
+            const data = await apiGet('/accounts/api/addresses/');
+            hide(loadingEl);
+
+            if (!data.success || !data.addresses?.length) {
+                // No addresses or API error
+                hide(listEl);
+                show(emptyEl);
+                console.log('[YandexDelivery] No saved addresses found');
+                return;
+            }
+
+            renderSavedAddresses(data.addresses);
+        } catch (err) {
+            console.error('[YandexDelivery] Failed to load saved addresses:', err);
+            hide(loadingEl);
+            hide(listEl);
+            // Show empty state on error too
+            show(emptyEl);
+            YandexDeliveryUtils.setTextContent(emptyEl, 'Не удалось загрузить адреса. Попробуйте позже.');
+        }
+    }
+
+    /**
+     * Renders the saved addresses list from API data.
+     */
+    function renderSavedAddresses(addresses) {
+        const listEl = $('#savedAddressesList');
+        const emptyEl = $('#savedAddressesEmpty');
+        if (!listEl) return;
+
+        hide(emptyEl);
+        listEl.innerHTML = '';
+
+        addresses.forEach((addr) => {
+            const tile = document.createElement('div');
+            tile.className = 'saved-address-tile';
+            tile.dataset.addressId = addr.id;
+
+            // Address label with icon
+            let labelHtml = YandexDeliveryUtils.escapeHtml(addr.label || 'Адрес');
+
+            // Default badge
+            let badgeHtml = '';
+            if (addr.is_default) {
+                badgeHtml = '<span class="badge bg-primary rounded-pill default-badge">По умолчанию</span>';
+            }
+
+            // Full address
+            let addressHtml = '';
+            if (addr.full_address) {
+                addressHtml = `<div class="address-full">${YandexDeliveryUtils.escapeHtml(addr.full_address)}</div>`;
+            }
+
+            // Apartment
+            let apartmentHtml = '';
+            if (addr.apartment) {
+                apartmentHtml = `<div class="address-apartment">кв. ${YandexDeliveryUtils.escapeHtml(addr.apartment)}</div>`;
+            }
+
+            tile.innerHTML = `
+                ${badgeHtml}
+                <div>
+                    <div class="address-label">${labelHtml}</div>
+                    ${addressHtml}
+                    ${apartmentHtml}
+                </div>
+            `;
+
+            tile.addEventListener('click', (e) => {
+                e.preventDefault();
+                selectSavedAddress(addr);
+            });
+
+            listEl.appendChild(tile);
+        });
+
+        show(listEl);
+        console.log('[YandexDelivery] Rendered', addresses.length, 'saved address tiles');
+    }
+
+    /**
+     * Handles selection of a saved address.
+     * Populates state and triggers the same flow as manual address entry.
+     */
+    function selectSavedAddress(address) {
+        const addressInput = $('#yandexAddressInput');
+
+        // Set state
+        state.selectedAddress = address.full_address || '';
+        state.selectedCoords = [];
+
+        // Parse coordinates from "lon,lat" string
+        if (address.coordinates) {
+            const parts = address.coordinates.split(',').map(c => parseFloat(c.trim()));
+            if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+                state.selectedCoords = parts;
+            }
+        }
+
+        // Update the address input field
+        if (addressInput) {
+            addressInput.value = state.selectedAddress;
+        }
+
+        // If order already created, reset state (address changed)
+        if (state.deliveryOrderCreated && state.selectedType === 'courier') {
+            console.log('[YandexDelivery] Address changed via saved address, resetting delivery order');
+            stopConfirmationTimer();
+            resetDeliveryState();
+        }
+
+        // Update map placemark if map is loaded
+        if (state.selectedCoords.length >= 2 && state.mapInstance && state.ymapsReady) {
+            updateMapPlacemarkForAddress();
+        }
+
+        // Activate the calculate button
+        updateCourierDeliveryButton();
+
+        console.log('[YandexDelivery] Saved address selected:', state.selectedAddress, state.selectedCoords);
+    }
+
+    /**
+     * Updates the map placemark to the selected saved address coordinates.
+     * NOTE: DB stores [lon, lat] but YMaps expects [lat, lon].
+     */
+    function updateMapPlacemarkForAddress() {
+        if (!state.mapInstance || !state.ymapsReady || state.selectedCoords.length < 2) return;
+
+        // Swap [lon, lat] -> [lat, lon] for Yandex Maps API
+        const ymapsCoords = [state.selectedCoords[1], state.selectedCoords[0]];
+
+        // Remove old placemark if exists
+        if (state.selectedPlacemark) {
+            state.mapInstance.geoObjects.remove(state.selectedPlacemark);
+        }
+
+        // Create new placemark at saved address coordinates
+        state.selectedPlacemark = new ymaps.Placemark(ymapsCoords, {
+            hintContent: state.selectedAddress,
+            balloonContent: '✅ Этот адрес подходит? Нажмите «Рассчитать доставку»',
+        }, { preset: 'islands#orangeCircleDotIcon' });
+
+        state.mapInstance.geoObjects.add(state.selectedPlacemark);
+
+        // Pan map to the address
+        try {
+            state.mapInstance.setCenter(ymapsCoords, 16, { duration: 300 });
+        } catch (e) {
+            console.warn('[YandexDelivery] Map center set error:', e);
+        }
+    }
+
     /* ==================== Express Order Creation ==================== */
 
     /**
@@ -916,6 +1090,8 @@ const YandexDeliveryWidget = (() => {
                 show(widgetContainer);
                 updateMapHintText();
                 loadYmaps();
+                // Load saved addresses for courier delivery
+                loadSavedAddresses();
             } else {
                 hide(courierSearchWrap);
                 hide(mapWarning);
@@ -1039,6 +1215,12 @@ const YandexDeliveryWidget = (() => {
         if (confirmBtn) confirmBtn.disabled = true;
 
         hide($('#deliveryModalError'));
+
+        // Hide saved addresses section
+        const savedSection = $('#savedAddressesSection');
+        if (savedSection) hide(savedSection);
+        const savedList = $('#savedAddressesList');
+        if (savedList) savedList.innerHTML = '';
     }
 
     /* ==================== Autocomplete ==================== */
