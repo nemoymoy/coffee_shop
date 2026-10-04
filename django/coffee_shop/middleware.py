@@ -60,6 +60,12 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             )
 
         # CSP — всегда, чтобы работали сервисы Яндекса и ЮКасса
+        # Включает все необходимые домены для:
+        # - Яндекс OAuth (passport, trust, b2b-authproxy)
+        # - Яндекс Метрика (mc, webvisor, solid.ws через wss)
+        # - Яндекс Доставка (cargo, express, pickup)
+        # - Яндекс Карты (maps, tiles, tiles-static)
+        # - ЮKassa (yoomoney)
         response['Content-Security-Policy'] = (
             "default-src 'self'; "
             "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
@@ -84,23 +90,32 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "img-src 'self' data: https: https://avatars.mds.yandex.net https://smart-yandex.yandex.net https://core-renderer-tiles.maps.yandex.net https://tiles.maps.yandex.net; "
             "font-src 'self' https://cdn.jsdelivr.net; "
             "connect-src 'self' "
+            # Яндекс Метрика (HTTP + WebSocket для webvisor/solid.ws)
             "https://mc.yandex.ru https://mc.yandex.md https://mc.yandex.kz https://mc.yandex.com "
             "https://mc.admetrica.ru https://mc.admetrica.com "
             "https://mc.webvisor.com https://mc.webvisor.org "
+            "wss://mc.yandex.ru wss://mc.yandex.md wss://mc.yandex.kz wss://mc.yandex.com "
+            # Яндекс OAuth + Passport (аутентификация и доверенные запросы)
             "https://yandex.ru https://autofill.yandex.ru https://passport.yandex.ru "
+            "https://passport.yandex.md https://passport.yandex.kz "
             "https://api.yandex.ru https://api.passport.yandex.ru "
+            "https://trust.yandex.ru https://trust.yandex.com https://trust.yandex.md https://trust.yandex.kz "
+            "https://oauth.yandex.ru https://oauth.yandex.md "
+            "https://login.yandex.ru https://login.yandex.md "
+            # Яндекс Доставка (cargo + express)
             "https://b2b-authproxy.taxi.yandex.net "
-            "https://trust.yandex.ru https://trust.yandex.com "
+            "https://b2b.taxi.yandex.net https://b2b.taxi.tst.yandex.net "
             "https://suggest-maps.yandex.net "
+            # Яндекс Карты
             "https://log.api-maps.yandex.ru "
             "https://maps-static.yandex.net "
             "https://maps-api.yandex.com "
             "https://api-maps.yandex.ru/services/coverage/v2/ "
             "https://core-renderer-tiles.maps.yandex.net/tiles "
+            # Яндекс Disk + CAPTCHA
             "https://*.disk.yandex.net "
             "https://*.captcha.yandex.net "
             "https://kards.fp.yandex.net "
-            "wss://mc.yandex.ru wss://mc.yandex.md wss://mc.yandex.kz wss://mc.yandex.com "
             "wss://delivery.yandex.ru; "
             "frame-src 'self' https://dostavka.yandex.ru https://delivery.yandex.ru https://yandex.ru https://mc.yandex.ru https://yandex.ru/maps https://yoomoney.ru https://*.yoomoney.ru; "
             "frame-ancestors 'self' https://dostavka.yandex.ru https://delivery.yandex.ru;"
