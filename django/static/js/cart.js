@@ -45,6 +45,10 @@ var Cart = (function () {
             data[key] = value;
         });
 
+        // Debug: log form data
+        console.log('[cart.js] Form data:', data);
+        console.log('[cart.js] CSRF token in data:', data.csrfmiddlewaretoken || 'MISSING');
+
         btn.disabled = true;
         var originalText = btn.innerHTML;
         btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
@@ -55,6 +59,7 @@ var Cart = (function () {
                 CoffeeShop.showToast('Товар добавлен в корзину', 'success');
             })
             .catch(function (error) {
+                console.log('[cart.js] Error adding to cart:', error);
                 if (error && error.error === 'email_not_verified') {
                     CoffeeShop.showToast(error.message || 'Необходимо подтвердить email', 'warning');
                     if (error.redirect) {

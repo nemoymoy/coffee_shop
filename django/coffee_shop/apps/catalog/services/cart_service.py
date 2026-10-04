@@ -26,7 +26,7 @@ class CartService:
         """
         Подготавливает данные для корзины.
         """
-        if product.product_type == 'coffee':
+        if product.stock_unit == Product.STOCK_UNIT_GRAM:
             price = CartService._calc_price(weight, product.price_per_50g)
         else:
             price = product.base_price or Decimal('0.00')
@@ -35,9 +35,10 @@ class CartService:
             'product': product,
             'quantity': 1,
             'unit_price': price,
-            'coffee_weight_grams': weight if product.product_type == 'coffee' else None,
-            'coffee_form': coffee_form if product.product_type == 'coffee' else None,
-            'brewing_method': brewing_method if product.product_type == 'coffee' else None,
+            'coffee_weight_grams': weight if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+            'coffee_form': coffee_form if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+            'brewing_method': brewing_method if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+            'product_weight_grams': product.weight_grams if product.stock_unit == Product.STOCK_UNIT_UNIT else 0,
         }
 
     @staticmethod
@@ -52,9 +53,9 @@ class CartService:
         """
         Создаёт OrderItem с проверкой остатков.
         """
-        if product.product_type == 'coffee':
+        if product.stock_unit == Product.STOCK_UNIT_GRAM:
             if weight > product.stock:
-                raise ValueError(f'На складе только {product.stock} г')
+                raise ValueError(f'На складе только {product.stock} {product.stock_unit_label}')
             product.stock -= weight
             product.save(update_fields=['stock'])
             price = CartService._calc_price(weight, product.price_per_50g)
@@ -69,7 +70,7 @@ class CartService:
             product=product,
             quantity=1,
             unit_price=price,
-            coffee_weight_grams=weight if product.product_type == 'coffee' else None,
-            coffee_form=coffee_form if product.product_type == 'coffee' else None,
-            brewing_method=brewing_method if product.product_type == 'coffee' else None,
+            coffee_weight_grams=weight if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+            coffee_form=coffee_form if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+            brewing_method=brewing_method if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
         )

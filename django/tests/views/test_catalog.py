@@ -22,6 +22,7 @@ class TestCatalogView:
             slug='test-coffee',
             category=category,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=500,
             is_available=True,
         )
@@ -36,6 +37,7 @@ class TestCatalogView:
             slug='coffee-1',
             category=cat1,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=500,
             is_available=True,
         )
@@ -44,6 +46,7 @@ class TestCatalogView:
             slug='tea-1',
             category=cat2,
             product_type='other',
+            stock_unit=Product.STOCK_UNIT_UNIT,
             base_price=300,
             price_per_50g=300,
             is_available=True,
@@ -58,6 +61,7 @@ class TestCatalogView:
             slug='detail-test',
             category=category,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=500,
             stock=500,
             is_available=True,
@@ -76,6 +80,7 @@ class TestCatalogView:
             slug='hidden',
             category=category,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=500,
             is_available=False,
         )

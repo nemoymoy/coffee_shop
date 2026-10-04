@@ -37,8 +37,8 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = [
             'id', 'name', 'slug', 'description', 'category',
-            'category_name', 'product_type', 'price_per_50g',
-            'base_price', 'stock', 'image', 'is_available',
+            'category_name', 'product_type', 'stock_unit', 'price_per_50g',
+            'base_price', 'stock', 'weight_grams', 'image', 'is_available',
             'allow_grinding', 'available_brewing_methods',
             'allergens', 'coffee_type', 'roast_level',
             'origin_region', 'processing_method', 'sca_score',

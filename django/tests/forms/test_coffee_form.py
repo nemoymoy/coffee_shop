@@ -21,6 +21,7 @@ def coffee_product(category):
         slug='ethiopia-irgacheff',
         category=category,
         product_type='coffee',
+        stock_unit=Product.STOCK_UNIT_GRAM,
         price_per_50g=150.00,
         stock=500,
         allow_grinding=True,
@@ -50,6 +51,7 @@ class TestCoffeeForm:
             slug='no-stock',
             category=category,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=100,
             stock=0,
         )

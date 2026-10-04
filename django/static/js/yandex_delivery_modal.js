@@ -129,7 +129,18 @@ const YandexDeliveryWidget = (() => {
     function loadCartFromPage() {
         cartState.items = [];
 
-        // Пытаемся найти корзину несколькими способами
+        // Способ 0: Ищем скрытый блок с корзиной на checkout странице
+        const checkoutCart = document.getElementById('checkoutCartSummary');
+        if (checkoutCart) {
+            const rows = checkoutCart.querySelectorAll('.d-flex.justify-content-between');
+            if (rows.length > 0) {
+                console.log('[YandexDelivery] Found checkout cart with', rows.length, 'items');
+                parseCartRows(rows);
+                console.log('[YandexDelivery] Cart loaded from checkoutCartSummary:', cartState.items);
+                return cartState.items;
+            }
+        }
+
         // Способ 1: карточка "Ваш заказ" в правой колонке
         let orderCard = document.querySelector('.col-md-4 .card-body');
         if (!orderCard) {

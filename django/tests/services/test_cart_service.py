@@ -32,6 +32,7 @@ class TestCartService:
             name='Test Coffee',
             slug='test',
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=Decimal('500'),
             stock=500,
         )
@@ -47,6 +48,7 @@ class TestCartService:
             name='Other',
             slug='other',
             product_type='other',
+            stock_unit=Product.STOCK_UNIT_UNIT,
             base_price=Decimal('300'),
             price_per_50g=Decimal('300'),
         )

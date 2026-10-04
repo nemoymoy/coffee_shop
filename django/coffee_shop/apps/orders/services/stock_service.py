@@ -50,12 +50,11 @@ class StockService:
                 ],
                 product_id=product_id,
             )
-            .select_related('order')
+            .select_related('order', 'product')
         )
 
         reserved = 0
         for item in reserved_items:
-            # Проверяем, что резерв ещё не списан (заказ не оплачен и не отменён)
             if item.order.status in (
                 Order.Status.NEW,
                 Order.Status.AWAITING_PAYMENT,
@@ -82,10 +81,15 @@ class StockService:
             (is_available, error_message)
         """
         available = StockService.get_available_stock(product)
-        required = weight if weight else quantity
+
+        if product.stock_unit == Product.STOCK_UNIT_GRAM:
+            required = weight if weight else quantity
+        else:
+            required = quantity
 
         if required > available:
-            return False, f'Доступно не более {available} шт'
+            unit_label = product.stock_unit_label
+            return False, f'Доступно не более {available} {unit_label}'
         if available <= 0:
             return False, 'Товар закончился'
 
@@ -106,7 +110,7 @@ class StockService:
         Returns:
             True если резерв успешен
         """
-        from ..models import Order
+        from ..models import Order, OrderItem
 
         try:
             order = Order.objects.select_for_update().get(pk=order_id)
@@ -166,8 +170,6 @@ class StockService:
             else:
                 product.stock -= item.quantity
             product.save(update_fields=['stock'])
-
-        order.reserved_at = None
         order.save(update_fields=['reserved_at', 'updated_at'])
 
     @staticmethod
@@ -201,9 +203,6 @@ class StockService:
             else:
                 product.stock += item.quantity
             product.save(update_fields=['stock'])
-
-        order.status = Order.Status.CANCELED
-        order.reserved_at = None
         order.save(update_fields=['status', 'reserved_at', 'updated_at'])
 
     @staticmethod

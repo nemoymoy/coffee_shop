@@ -24,6 +24,7 @@ class TestReview:
             name='Test Coffee',
             slug='test-coffee',
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=500,
             stock=500,
         )

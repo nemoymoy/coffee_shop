@@ -23,6 +23,7 @@ class TestProductModel:
             slug='ethiopia-irgacheff',
             category=category,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=150.00,
             stock=1000,
             allow_grinding=True,
@@ -47,6 +48,7 @@ class TestProductModel:
             slug='cheesecake',
             category=category,
             product_type='other',
+            stock_unit=Product.STOCK_UNIT_UNIT,
             base_price=350.00,
             price_per_50g=100.00,
             stock=20
@@ -61,6 +63,7 @@ class TestProductModel:
             name='Тест',
             slug='test',
             category=category,
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=100.00,
             stock=0
         )
@@ -76,10 +79,45 @@ class TestProductModel:
             name='Тест',
             slug='test2',
             category=category,
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=100.00,
             stock=500
         )
         assert product.max_weight_grams == 500
+
+    def test_max_weight_grams_non_coffee(self, category):
+        """Максимальный вес для не-кофе равен 0."""
+        product = Product.objects.create(
+            name='Тест не кофе',
+            slug='test2',
+            category=category,
+            stock_unit=Product.STOCK_UNIT_UNIT,
+            base_price=100.00,
+            stock=50
+        )
+        assert product.max_weight_grams == 0
+
+    def test_stock_unit_label(self, category):
+        """Тест stock_unit_label."""
+        product_gram = Product.objects.create(
+            name='Тест г',
+            slug='test-gram',
+            category=category,
+            stock_unit=Product.STOCK_UNIT_GRAM,
+            price_per_50g=100.00,
+            stock=500
+        )
+        assert product_gram.stock_unit_label == 'граммы'
+
+        product_unit = Product.objects.create(
+            name='Тест шт',
+            slug='test-unit',
+            category=category,
+            stock_unit=Product.STOCK_UNIT_UNIT,
+            base_price=100.00,
+            stock=50
+        )
+        assert product_unit.stock_unit_label == 'штуки'
 
     def test_clean_grinding_requires_brewing_methods(self, category):
         """Валидация: allow_grinding требует brewing_methods."""

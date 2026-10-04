@@ -74,15 +74,15 @@ class ProductAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        product_type = cleaned_data.get('product_type')
+        stock_unit = cleaned_data.get('stock_unit')
         price_per_50g = cleaned_data.get('price_per_50g')
 
-        if product_type == Product.PRODUCT_TYPE_COFFEE and not price_per_50g:
+        if stock_unit == Product.STOCK_UNIT_GRAM and not price_per_50g:
             raise ValidationError({
-                'price_per_50g': 'Обязательное поле для кофе'
+                'price_per_50g': 'Обязательное поле для товаров в граммах (кофе)'
             })
 
-        if product_type == Product.PRODUCT_TYPE_OTHER:
+        if stock_unit == Product.STOCK_UNIT_UNIT:
             cleaned_data['price_per_50g'] = None
 
         return cleaned_data
@@ -100,14 +100,14 @@ class CategoryAdmin(admin.ModelAdmin):
 class ProductAdmin(admin.ModelAdmin):
     form = ProductAdminForm
     list_display = [
-        'name', 'category', 'product_type', 'price_display', 'stock',
+        'name', 'category', 'stock_unit', 'price_display', 'stock_display',
         'sca_score', 'is_available', 'created_at'
     ]
-    list_filter = ['product_type', 'category', 'is_available', 'allow_grinding',
+    list_filter = ['stock_unit', 'category', 'is_available', 'allow_grinding',
                    'roast_level', 'processing_method']
     search_fields = ['name', 'description']
     prepopulated_fields = {'slug': ('name',)}
-    list_editable = ['is_available']
+    list_editable = ['is_available', 'stock_unit']
     raw_id_fields = ['category']
     date_hierarchy = 'created_at'
     list_per_page = 20
@@ -125,9 +125,9 @@ class ProductAdmin(admin.ModelAdmin):
 
     # Price display
     def price_display(self, obj):
-        if obj.product_type == 'coffee':
+        if obj.stock_unit == Product.STOCK_UNIT_GRAM:
             return f'{obj.price_per_50g} руб / 50г'
-        return f'{obj.base_price} руб'
+        return f'{obj.base_price} руб / шт'
     price_display.short_description = 'Цена'
 
     # SCA score badge
@@ -149,22 +149,28 @@ class ProductAdmin(admin.ModelAdmin):
         return '-'
     sca_score_badge.short_description = 'SCA'
 
-    # Stock color
-    def stock_color(self, obj):
+    # Stock display with unit
+    def stock_display(self, obj):
+        unit = obj.stock_unit_label
         if obj.stock > 500:
-            return format_html('<span style="color: #2e7d32;">{}</span>', obj.stock)
+            return format_html('<span style="color: #2e7d32;">{}</span>', f'{obj.stock} {unit}')
         elif obj.stock > 0:
-            return format_html('<span style="color: #f9a825;">{}</span>', obj.stock)
+            return format_html('<span style="color: #f9a825;">{}</span>', f'{obj.stock} {unit}')
         else:
-            return format_html('<span style="color: #c62828;">{}</span>', obj.stock)
+            return format_html('<span style="color: #c62828;">{}</span>', f'{obj.stock} {unit}')
+    stock_display.short_description = 'Остаток'
+
+    # Stock color (deprecated, kept for backward compatibility)
+    def stock_color(self, obj):
+        return self.stock_display(obj)
     stock_color.short_description = 'Остаток'
 
     fieldsets = (
         ('Основное', {
-            'fields': ('name', 'slug', 'description', 'category', 'product_type')
+            'fields': ('name', 'slug', 'description', 'category', 'stock_unit')
         }),
         ('Цены и остатки', {
-            'fields': ('price_per_50g', 'base_price', 'stock')
+            'fields': ('price_per_50g', 'base_price', 'stock', 'weight_grams')
         }),
         ('Кофе - параметры', {
             'fields': (
@@ -172,7 +178,7 @@ class ProductAdmin(admin.ModelAdmin):
                 'processing_method', 'sca_score', 'tasting_notes'
             ),
             'classes': ('collapse',),
-            'description': 'Заполнять только для кофе'
+            'description': 'Заполнять только для товаров в граммах (кофе)'
         }),
         ('Дополнительно', {
             'fields': ('image', 'is_available', 'allow_grinding',

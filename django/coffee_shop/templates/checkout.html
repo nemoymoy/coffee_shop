@@ -10,6 +10,29 @@
 {% block content %}
 <h2 class="section-title">Оформление заказа</h2>
 
+<!-- Hidden cart for Yandex Delivery widget (JS parsing) -->
+{% if cart_items %}
+<div id="checkoutCartSummary" class="d-none">
+    <div class="card">
+        <div class="card-body">
+            {% for item in cart_items %}
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <strong>{{ item.product.name }}</strong>
+                    {% if item.coffee_weight_grams %}
+                    <small>{{ item.coffee_weight_grams }} г</small>
+                    {% elif item.product_weight_grams %}
+                    <small>{{ item.product_weight_grams }} г</small>
+                    {% endif %}
+                </div>
+                <span>{{ item.price|floatformat:2 }} ₽</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Steps -->
 <div class="checkout-steps mb-4">
     <div class="checkout-step active">

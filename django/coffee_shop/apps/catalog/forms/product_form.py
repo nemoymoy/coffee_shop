@@ -1,6 +1,8 @@
 """Product filter form."""
 from django import forms
 
+from coffee_shop.apps.catalog.models import Product
+
 
 class ProductForm(forms.Form):
     """Фильтры каталога товаров."""
@@ -25,3 +27,27 @@ class ProductForm(forms.Form):
             ('anaerobic', 'Анаэробная'),
             ('other', 'Другая'),
         ]
+
+
+class ProductAdminForm(forms.ModelForm):
+    """Кастомная форма для Product с валидацией по stock_unit."""
+
+    class Meta:
+        model = Product
+        fields = '__all__'
+
+    def clean(self):
+        cleaned_data = super().clean()
+        stock_unit = cleaned_data.get('stock_unit')
+        price_per_50g = cleaned_data.get('price_per_50g')
+        base_price = cleaned_data.get('base_price')
+
+        if stock_unit == Product.STOCK_UNIT_GRAM and not price_per_50g:
+            raise forms.ValidationError({
+                'price_per_50g': 'Обязательное поле для товаров в граммах (кофе)'
+            })
+
+        if stock_unit == Product.STOCK_UNIT_UNIT:
+            cleaned_data['price_per_50g'] = None
+
+        return cleaned_data

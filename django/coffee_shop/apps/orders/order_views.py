@@ -188,6 +188,8 @@ def cart_view(request):
                 item['brewing_method_label'] = brewing_labels[brewing_method]
             else:
                 item['brewing_method_label'] = ''
+            # Вес товара для доставки (не-кофе товары)
+            item['product_weight_grams'] = value.get('product_weight_grams', 0)
             item['product'] = product
             item['price'] = price
             cart_with_products[key] = item
@@ -230,10 +232,18 @@ def cart_remove(request):
 
 def cart_add(request):
     """Добавление товара в корзину (AJAX)."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     if request.method != 'POST':
         return JsonResponse({'error': 'POST required'}, status=400)
 
+    logger.info('[cart_add] User authenticated: %s, CSRF valid: %s', 
+                request.user.is_authenticated, 
+                hasattr(request, 'csrf_token'))
+    
     if not request.user.is_authenticated:
+        logger.warning('[cart_add] User not authenticated, returning 403')
         return JsonResponse({
             'error': 'login_required',
             'redirect': '/accounts/login/'
@@ -271,7 +281,7 @@ def cart_add(request):
         return JsonResponse({'error': 'Product not found'}, status=404)
     
     # Валидация для кофе
-    if product.product_type == 'coffee':
+    if product.stock_unit == Product.STOCK_UNIT_GRAM:
         is_valid, error = CoffeeService.validate_all(
             product, int(weight), coffee_form, brewing_method
         )
@@ -284,7 +294,10 @@ def cart_add(request):
     
     # Сохраняем в сессии
     cart = request.session.get('cart', {})
-    cart_key = f"{product_id}:{weight}:{coffee_form}:{brewing_method or ''}"
+    if product.stock_unit == Product.STOCK_UNIT_GRAM:
+        cart_key = f"{product_id}:{weight}:{coffee_form}:{brewing_method or ''}"
+    else:
+        cart_key = f"{product_id}:noncoffee"
     cart[cart_key] = {
         'product_id': product_id,
         'weight': weight,
@@ -292,6 +305,7 @@ def cart_add(request):
         'brewing_method': brewing_method,
         'price': float(price),
         'quantity': 1,
+        'product_weight_grams': product.weight_grams if product.stock_unit == Product.STOCK_UNIT_UNIT else 0,
     }
     request.session['cart'] = cart
     
@@ -472,16 +486,20 @@ def checkout_view(request):
                     unit_price = value['price']
                     
                     # Валидация через доступный остаток
-                    if product.product_type == 'coffee':
+                    if product.stock_unit == Product.STOCK_UNIT_GRAM:
                         weight = int(value['weight'])
                         if weight > product.available_stock:
-                            raise ValueError(f'На складе только {product.available_stock} г')
+                            raise ValueError(f'На складе только {product.available_stock} {product.stock_unit_label}')
                     else:
                         if product.available_stock < 1:
                             raise ValueError('Товар закончился')
                     
                     # Определяем вес и тара
-                    weight_grams = int(value.get('weight', 0)) if value.get('weight') else 0
+                    if product.stock_unit == Product.STOCK_UNIT_GRAM:
+                        weight_grams = int(value.get('weight', 0)) if value.get('weight') else 0
+                    else:
+                        # Для не-кофе товаров берём вес из модели товара
+                        weight_grams = product.weight_grams
                     package = None
                     if weight_grams > 0:
                         from coffee_shop.apps.orders.models import Package
@@ -495,9 +513,9 @@ def checkout_view(request):
                         product=product,
                         quantity=1,
                         unit_price=unit_price,
-                        coffee_weight_grams=value.get('weight'),
-                        coffee_form=value.get('coffee_form'),
-                        brewing_method=value.get('brewing_method'),
+                        coffee_weight_grams=value.get('weight') if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+                        coffee_form=value.get('coffee_form') if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
+                        brewing_method=value.get('brewing_method') if product.stock_unit == Product.STOCK_UNIT_GRAM else None,
                         package=package,
                         weight_grams=weight_grams,
                     )
@@ -895,6 +913,27 @@ def payment_webhook(request):
                                         'delivery_time', ''
                                     )
                                     order.delivery_status = result.get('status', 'pending')
+                                    # Сохраняем ФИНАЛЬНУЮ цену из request/info (может отличаться от оценки)
+                                    final_price = result.get('price')
+                                    if final_price and final_price not in ('0', 'N/A', None):
+                                        try:
+                                            order.delivery_cost = Decimal(str(final_price))
+                                            order.total_amount = (
+                                                sum(
+                                                    (item.total_price for item in order.items.all()),
+                                                    Decimal('0')
+                                                ) + order.delivery_cost
+                                            )
+                                            logger.info(
+                                                'payment_webhook: Updated delivery_cost from %s to %s '
+                                                '(final Yandex price)',
+                                                delivery_price, final_price
+                                            )
+                                        except (ValueError, TypeError):
+                                            logger.warning(
+                                                'payment_webhook: Failed to parse final price: %s',
+                                                final_price
+                                            )
                                     logger.info(
                                         'payment_webhook: Other Day order created: '
                                         'request_id=%s, status=%s, method=%s',
@@ -923,6 +962,8 @@ def payment_webhook(request):
                         'yandex_order_id',
                         'tracking_number',
                         'delivery_status',
+                        'delivery_cost',
+                        'total_amount',
                     ]
                     if order.express_claim_id:
                         save_fields.append('express_claim_id')

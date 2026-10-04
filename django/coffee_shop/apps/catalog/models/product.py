@@ -14,6 +14,13 @@ class Product(models.Model):
         (PRODUCT_TYPE_OTHER, 'Не кофе'),
     ]
 
+    STOCK_UNIT_GRAM = 'g'
+    STOCK_UNIT_UNIT = 'pc'
+    STOCK_UNITS = [
+        (STOCK_UNIT_GRAM, 'граммы'),
+        (STOCK_UNIT_UNIT, 'штуки'),
+    ]
+
     ROAST_CHOICES = [
         ('light', 'Светлая'),
         ('medium', 'Средняя'),
@@ -63,7 +70,9 @@ class Product(models.Model):
         max_digits=10,
         decimal_places=2,
         validators=[MinValueValidator(0)],
-        verbose_name='Цена за 50 г'
+        verbose_name='Цена за 50 г',
+        null=True,
+        blank=True
     )
     base_price = models.DecimalField(
         max_digits=10,
@@ -72,7 +81,20 @@ class Product(models.Model):
         verbose_name='Базовая цена (для не кофе)',
         default=0
     )
-    stock = models.IntegerField(default=0, verbose_name='Остаток на складе (г)')
+    stock = models.IntegerField(
+        default=0,
+        verbose_name='Остаток на складе'
+    )
+    stock_unit = models.CharField(
+        max_length=2,
+        choices=STOCK_UNITS,
+        default=STOCK_UNIT_GRAM,
+        verbose_name='Единица измерения остатка'
+    )
+    weight_grams = models.IntegerField(
+        default=0,
+        verbose_name='Вес товара (г)'
+    )
     image = models.ImageField(
         upload_to='products/',
         blank=True,
@@ -149,6 +171,11 @@ class Product(models.Model):
                     'Укажите способы заваривания, если разрешён помол'
                 )
             })
+        # Валидация: для не-кофе товаров вес обязателен
+        if self.stock_unit == self.STOCK_UNIT_UNIT and self.weight_grams <= 0:
+            raise ValidationError({
+                'weight_grams': 'Укажите вес товара для расчета доставки'
+            })
 
     @property
     def available_stock(self):
@@ -167,5 +194,13 @@ class Product(models.Model):
         return self.available_stock > 0
 
     @property
+    def stock_unit_label(self):
+        """Возвращает человеко-читаемое название единицы измерения."""
+        return dict(self.STOCK_UNITS).get(self.stock_unit, self.stock_unit)
+
+    @property
     def max_weight_grams(self):
-        return self.available_stock
+        """Максимальный вес в граммах (только для кофе)."""
+        if self.stock_unit == self.STOCK_UNIT_GRAM:
+            return self.available_stock
+        return 0

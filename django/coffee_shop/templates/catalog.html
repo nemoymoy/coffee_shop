@@ -52,11 +52,15 @@
                         <span class="sca-badge">SCA {{ product.sca_score }}</span>
                         {% endif %}
                         <p class="card-text mt-2">
+                            {% if product.stock_unit == 'g' %}
                             <strong>{{ product.price_per_50g }} ₽ / 50 г</strong>
+                            {% else %}
+                            <strong>{{ product.base_price }} ₽ / шт</strong>
+                            {% endif %}
                         </p>
                         <p class="card-text">
                             {% if product.available_stock > 0 %}
-                            <span class="text-success">В наличии: {{ product.available_stock }} г</span>
+                            <span class="text-success">В наличии: {{ product.available_stock }} {{ product.stock_unit_label }}</span>
                             {% else %}
                             <span class="text-danger">Нет в наличии</span>
                             {% endif %}

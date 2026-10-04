@@ -12,6 +12,10 @@ var CoffeeShop = window.CoffeeShop || {};
      */
     CoffeeShop.postJson = function (url, data) {
         var csrftoken = getCookie('csrftoken');
+        console.log('[base.js] CSRF token from cookie:', csrftoken ? 'SET (' + csrftoken.substring(0, 20) + '...)' : 'MISSING');
+        console.log('[base.js] POST data:', data);
+        console.log('[base.js] Document URL:', window.location.href);
+        console.log('[base.js] Cookies:', document.cookie);
         return fetch(url, {
             method: 'POST',
             headers: {

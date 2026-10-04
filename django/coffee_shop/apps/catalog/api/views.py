@@ -41,7 +41,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
-        'product_type', 'category__slug', 'is_available',
+        'stock_unit', 'category__slug', 'is_available',
         'roast_level', 'processing_method',
     ]
     search_fields = ['name', 'description', 'origin_region']
@@ -62,7 +62,7 @@ class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     def featured(self, request):
         """Получить рекомендуемые товары (с высоким SCA)."""
         products = self.queryset.filter(
-            product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             sca_score__gte=85
         ).order_by('-sca_score')[:6]
         serializer = self.get_serializer(products, many=True)

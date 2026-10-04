@@ -40,6 +40,14 @@
                             · {{ item.brewing_method_label }}
                             {% endif %}
                         </small>
+                        {% elif item.product_weight_grams %}
+                        <small class="cart-item-params">
+                            {{ item.product_weight_grams }} г
+                        </small>
+                        {% else %}
+                        <small class="cart-item-params">
+                            {{ item.quantity }} шт
+                        </small>
                         {% endif %}
                     </div>
                     <div class="col-md-2 col-4 mt-2 mt-md-0">

@@ -36,7 +36,7 @@
     <div class="col-md-6">
         <h2 class="mb-2">{{ product.name }}</h2>
 
-        {% if product.product_type == 'coffee' %}
+        {% if product.stock_unit == 'g' %}
         <!-- Coffee Details Card -->
         <div class="card mb-3">
             <div class="card-body">
@@ -211,7 +211,7 @@
             <p class="card-text small text-muted flex-grow-1">{{ related.description|truncatewords:15 }}</p>
             <div class="d-flex justify-content-between align-items-center mt-auto">
                 <span class="price">
-                    {% if related.product_type == 'coffee' %}
+                    {% if related.stock_unit == 'g' %}
                     от {{ related.price_per_50g }} ₽/50г
                     {% else %}
                     {{ related.base_price|floatformat:2 }} ₽

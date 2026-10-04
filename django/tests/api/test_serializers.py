@@ -35,6 +35,7 @@ def product(category):
         slug='ethiopia',
         category=category,
         product_type='coffee',
+        stock_unit=Product.STOCK_UNIT_GRAM,
         price_per_50g=Decimal('150.00'),
         stock=500,
         allow_grinding=True,
@@ -85,6 +86,7 @@ class TestCategorySerializer:
             category=category,
             is_available=False,
             product_type='coffee',
+            stock_unit=Product.STOCK_UNIT_GRAM,
             price_per_50g=100,
         )
         data = CategorySerializer(category).data
@@ -109,6 +111,7 @@ class TestProductSerializer:
         assert data['name'] == 'Эфиопия Иргачефф'
         assert data['category_name'] == 'Кофе'
         assert data['product_type'] == 'coffee'
+        assert data['stock_unit'] == 'g'
         assert data['sca_score'] == 86
 
     def test_review_count_zero(self, product):
