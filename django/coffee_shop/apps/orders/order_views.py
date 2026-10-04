@@ -178,8 +178,10 @@ def cart_view(request):
             total += price
             item = dict(value)
             # Маппинг полей сессии в поля шаблона
-            if 'weight' in item:
-                item['coffee_weight_grams'] = item['weight']
+            if product.stock_unit == Product.STOCK_UNIT_GRAM:
+                item['coffee_weight_grams'] = item.get('weight', 50)
+            else:
+                item['coffee_weight_grams'] = None
             if 'coffee_form' not in item:
                 item['coffee_form'] = value.get('coffee_form', 'beans')
             brewing_method = value.get('brewing_method', '')
@@ -195,6 +197,13 @@ def cart_view(request):
             cart_with_products[key] = item
         except Product.DoesNotExist:
             pass
+
+    # Добавляем max_quantity — максимальное количество (включая текущий товар в корзине)
+    for key, item in cart_with_products.items():
+        if item.get('product'):
+            product = item['product']
+            available = StockService.get_available_stock(product)
+            item['max_quantity'] = available + int(item.get('quantity', 1))
 
     context = {
         'cart': cart_with_products,
@@ -227,6 +236,90 @@ def cart_remove(request):
     return JsonResponse({
         'success': True,
         'cart_count': len(cart),
+    })
+
+
+def cart_update(request):
+    """Обновление количества товара в корзине (AJAX)."""
+    if request.method != 'POST':
+        return JsonResponse({'error': 'POST required'}, status=400)
+
+    if not request.user.is_authenticated:
+        return JsonResponse({
+            'error': 'login_required',
+            'redirect': '/accounts/login/'
+        }, status=403)
+
+    key = request.POST.get('key')
+    new_quantity_str = request.POST.get('quantity', '')
+
+    if not key:
+        return JsonResponse({'error': 'Key is required'}, status=400)
+
+    try:
+        new_quantity = int(new_quantity_str)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Некорректное количество'}, status=400)
+
+    if new_quantity < 1:
+        return JsonResponse({'error': 'Минимальное количество — 1'}, status=400)
+
+    cart = request.session.get('cart', {})
+    if key not in cart:
+        return JsonResponse({'error': 'Товар не найден в корзине'}, status=404)
+
+    item = cart[key]
+    try:
+        product = Product.objects.get(pk=item['product_id'])
+    except Product.DoesNotExist:
+        return JsonResponse({'error': 'Товар не найден'}, status=404)
+
+    # available_stock уже вычитает текущий товар из корзины (резерв).
+    # Добавляем текущее количество, чтобы получить общий лимит для new_quantity.
+    current_qty = int(item.get('quantity', 1))
+    available = StockService.get_available_stock(product) + current_qty
+
+    if product.stock_unit == Product.STOCK_UNIT_GRAM:
+        # Кофе: количество = вес в граммах, шаг 50г, мин 50г
+        if new_quantity % 50 != 0:
+            return JsonResponse({'error': 'Вес должен быть кратен 50 г'}, status=400)
+        if new_quantity < 50:
+            return JsonResponse({'error': 'Минимальный вес — 50 г'}, status=400)
+        if new_quantity > available:
+            return JsonResponse({'error': f'Доступно не более {available} г'}, status=400)
+
+        # Пересчитываем цену
+        price = coffee_price(new_quantity, product.price_per_50g)
+        item_data = dict(cart[key])
+        item_data['weight'] = str(new_quantity)
+        item_data['quantity'] = new_quantity
+        item_data['price'] = float(price)
+        # Обновляем ключ корзины
+        new_key = f"{product.id}:{new_quantity}:{item.get('coffee_form', 'beans')}:{item.get('brewing_method', '')}"
+        if new_key != key:
+            del cart[key]
+            cart[new_key] = item_data
+            key = new_key
+        else:
+            cart[key] = item_data
+    else:
+        # Не кофе: количество = штуки, шаг 1, мин 1
+        if new_quantity < 1:
+            return JsonResponse({'error': 'Минимальное количество — 1'}, status=400)
+        if new_quantity > available:
+            return JsonResponse({'error': f'Доступно не более {available} шт'}, status=400)
+
+        cart[key]['quantity'] = new_quantity
+        # Пересчитываем цену для не-кофе товаров
+        cart[key]['price'] = float(product.base_price) * new_quantity
+
+    request.session['cart'] = cart
+
+    return JsonResponse({
+        'success': True,
+        'cart_count': len(cart),
+        'new_price': cart[key]['price'],
+        'new_key': key,
     })
 
 
@@ -275,20 +368,31 @@ def cart_add(request):
     coffee_form = request.POST.get('coffee_form')
     brewing_method = request.POST.get('brewing_method')
     
+    if not product_id:
+        return JsonResponse({'error': 'Product ID is required'}, status=400)
+    
     try:
         product = Product.objects.get(pk=product_id)
     except Product.DoesNotExist:
         return JsonResponse({'error': 'Product not found'}, status=404)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid product ID'}, status=400)
     
-    # Валидация для кофе
+    # Валидация для кофе (по единице измерения: граммы = кофе, штуки = не кофе)
     if product.stock_unit == Product.STOCK_UNIT_GRAM:
+        if not weight:
+            return JsonResponse({'error': 'Weight is required for coffee'}, status=400)
+        try:
+            weight_int = int(weight)
+        except (ValueError, TypeError):
+            return JsonResponse({'error': 'Invalid weight value'}, status=400)
         is_valid, error = CoffeeService.validate_all(
-            product, int(weight), coffee_form, brewing_method
+            product, weight_int, coffee_form, brewing_method
         )
         if not is_valid:
             return JsonResponse({'error': error}, status=400)
         
-        price = coffee_price(int(weight), product.price_per_50g)
+        price = coffee_price(weight_int, product.price_per_50g)
     else:
         price = product.base_price
     
@@ -304,7 +408,7 @@ def cart_add(request):
         'coffee_form': coffee_form,
         'brewing_method': brewing_method,
         'price': float(price),
-        'quantity': 1,
+        'quantity': int(weight) if product.stock_unit == Product.STOCK_UNIT_GRAM else 1,
         'product_weight_grams': product.weight_grams if product.stock_unit == Product.STOCK_UNIT_UNIT else 0,
     }
     request.session['cart'] = cart

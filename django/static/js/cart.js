@@ -7,6 +7,7 @@ var Cart = (function () {
 
     var ADD_URL = '/cart/add/';
     var REMOVE_URL = '/cart/remove/';
+    var UPDATE_URL = '/cart/update/';
 
     /* ==================== Инициализация ==================== */
 
@@ -21,6 +22,14 @@ var Cart = (function () {
         // Если есть табличная корзина — кнопки remove
         document.querySelectorAll('.js-cart-remove').forEach(function (btn) {
             btn.addEventListener('click', handleRemoveFromCart);
+        });
+
+        // Спиннеры количества на странице корзины
+        document.querySelectorAll('.js-quantity-increase').forEach(function (btn) {
+            btn.addEventListener('click', handleQuantityChange);
+        });
+        document.querySelectorAll('.js-quantity-decrease').forEach(function (btn) {
+            btn.addEventListener('click', handleQuantityChange);
         });
     }
 
@@ -119,6 +128,119 @@ var Cart = (function () {
                 } else {
                     CoffeeShop.showToast(error || 'Ошибка при удалении', 'danger');
                 }
+            });
+    }
+
+    /* ==================== Изменение количества ==================== */
+
+    function handleQuantityChange(e) {
+        e.preventDefault();
+
+        var btn = e.currentTarget;
+        var isIncrease = btn.classList.contains('js-quantity-increase');
+        var spinner = btn.closest('.js-quantity-spinner');
+        var key = spinner.getAttribute('data-cart-key');
+        var productType = spinner.getAttribute('data-product-type');
+        var stockUnit = spinner.getAttribute('data-stock-unit');
+        var availableStock = parseInt(spinner.getAttribute('data-available-stock'), 10);
+        var input = spinner.querySelector('.js-quantity-value');
+        var currentQuantity = parseInt(input.value, 10);
+
+        if (!key || isNaN(availableStock) || isNaN(currentQuantity)) {
+            CoffeeShop.showToast('Не удалось определить товар', 'danger');
+            return;
+        }
+
+        var step = (stockUnit === 'g') ? 50 : 1;
+        var minQty = (stockUnit === 'g') ? 50 : 1;
+        var newQuantity = isIncrease ? currentQuantity + step : currentQuantity - step;
+
+        console.log('[cart.js] Product type:', productType, 'currentQty:', currentQuantity, 'newQty:', newQuantity, 'availableStock:', availableStock, 'step:', step);
+
+        // Проверка границ
+        if (newQuantity < minQty) {
+            console.log('[cart.js] Below minimum:', minQty);
+            return;
+        }
+        if (newQuantity > availableStock) {
+            console.log('[cart.js] Above available:', availableStock);
+            CoffeeShop.showToast('Достигнут лимит остатка на складе', 'warning');
+            return;
+        }
+
+        // Блокируем кнопки на время запроса
+        btn.disabled = true;
+        var decreaseBtn = spinner.querySelector('.js-quantity-decrease');
+        var increaseBtn = spinner.querySelector('.js-quantity-increase');
+        decreaseBtn.disabled = true;
+        increaseBtn.disabled = true;
+
+        CoffeeShop.postJson(UPDATE_URL, {key: key, quantity: newQuantity})
+            .then(function (response) {
+                console.log('[cart.js] Update response:', response);
+                // Обновляем значение в инпуте
+                input.value = newQuantity;
+                // Обновляем key на спиннере
+                var newKey = response.new_key || key;
+                spinner.setAttribute('data-cart-key', newKey);
+                // Обновляем key на карточке товара
+                var card = spinner.closest('.cart-item-card');
+                if (card) {
+                    card.setAttribute('data-cart-key', newKey);
+                    // Обновляем key на кнопке удаления
+                    var removeBtn = card.querySelector('.js-cart-remove');
+                    if (removeBtn) {
+                        removeBtn.setAttribute('data-key', newKey);
+                    }
+                    // Обновляем цену в плитке
+                    var priceEl = card.querySelector('.cart-item-price');
+                    if (priceEl) {
+                        console.log('[cart.js] new_price:', response.new_price, 'type:', typeof response.new_price);
+                        priceEl.textContent = CoffeeShop.formatPrice(response.new_price);
+                    }
+                    // Обновляем параметры товара (вес/форма/способ заваривания)
+                    var paramsEl = card.querySelector('.cart-item-params');
+                    if (paramsEl) {
+                        var stockUnit = spinner.getAttribute('data-stock-unit');
+                        var coffeeForm = card.getAttribute('data-coffee-form');
+                        var brewingLabel = card.getAttribute('data-brewing-method-label');
+                        var paramsText = '';
+                        if (stockUnit === 'g') {
+                            // Кофе: вес + форма + способ заваривания
+                            paramsText = newQuantity + ' г';
+                            if (coffeeForm === 'ground') {
+                                paramsText += ' · молотый';
+                            } else {
+                                paramsText += ' · в зёрнах';
+                            }
+                            if (brewingLabel) {
+                                paramsText += ' · ' + brewingLabel;
+                            }
+                        } else {
+                            // Не кофе: общий вес = вес одного товара * количество
+                            var productWeight = parseInt(card.getAttribute('data-product-weight-grams'), 10);
+                            if (productWeight && productWeight > 0) {
+                                paramsText = (productWeight * newQuantity) + ' г';
+                            } else {
+                                paramsText = newQuantity + ' шт';
+                            }
+                        }
+                        paramsEl.textContent = paramsText;
+                    }
+                }
+                // Обновляем счётчик в бейдже
+                updateCartBadge(response.cart_count);
+                // Пересчитываем итог
+                recalcTotal();
+                CoffeeShop.showToast('Количество обновлено', 'success');
+            })
+            .catch(function (error) {
+                CoffeeShop.showToast(error || 'Ошибка при обновлении', 'danger');
+            })
+            .finally(function () {
+                btn.disabled = false;
+                decreaseBtn.disabled = false;
+                increaseBtn.disabled = false;
             });
     }
 

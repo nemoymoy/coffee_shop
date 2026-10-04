@@ -14,7 +14,10 @@
 <div class="row">
     <div class="col-md-8">
         {% for cart_key, item in cart.items %}
-        <div class="card mb-3 cart-item-card" data-cart-key="{{ cart_key }}">
+        <div class="card mb-3 cart-item-card" data-cart-key="{{ cart_key }}"
+             data-coffee-form="{{ item.coffee_form|default:'beans' }}"
+             data-brewing-method-label="{{ item.brewing_method_label|default:'' }}"
+             data-product-weight-grams="{{ item.product_weight_grams|default:0 }}">
             <div class="card-body">
                 <div class="row align-items-center">
                     <div class="col-md-2 col-4">
@@ -42,7 +45,8 @@
                         </small>
                         {% elif item.product_weight_grams %}
                         <small class="cart-item-params">
-                            {{ item.product_weight_grams }} г
+                            {% widthratio item.quantity 1 item.product_weight_grams as total_weight %}
+                            {{ total_weight }} г
                         </small>
                         {% else %}
                         <small class="cart-item-params">
@@ -51,10 +55,19 @@
                         {% endif %}
                     </div>
                     <div class="col-md-2 col-4 mt-2 mt-md-0">
-                        <strong>{{ item.price|floatformat:2 }} ₽</strong>
+                        <strong class="cart-item-price">{{ item.price|floatformat:2 }} ₽</strong>
                     </div>
                     <div class="col-md-2 col-4 mt-1 mt-md-0">
-                        x{{ item.quantity|default:1 }}
+                        <div class="input-group input-group-sm js-quantity-spinner"
+                             data-cart-key="{{ cart_key }}"
+                             data-product-type="{{ item.product.product_type }}"
+                             data-stock-unit="{{ item.product.stock_unit }}"
+                             data-available-stock="{{ item.max_quantity }}">
+                            <button class="btn btn-coffee-outline js-quantity-decrease" type="button">−</button>
+                            <input type="text" class="form-control text-center js-quantity-value"
+                                   value="{% if item.coffee_weight_grams %}{{ item.coffee_weight_grams }}{% else %}{{ item.quantity|default:1 }}{% endif %}" readonly>
+                            <button class="btn btn-coffee-outline js-quantity-increase" type="button">+</button>
+                        </div>
                     </div>
                     <div class="col-md-2 col-4 text-md-end mt-1 mt-md-0">
                         <button class="btn btn-sm text-danger js-cart-remove" data-key="{{ cart_key }}" title="Удалить">
