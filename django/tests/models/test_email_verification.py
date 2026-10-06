@@ -76,3 +76,20 @@ class TestUserEmailVerificationModel:
             expires_at=timezone.now() + timedelta(hours=1),
         )
         assert 'test@example.com' in str(verification)
+
+    def test_is_email_verified_from_profile(self, user):
+        """is_email_verified читает статус из UserProfile."""
+        verification = UserEmailVerification.objects.create(
+            user=user,
+            expires_at=timezone.now() + timedelta(hours=1),
+        )
+        # Без email_verified_at — False
+        assert verification.is_email_verified is False
+
+        # Установим email_verified_at
+        user.profile.email_verified_at = timezone.now()
+        user.profile.save()
+        # Теперь True даже если токен истёк
+        verification.expires_at = timezone.now() - timedelta(hours=1)
+        verification.save()
+        assert verification.is_email_verified is True

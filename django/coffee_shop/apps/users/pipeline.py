@@ -4,7 +4,7 @@ import hashlib
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
-from coffee_shop.apps.users.models import PersonalDataConsent
+from coffee_shop.apps.users.models import PersonalDataConsent, UserProfile
 
 User = get_user_model()
 
@@ -86,5 +86,29 @@ def create_personal_data_consent(backend, uid, user=None, is_new=False, **kwargs
         ip_address=ip_address,
         user_agent=user_agent,
     )
+
+    return user
+
+
+def set_oauth_email_verified(backend, uid, user=None, is_new=False, **kwargs):
+    """
+    Для пользователей, прошедших OAuth (Яндекс), автоматически
+    помечаем email как подтверждённый.
+
+    Email подтверждён провайдером (Яндекс), поэтому нет необходимости
+    в отдельной верификации через токен.
+    """
+    if not user:
+        return None
+
+    try:
+        profile = user.profile
+    except UserProfile.DoesNotExist:
+        profile = UserProfile.objects.create(user=user)
+
+    # Устанавливаем email_verified_at только если ещё не установлен
+    if profile.email_verified_at is None:
+        profile.email_verified_at = timezone.now()
+        profile.save(update_fields=['email_verified_at'])
 
     return user

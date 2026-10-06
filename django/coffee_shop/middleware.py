@@ -6,7 +6,7 @@ from django.conf import settings
 from django.shortcuts import redirect
 from django.utils.deprecation import MiddlewareMixin
 
-from coffee_shop.apps.users.models import UserEmailVerification
+from coffee_shop.apps.users.models import UserEmailVerification, UserProfile
 
 logger = logging.getLogger(__name__)
 
@@ -267,20 +267,12 @@ class EmailVerificationMiddleware(MiddlewareMixin):
     def _is_email_verified(user):
         """Проверяет, что email подтверждён.
 
-        OAuth-пользователи считаются верифицированными автоматически,
-        т.к. email уже подтверждён провайдером (Яндекс).
+        Статус хранится в UserProfile.email_verified_at.
+        OAuth-пользователи отмечаются автоматически при входе.
         """
         try:
-            # is_email_verified — True если токен использован (email подтверждён)
-            return user.email_verification.is_email_verified
-        except UserEmailVerification.DoesNotExist:
-            # OAuth-пользователи — email уже подтверждён Яндексом
-            from social_django.models import UserSocialAuth
-            has_social_auth = UserSocialAuth.objects.filter(
-                user=user
-            ).exists()
-            if has_social_auth:
-                return True
+            return user.profile.is_email_verified
+        except UserProfile.DoesNotExist:
             return False
 
     @staticmethod

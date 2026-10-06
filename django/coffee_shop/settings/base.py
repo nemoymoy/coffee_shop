@@ -398,6 +398,7 @@ SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.user.user_details',
     'coffee_shop.apps.users.pipeline.auto_link_existing_user',
     'coffee_shop.apps.users.pipeline.create_personal_data_consent',
+    'coffee_shop.apps.users.pipeline.set_oauth_email_verified',
 )
 
 # Add social_django context processors

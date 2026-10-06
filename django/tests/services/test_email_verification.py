@@ -67,8 +67,15 @@ class TestEmailVerificationService:
         assert success is True
         assert error is None
 
-        verification.refresh_from_db()
-        assert verification.is_used is True
+        # Токен удаляется после использования
+        assert not UserEmailVerification.objects.filter(
+            token=verification.token
+        ).exists()
+
+        # Проверка что email_verified_at установлен в UserProfile
+        user.refresh_from_db()
+        assert user.profile.email_verified_at is not None
+        assert user.profile.is_email_verified is True
 
     def test_verify_token_invalid_uuid(self):
         """Верификация с невалидным UUID."""
@@ -82,12 +89,15 @@ class TestEmailVerificationService:
         """Верификация уже использованного токена."""
         user = self._create_user()
         verification = EmailVerificationService.generate_token(user)
-        verification.is_used = True
-        verification.save(update_fields=['is_used'])
 
+        # Сначала подтверждаем — токен удалится
+        success, error = EmailVerificationService.verify_token(verification.token)
+        assert success is True
+
+        # Второй раз токен уже не работает
         success, error = EmailVerificationService.verify_token(verification.token)
         assert success is False
-        assert 'использован' in error
+        assert 'Недействительный токен' in error
 
     def test_verify_token_expired(self):
         """Верификация истёкшего токена."""
@@ -109,3 +119,24 @@ class TestEmailVerificationService:
         v2 = EmailVerificationService.resend_token(user)
         assert v2.token != v1.token
         assert UserEmailVerification.objects.filter(user=user).count() == 1
+
+    def test_email_verified_stays_after_token_expires(self):
+        """Статус email_verified сохраняется после удаления токена."""
+        user = self._create_user()
+        verification = EmailVerificationService.generate_token(user)
+
+        # Подтверждаем email — токен удалится
+        success, error = EmailVerificationService.verify_token(verification.token)
+        assert success is True
+
+        # Проверяем что email_verified_at установлен
+        user.refresh_from_db()
+        assert user.profile.is_email_verified is True
+
+        # Токен удалён
+        assert not UserEmailVerification.objects.filter(
+            token=verification.token
+        ).exists()
+
+        # Статус остаётся навсегда, потому что читается из UserProfile
+        assert user.profile.is_email_verified is True

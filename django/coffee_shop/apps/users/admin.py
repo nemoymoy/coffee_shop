@@ -14,6 +14,8 @@ class UserProfileInline(admin.StackedInline):
     can_delete = False
     verbose_name = 'Профиль'
     verbose_name_plural = 'Профиль пользователя'
+    fields = ('phone', 'birth_date', 'gender', 'email_verified_at', 'is_email_verified')
+    readonly_fields = ('email_verified_at', 'is_email_verified')
 
 
 class DeliveryAddressInline(admin.TabularInline):
@@ -72,6 +74,34 @@ class DeliveryAddressAdmin(admin.ModelAdmin):
     unset_default.short_description = 'Снять "По умолчанию"'
 
 
+class UserEmailVerificationAdmin(admin.ModelAdmin):
+    """Админ-панель для токенов подтверждения email.
+
+    Токены удаляются после подтверждения — здесь видны только активные.
+    Для проверки статуса верификации смотрите UserProfileInline в карточке пользователя.
+    """
+    list_display = ('user', 'created_at', 'expires_at', 'is_valid')
+    list_filter = ('created_at', 'expires_at')
+    search_fields = ('user__username', 'user__email')
+    readonly_fields = ('user', 'token', 'created_at', 'expires_at')
+    fieldsets = (
+        ('Пользователь', {
+            'fields': ('user',),
+        }),
+        ('Токен', {
+            'fields': ('token',),
+            'description': 'Токен удаляется после подтверждения email.',
+        }),
+        ('Время', {
+            'fields': ('created_at', 'expires_at'),
+            'classes': ('collapse',),
+        }),
+    )
+
+    def has_add_permission(self, request):
+        return False
+
+
 # Re-register User with custom admin
 class CustomUserAdmin(BaseUserAdmin):
     inlines = (UserProfileInline, DeliveryAddressInline)
@@ -82,4 +112,4 @@ admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)
 admin.site.register(DeliveryAddress, DeliveryAddressAdmin)
 admin.site.register(PersonalDataConsent)
-admin.site.register(UserEmailVerification)
+admin.site.register(UserEmailVerification, UserEmailVerificationAdmin)

@@ -344,24 +344,18 @@ def cart_add(request):
 
     # Проверка подтверждённого email
     try:
-        if not request.user.email_verification.is_email_verified:
+        if not request.user.profile.is_email_verified:
             return JsonResponse({
                 'error': 'email_not_verified',
                 'message': 'Для добавления товаров в корзину необходимо подтвердить email',
                 'redirect': '/accounts/verification-pending/',
             }, status=403)
-    except UserEmailVerification.DoesNotExist:
-        # OAuth-пользователи — email уже подтверждён Яндексом
-        from social_django.models import UserSocialAuth
-        has_social_auth = UserSocialAuth.objects.filter(
-            user=request.user
-        ).exists()
-        if not has_social_auth:
-            return JsonResponse({
-                'error': 'email_not_verified',
-                'message': 'Для добавления товаров в корзину необходимо подтвердить email',
-                'redirect': '/accounts/verification-pending/',
-            }, status=403)
+    except UserProfile.DoesNotExist:
+        return JsonResponse({
+            'error': 'email_not_verified',
+            'message': 'Для добавления товаров в корзину необходимо подтвердить email',
+            'redirect': '/accounts/verification-pending/',
+        }, status=403)
 
     product_id = request.POST.get('product_id')
     weight = request.POST.get('weight')

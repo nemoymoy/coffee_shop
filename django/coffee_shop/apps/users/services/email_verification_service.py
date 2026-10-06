@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 
-from coffee_shop.apps.users.models import UserEmailVerification
+from coffee_shop.apps.users.models import UserEmailVerification, UserProfile
 
 
 class EmailVerificationService:
@@ -42,8 +42,17 @@ class EmailVerificationService:
         if verification.is_expired:
             return False, 'Токен истёк'
 
-        verification.is_used = True
-        verification.save(update_fields=['is_used'])
+        # Сохраняем статус в профиль
+        try:
+            profile = verification.user.profile
+        except UserProfile.DoesNotExist:
+            profile = UserProfile.objects.create(user=verification.user)
+
+        profile.email_verified_at = timezone.now()
+        profile.save(update_fields=['email_verified_at'])
+
+        # Удаляем токен — он больше не нужен
+        verification.delete()
         return True, None
 
     @classmethod

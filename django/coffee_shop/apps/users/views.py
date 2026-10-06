@@ -121,18 +121,19 @@ def personal_data_consent_text_view(request):
 
 def verify_email_view(request, token):
     """Подтверждение email по токену с автоматическим входом."""
-    # Сначала ищем пользователя по токену (для автологина)
+    # Пытаемся найти токен (может быть ещё не использован)
     user = None
     try:
         verification = UserEmailVerification.objects.get(token=token)
         user = verification.user
     except UserEmailVerification.DoesNotExist:
+        # Токен не найден — возможно уже использован и удалён
         pass
 
     success, error = EmailVerificationService.verify_token(token)
 
     if success:
-        # Автома��ический вход после подтверждения email
+        # Автоматический вход после подтверждения email
         if user:
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(
@@ -144,7 +145,22 @@ def verify_email_view(request, token):
         messages.success(request, 'Email успешно подтверждён!')
         return redirect('users:email_verified')
     else:
-        # Если токен уже использован — пробуем залогинить пользователя по email из письма
+        # Токен не найден — проверяем, верифицирован ли пользователь
+        if 'Недействительный токен' in error:
+            # Токен уже удалён — проверяем профиль пользователя
+            if user and user.profile.is_email_verified:
+                login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+                messages.success(
+                    request,
+                    f'Email уже подтверждён. Добро пожаловать, {user.first_name or user.username}!'
+                )
+                return redirect('catalog:catalog')
+            
+            # Если user=None, токен полностью невалиден
+            messages.error(request, error)
+            return redirect('users:email_verification_error')
+        
+        # Если токен уже использован — пробуем залогинить пользователя
         if 'использован' in error and user:
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(

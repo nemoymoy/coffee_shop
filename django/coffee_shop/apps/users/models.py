@@ -40,6 +40,12 @@ class UserProfile(models.Model):
         default='',
         verbose_name='Пол',
     )
+    email_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Email подтверждён в',
+        help_text='Дата и время подтверждения email. OAuth-пользователи отмечаются автоматически.',
+    )
 
     class Meta:
         verbose_name = 'Профиль пользователя'
@@ -47,6 +53,11 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return f'Profile of {self.user.get_full_name() or self.user.username}'
+
+    @property
+    def is_email_verified(self):
+        """Email подтверждён (токен использован или OAuth-пользователь)."""
+        return self.email_verified_at is not None
 
 
 class PersonalDataConsent(models.Model):
@@ -150,8 +161,11 @@ class UserEmailVerification(models.Model):
 
     @property
     def is_email_verified(self):
-        """Email подтверждён (токен использован и не истёк)."""
-        return self.is_used and not self.is_expired
+        """Email подтверждён (статус хранится в UserProfile)."""
+        try:
+            return self.user.profile.is_email_verified
+        except UserProfile.DoesNotExist:
+            return False
 
     def __str__(self):
         return f'Email verification for {self.user.email}'

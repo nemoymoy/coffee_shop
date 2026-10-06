@@ -91,22 +91,39 @@ class TestVerifyEmailView:
         # Проверка, что пользователь залогинен
         assert response.wsgi_request.user.pk == user.pk
 
-        verification.refresh_from_db()
-        assert verification.is_used is True
+        # Токен удаляется после подтверждения
+        assert not UserEmailVerification.objects.filter(
+            token=verification.token
+        ).exists()
+
+        # Статус верификации в профиле
+        user.refresh_from_db()
+        assert user.profile.email_verified_at is not None
 
     def test_verify_email_already_used_redirects_to_login(self, client):
-        """Повторный переход по использованному токену — редирект на каталог с автологином."""
+        """Повторный переход по ссылке — токен удалён, ошибка."""
         user, verification = self._create_verified_user()
-        verification.is_used = True
-        verification.save(update_fields=['is_used'])
 
+        # Первый раз подтверждаем
+        client.get(
+            reverse('users:verify_email', args=[verification.token])
+        )
+
+        # Токен удалён, но пользователь уже верифицирован
+        assert not UserEmailVerification.objects.filter(
+            token=verification.token
+        ).exists()
+        user.refresh_from_db()
+        assert user.profile.email_verified_at is not None
+
+        # Второй раз — токен не найден, пользователь не может войти по удалённому токену
+        # Это ожидаемое поведение — токен одноразовый
         response = client.get(
             reverse('users:verify_email', args=[verification.token])
         )
-        # Токен уже использован, но пользователь должен быть залогинен
         assert response.status_code == 302
-        assert response.url == reverse('catalog:catalog')
-        assert response.wsgi_request.user.pk == user.pk
+        # Токен не найден — редирект на ошибку
+        assert 'verification-error' in response.url
 
     def test_verify_email_invalid_token(self, client):
         """Подтверждение с невалидным токеном."""
@@ -129,18 +146,26 @@ class TestVerifyEmailView:
         assert response.url == reverse('users:email_verification_error')
 
     def test_verify_email_already_used(self, client):
-        """Подтверждение уже использованного токена — редирект с автологином."""
+        """Подтверждение уже использованного токена — токен удалён."""
         user, verification = self._create_verified_user()
-        verification.is_used = True
-        verification.save(update_fields=['is_used'])
 
+        # Первый раз подтверждаем
+        client.get(
+            reverse('users:verify_email', args=[verification.token])
+        )
+
+        # Токен удалён, пользователь верифицирован
+        assert not UserEmailVerification.objects.filter(
+            token=verification.token
+        ).exists()
+
+        # Второй раз — токен не найден, ошибка
         response = client.get(
             reverse('users:verify_email', args=[verification.token])
         )
-        # Токен уже использован — редирект на каталог с автологином
         assert response.status_code == 302
-        assert response.url == reverse('catalog:catalog')
-        assert response.wsgi_request.user.pk == user.pk
+        # Токен не найден — редирект на ошибку
+        assert 'verification-error' in response.url
 
 
 @pytest.mark.django_db
@@ -148,7 +173,7 @@ class TestCartAddEmailVerificationBlocked:
     """Тесты блокировки добавления в корзину для не-верифицированных."""
 
     def test_cart_add_blocked_without_verification_record(self, client):
-        """Добавление в корзину заблокировано если нет записи верификации."""
+        """Добавление в корзину заблокировано если email не подтверждён."""
         user = User.objects.create_user(
             username='novuser',
             email='nov@example.com',
@@ -191,10 +216,37 @@ class TestOAuthUserNotBlocked:
         return user
 
     def test_oauth_user_not_blocked_by_middleware(self, client):
-        """Middleware не блокирует OAuth-пользователя."""
+        """Middleware не блокирует OAuth-пользователя с email_verified_at."""
         user = self._create_oauth_user()
+        # OAuth-пользователь получает email_verified_at через pipeline
+        user.profile.email_verified_at = timezone.now()
+        user.profile.save()
         client.force_login(user)
 
         # Dashboard требует авторизации, middleware не должен редиректить
         response = client.get(reverse('users:dashboard'))
         assert response.status_code == 200
+
+    def test_oauth_user_can_add_to_cart(self, client):
+        """OAuth-пользователь может добавлять товары в корзину."""
+        user = self._create_oauth_user()
+        # OAuth-пользователь получает email_verified_at через pipeline
+        user.profile.email_verified_at = timezone.now()
+        user.profile.save()
+        client.force_login(user)
+
+        response = client.post(
+            '/cart/add/',
+            {
+                'product_id': 1,
+                'weight': '100',
+                'coffee_form': 'beans',
+                'brewing_method': 'turka',
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest',
+            CONTENT_TYPE='application/x-www-form-urlencoded',
+        )
+        # 400 т.к. product не найден, но НЕ 403 email_not_verified
+        assert response.status_code in (400, 404)
+        data = response.json()
+        assert data['error'] != 'email_not_verified'
