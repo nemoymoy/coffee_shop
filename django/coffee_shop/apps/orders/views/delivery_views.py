@@ -616,15 +616,11 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
     if delivery_type in ('pickup', 'postamat'):
         last_mile_policy = 'self_pickup'
         source_point = {
-            'platform_station': {
-                'platform_id': service.pickup_station_id,
-            },
+            'platform_station_id': service.pickup_station_id,
         }
         destination_point = {
             'type': 'platform_station',
-            'platform_station': {
-                'platform_id': pvz_id or service.pickup_station_id,
-            },
+            'platform_station_id': pvz_id or service.pickup_station_id,
         }
         logger.info('[OtherDay] === PAYLOAD ===')
         logger.info('[OtherDay] source_point: %s', json.dumps(source_point, ensure_ascii=False))
@@ -634,9 +630,7 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
     else:
         last_mile_policy = 'time_interval'
         source_point = {
-            'platform_station': {
-                'platform_id': service.test_warehouse_id or service.pvz_id,
-            },
+            'platform_station_id': service.test_warehouse_id or service.pvz_id,
         }
         destination_point = {
             'type': 'custom_location',
@@ -877,21 +871,15 @@ def offers_info_view(request):
         # Build source/destination
         if delivery_type in ('pickup', 'postamat'):
             source_point = {
-                'platform_station': {
-                    'platform_id': service.pickup_station_id,
-                },
+                'platform_station_id': service.pickup_station_id,
             }
             destination_point = {
                 'type': 'platform_station',
-                'platform_station': {
-                    'platform_id': pvz_id or service.pickup_station_id,
-                },
+                'platform_station_id': pvz_id or service.pickup_station_id,
             }
         else:
             source_point = {
-                'platform_station': {
-                    'platform_id': service.test_warehouse_id or service.pvz_id,
-                },
+                'platform_station_id': service.test_warehouse_id or service.pvz_id,
             }
             destination_point = {
                 'type': 'custom_location',

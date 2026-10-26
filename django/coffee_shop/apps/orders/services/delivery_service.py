@@ -1060,9 +1060,15 @@ class YandexDeliveryService:
                 pricing = order_info.get('pricing') or {}
                 interval = order_info.get('delivery_interval') or {}
 
-                # Wait until price appears (not None), interval appears, or order failed
+                # For self_pickup, interval may be in request.destination.interval_utc
+                request_data = order_info.get('request', {})
+                dest = request_data.get('destination', {})
+                dest_interval = dest.get('interval_utc', {}) or dest.get('interval', {})
+
+                # Wait until price appears, interval appears, or order failed
                 has_price = pricing.get('total') is not None
-                if has_price or interval.get('from') or status == 'failed':
+                has_interval = interval.get('from') or dest_interval.get('from')
+                if has_price or has_interval or status == 'failed':
                     has_price_or_interval = True
                     break
                 logger.info('[OtherDay]   attempt %d: status=%s, waiting...',
@@ -1084,7 +1090,17 @@ class YandexDeliveryService:
                 }
 
             # ── Format result ───────────────────────────────────────────
+            # For self_pickup, interval is in request.destination.interval_utc
+            # For courier, it's in delivery_interval
             di = order_info.get('delivery_interval', {})
+            request_data = order_info.get('request', {})
+            dest = request_data.get('destination', {})
+            dest_interval = dest.get('interval_utc', {}) or dest.get('interval', {})
+
+            # Use destination interval if delivery_interval is empty
+            if not di.get('from') and dest_interval:
+                di = dest_interval
+
             d_from = di.get('from')
             d_to = di.get('to')
 
@@ -1093,21 +1109,32 @@ class YandexDeliveryService:
             if d_from:
                 try:
                     from datetime import datetime, timezone, timedelta
-                    # Parse ISO format and convert to local timezone (UTC+4 Samara)
                     tz_local = timezone(timedelta(hours=4))
-                    dt_from = datetime.fromisoformat(
-                        d_from.replace('Z', '+00:00')
-                    ).astimezone(tz_local)
-                    delivery_date = dt_from.strftime('%d.%m.%Y')
-                    if d_to:
-                        dt_to = datetime.fromisoformat(
-                            d_to.replace('Z', '+00:00')
-                        ).astimezone(tz_local)
-                        delivery_time = (
-                            f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                        )
+
+                    # Handle both ISO format and Unix timestamp
+                    if isinstance(d_from, (int, float)):
+                        dt_from = datetime.fromtimestamp(d_from, tz=timezone.utc).astimezone(tz_local)
+                        if d_to and isinstance(d_to, (int, float)):
+                            dt_to = datetime.fromtimestamp(d_to, tz=timezone.utc).astimezone(tz_local)
+                            delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                        else:
+                            delivery_time = dt_from.strftime('%H:%M')
                     else:
-                        delivery_time = dt_from.strftime('%H:%M')
+                        dt_from = datetime.fromisoformat(
+                            d_from.replace('Z', '+00:00')
+                        ).astimezone(tz_local)
+                        if d_to:
+                            try:
+                                dt_to = datetime.fromisoformat(
+                                    d_to.replace('Z', '+00:00')
+                                ).astimezone(tz_local)
+                                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                            except (ValueError, TypeError):
+                                delivery_time = dt_from.strftime('%H:%M')
+                        else:
+                            delivery_time = dt_from.strftime('%H:%M')
+
+                    delivery_date = dt_from.strftime('%d.%m.%Y')
                 except Exception as e:
                     logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
 
