@@ -99,6 +99,7 @@ class YandexDeliveryService:
     # Express API endpoints
     EXPRESS_CLAIMS_CREATE_URL = '{base}/claims/create'
     EXPRESS_CLAIMS_ACCEPT_URL = '{base}/claims/accept'
+    EXPRESS_CLAIMS_CANCEL_URL = '{base}/claims/cancel'
     EXPRESS_CLAIMS_INFO_URL = '{base}/claims/info'
     EXPRESS_ORDERS_URL = '{base}/orders/{order_id}'
 
@@ -540,42 +541,116 @@ class YandexDeliveryService:
             return {'success': False, 'error': str(e)}
 
     def cancel_express_claim(self, claim_id: str) -> dict:
-        """Cancel an Express claim.
+        """Cancel an Express claim via Yandex Delivery API.
+
+        POST /b2b/cargo/integration/v2/claims/cancel?claim_id={claim_id}
+        Body: {"version": N}
 
         Args:
             claim_id: The claim ID to cancel
 
         Returns:
-            {'success': True, 'message': 'Claim cancelled'}
+            {'success': True, 'message': 'Claim cancelled', 'status': '...'}
         """
         if not self.is_configured():
             return {'success': False, 'error': 'Яндекс Доставка не настроена'}
 
         try:
-            # Try to get claim info first to check if it can be cancelled
+            # Get claim info first to check current status
             info_result = self.get_express_claim_info(claim_id)
             if not info_result.get('success'):
                 logger.warning('[Express] Cannot cancel %s: info failed', claim_id)
                 return {'success': False, 'error': 'Не удалось проверить статус'}
 
             current_status = info_result.get('status', '')
-            logger.info('[Express] Cancelling claim %s, current status: %s',
-                       claim_id, current_status)
+            raw_data = info_result.get('raw', {})
+            version = raw_data.get('version', 1)
+
+            logger.info('[Express] ========== CANCEL CLAIM START ==========', claim_id)
+            logger.info('[Express] Claim ID: %s', claim_id)
+            logger.info('[Express] Current status: %s', current_status)
+            logger.info('[Express] Version: %d', version)
+            logger.info('[Express] Express base URL: %s', self.express_base_url)
+            logger.info('[Express] Token prefix: %s', self.token[:10] if self.token else 'NONE')
 
             # If already cancelled or completed, just return success
             if current_status in ('cancelled', 'completed', 'closed'):
                 logger.info('[Express] Claim %s already %s', claim_id, current_status)
-                return {'success': True, 'message': 'Заказ уже отменён'}
+                return {'success': True, 'message': 'Заказ уже отменён', 'status': current_status}
 
-            # If claim is in 'accepted' or 'confirmed' state,
-            # cancellation may not be available via API
-            # Return success anyway to not block user flow
-            logger.info('[Express] Claim %s status=%s, cancellation handled',
-                       claim_id, current_status)
-            return {'success': True, 'message': 'Заказ отменён'}
+            # If claim is in 'accepted', 'confirmed', or 'in_progress' state,
+            # cancellation may not be available via API — but we still try
+            # because the user expects the cancel action to work
+
+            # Call cancel API via Express cargo endpoint
+            # POST {express_base_url}/claims/cancel?claim_id={claim_id}
+            # Body: {"version": N}
+            cancel_url = f'{self.express_base_url}/claims/cancel?claim_id={claim_id}'
+            payload = {
+                'version': version,
+                'cancel_state': 'free',
+            }
+
+            # Add X-Merchant-Id header if available
+            merchant_id = getattr(settings, 'YANDEX_MERCHANT_ID', '')
+            if merchant_id:
+                self.session.headers['X-Merchant-Id'] = merchant_id
+
+            logger.info('[Express] Cancel URL: %s', cancel_url)
+            logger.info('[Express] Cancel payload: %s', json.dumps(payload, ensure_ascii=False))
+            logger.info('[Express] Session headers: %s', json.dumps(dict(self.session.headers), ensure_ascii=False))
+
+            response = self.session.post(cancel_url, json=payload, timeout=15)
+
+            logger.info('[Express] Cancel response status: %s', response.status_code)
+            logger.info('[Express] Cancel response headers: %s', dict(response.headers))
+            logger.info('[Express] Cancel response body: %s', response.text[:1000])
+
+            if response.status_code != 200:
+                logger.error('[Express] Cancel FAILED - status: %s, body: %s',
+                           response.status_code, response.text[:500])
+                response.raise_for_status()
+
+            data = response.json()
+            new_status = data.get('status', '')
+            logger.info('[Express] Claim %s cancelled successfully, new status: %s',
+                       claim_id, new_status)
+            logger.info('[Express] ========== CANCEL CLAIM END ==========')
+
+            return {
+                'success': True,
+                'message': 'Заказ отменён',
+                'status': new_status,
+                'raw': data,
+            }
+
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code if e.response else None
+            error_body = e.response.text[:500] if e.response else 'N/A'
+            logger.error('[Express] ========== CANCEL HTTP ERROR ==========')
+            logger.error('[Express] Claim: %s', claim_id)
+            logger.error('[Express] HTTP status: %s', status_code)
+            logger.error('[Express] Error body: %s', error_body)
+            logger.error('[Express] Error exception: %s', e)
+            logger.error('[Express] ==========================================')
+
+            # Handle specific error codes
+            if status_code == 404:
+                return {
+                    'success': True,
+                    'message': 'Заказ не найден в Яндекс Доставке',
+                    'status': 'not_found',
+                }
+            if status_code == 409:
+                return {
+                    'success': True,
+                    'message': 'Заказ уже в финальном статусе, отмена невозможна',
+                    'status': 'final_status',
+                }
+            return {'success': False, 'error': f'HTTP {status_code}: {error_body}'}
 
         except requests.exceptions.RequestException as e:
-            logger.error('cancel_express_claim error: %s', e)
+            logger.error('cancel_express_claim error: %s', e, exc_info=True)
             return {'success': False, 'error': str(e)}
 
     # ----------------------------------------------------------------
