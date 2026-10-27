@@ -1,7 +1,8 @@
 """API views for catalog app."""
 from rest_framework import viewsets, filters, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, permission_classes
 from rest_framework.response import Response
+from rest_framework.permissions import IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
 
 from coffee_shop.apps.catalog.models import Category, Product, Review
@@ -83,9 +84,9 @@ class ReviewViewSet(viewsets.ModelViewSet):
         """Создание отзыва с привязкой к текущему пользователю."""
         serializer.save(user=self.request.user)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
     def approve(self, request, pk=None):
-        """Одобрить отзыв (для администраторов)."""
+        """Одобрить отзыв (только для администраторов)."""
         review = self.get_object()
         review.is_approved = True
         review.save()

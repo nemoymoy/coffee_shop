@@ -1,13 +1,33 @@
 """Yandex Delivery views — Express + Other Day API integration."""
+import functools
 import json
 import logging
 import time
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
+from django.shortcuts import redirect
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
+
+
+def _json_login_required(view_func):
+    """Decorator that returns JSON 403 for AJAX requests when user is not authenticated.
+
+    For non-AJAX requests, redirects to LOGIN_URL as normal @login_required does.
+    """
+    @functools.wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not request.user.is_authenticated:
+            if (
+                request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+                or request.content_type == 'application/json'
+            ):
+                return JsonResponse({'error': 'login_required'}, status=403)
+            return redirect(settings.LOGIN_URL)
+        return view_func(request, *args, **kwargs)
+    return wrapper
 
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
@@ -29,6 +49,7 @@ def _determine_api_type(delivery_type):
 
 @csrf_exempt
 @require_POST
+@_json_login_required
 def create_express_delivery_view(request):
     """Create Express delivery order in Yandex.
 
@@ -150,6 +171,7 @@ def create_express_delivery_view(request):
 
 @csrf_exempt
 @require_POST
+@_json_login_required
 def cancel_express_delivery_view(request):
     """Cancel Express delivery order in Yandex.
 
@@ -184,23 +206,24 @@ def cancel_express_delivery_view(request):
         )
 
     try:
+        logger.info('[Cancel] Cancel request for claim_id: %s', claim_id)
+
         # Try to cancel the claim
-        # Note: Yandex Express API may not have direct cancel endpoint
-        # We'll use claims/accept with cancel state if available
         result = service.cancel_express_claim(claim_id)
+
+        logger.info('[Cancel] Cancel result: %s', json.dumps(result, ensure_ascii=False)[:500])
 
         if result.get('success'):
             return JsonResponse({
                 'success': True,
-                'message': 'Заказ отменён',
+                'message': result.get('message', 'Заказ отменён'),
             })
         else:
-            # Don't fail if cancel is not supported
-            logger.warning('cancel_express: %s', result.get('error'))
+            logger.error('[Cancel] Cancel failed: %s', result.get('error'))
             return JsonResponse({
-                'success': True,
-                'message': 'Заказ отменён',
-            })
+                'success': False,
+                'error': result.get('error', 'Не удалось отменить заказ'),
+            }, status=400)
 
     except Exception as e:
         logger.exception('cancel_express_delivery unexpected error')
@@ -211,6 +234,7 @@ def cancel_express_delivery_view(request):
 
 @csrf_exempt
 @require_POST
+@_json_login_required
 def calculate_delivery_view(request):
     """Calculate delivery price for Express and Other Day APIs.
 
@@ -713,6 +737,7 @@ def _calculate_other_day_price(service, items_payload, destination_coords,
 
 @csrf_exempt
 @require_POST
+@_json_login_required
 def offers_info_view(request):
     """Get available delivery intervals via offers/info (Other Day API).
 
@@ -1222,6 +1247,7 @@ def pvz_locations_view(request):
 
 @csrf_exempt
 @require_POST
+@user_passes_test(lambda u: u.is_staff)
 def geocode_address_view(request):
     """Geocode addresses via Yandex Geocoder API.
 

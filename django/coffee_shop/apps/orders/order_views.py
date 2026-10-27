@@ -12,6 +12,10 @@ from django.db import transaction
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
+from django.views.decorators.cache import never_cache
+from django.contrib.auth.decorators import login_required
+from rest_framework.decorators import permission_classes
+from rest_framework.permissions import IsAdminUser
 
 from coffee_shop.apps.catalog.models import Product
 from coffee_shop.apps.catalog.services import CoffeeService, coffee_price
@@ -804,8 +808,6 @@ def checkout_view(request):
         'form': OrderForm(initial=user_data),
         'user_data': user_data,
         'total': total,
-        'YANDEX_GEOCODER_API_KEY': getattr(settings, 'YANDEX_GEOCODER_API_KEY', ''),
-        'YANDEX_JAVASCRIPT_API_KEY': getattr(settings, 'YANDEX_JAVASCRIPT_API_KEY', ''),
         'YANDEX_DELIVERY_WEBHOOK_URL': reverse('orders:yandex_webhook'),
         'YANDEX_SHOP_LAT': getattr(settings, 'YANDEX_SHOP_LAT', 53.1960),
         'YANDEX_SHOP_LON': getattr(settings, 'YANDEX_SHOP_LON', 49.3782),
@@ -1083,6 +1085,7 @@ def payment_webhook(request):
 
 @csrf_exempt
 @require_POST
+@login_required
 def create_payment_api(request):
     """
     API endpoint for creating a YooKassa payment.
@@ -1169,6 +1172,8 @@ def check_payment_status(request, payment_id):
 
 @csrf_exempt
 @require_POST
+@login_required
+@permission_classes([IsAdminUser])
 def create_refund(request):
     """
     Full or partial refund for a successful payment.
@@ -1340,3 +1345,17 @@ def payment_result(request):
     
     messages.warning(request, 'Нет данных об оплате')
     return redirect('catalog:catalog')
+
+
+@login_required
+@never_cache
+def checkout_config_view(request):
+    """Return Yandex API keys for checkout frontend.
+
+    API keys are not exposed in the main page HTML to prevent scraping.
+    They are fetched via this authenticated, cache-disabled endpoint.
+    """
+    return JsonResponse({
+        'YANDEX_GEOCODER_API_KEY': getattr(settings, 'YANDEX_GEOCODER_API_KEY', ''),
+        'YANDEX_JAVASCRIPT_API_KEY': getattr(settings, 'YANDEX_JAVASCRIPT_API_KEY', ''),
+    })

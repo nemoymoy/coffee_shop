@@ -12,6 +12,12 @@ from coffee_shop.apps.catalog.models import Category, Product
 from coffee_shop.apps.orders.models import Order, OrderItem, PromoCode
 
 
+@pytest.fixture(autouse=True)
+def set_redis_password_for_tests():
+    """Ensure REDIS_PASSWORD is set for tests to match docker-compose."""
+    os.environ.setdefault('REDIS_PASSWORD', 'redis-dev-password')
+
+
 # ====== Category Fixtures ======
 
 @pytest.mark.django_db

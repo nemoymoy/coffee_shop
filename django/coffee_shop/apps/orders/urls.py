@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.decorators.cache import never_cache
 from .views import delivery_views
 from . import order_views as views
 
@@ -34,4 +35,6 @@ urlpatterns = [
     path('payment/result/', views.payment_result, name='payment_result'),
     # Yandex Delivery Status
     path('delivery/status/', delivery_views.yandex_delivery_status_view, name='yandex_delivery_status'),
+    # Checkout config (API keys for frontend)
+    path('api/checkout/config/', never_cache(views.checkout_config_view), name='checkout_config'),
 ]

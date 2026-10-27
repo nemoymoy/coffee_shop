@@ -161,9 +161,12 @@ class TestReviewAPI:
 
 
 class TestReviewApprove:
-    """Тесты одобрения отзывов."""
+    """Тесты одобрения отзывов — только для admin/staff."""
 
-    def test_approve_review(self, client, product, user):
+    def test_admin_can_approve_review(self, client, product, user):
+        """Admin (staff) может одобрить отзыв."""
+        user.is_staff = True
+        user.save()
         review = Review.objects.create(
             product=product,
             user=user,
@@ -172,11 +175,38 @@ class TestReviewApprove:
         )
         client.force_authenticate(user=user)
         response = client.post(f'/api/catalog/reviews/{review.id}/approve/')
-        # May get 403 if not superuser, but endpoint should exist
+        assert response.status_code == status.HTTP_200_OK
+        review.refresh_from_db()
+        assert review.is_approved is True
+
+    def test_non_admin_cannot_approve_review(self, client, product, user):
+        """Не-admin пользователь не может одобрить отзыв."""
+        user.is_staff = False
+        user.save()
+        review = Review.objects.create(
+            product=product,
+            user=user,
+            rating=3,
+            is_approved=False,
+        )
+        client.force_authenticate(user=user)
+        response = client.post(f'/api/catalog/reviews/{review.id}/approve/')
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        review.refresh_from_db()
+        assert review.is_approved is False
+
+    def test_unauthenticated_cannot_approve_review(self, client, product, user):
+        """Анонимный пользователь не может одобрить отзыв."""
+        review = Review.objects.create(
+            product=product,
+            user=user,
+            rating=3,
+            is_approved=False,
+        )
+        response = client.post(f'/api/catalog/reviews/{review.id}/approve/')
         assert response.status_code in (
-            status.HTTP_200_OK,
             status.HTTP_403_FORBIDDEN,
+            status.HTTP_401_UNAUTHORIZED,
         )
         review.refresh_from_db()
-        if response.status_code == status.HTTP_200_OK:
-            assert review.is_approved is True
+        assert review.is_approved is False

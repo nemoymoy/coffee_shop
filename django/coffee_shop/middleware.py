@@ -21,7 +21,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         logger.info(
             'REQUEST START: %s %s | IP: %s | User: %s',
             request.method,
-            request.get_full_path(),
+            request.path,
             self._get_client_ip(request),
             request.user.pk if request.user.is_authenticated else 'anonymous',
         )
@@ -34,7 +34,7 @@ class RequestLoggingMiddleware(MiddlewareMixin):
         logger.info(
             'RESPONSE: %s %s -> %d | %0.3fs',
             request.method,
-            request.get_full_path(),
+            request.path,
             response.status_code,
             duration,
         )
@@ -123,7 +123,6 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
 
         # Hardened headers (also apply in dev for consistency)
         response['X-Frame-Options'] = 'DENY'
-        response['X-XSS-Protection'] = '1; mode=block'
         response['X-Content-Type-Options'] = 'nosniff'
         response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
 
@@ -134,19 +133,37 @@ class RateLimitingMiddleware(MiddlewareMixin):
     """Rate limiting backed by Redis for multi-worker support."""
 
     LIMITS = {
+        # Cart and checkout
         '/cart/add/': (30, 60),
         '/checkout/': (10, 60),
         '/pay/': (5, 60),
+        # Authentication endpoints
+        '/accounts/login/': (10, 300),
+        '/accounts/register/': (5, 3600),
+        # Delivery endpoints
+        '/checkout/geocode-address/': (20, 60),
+        '/checkout/create-express-delivery/': (10, 60),
+        '/checkout/calculate-delivery/': (20, 60),
+        '/checkout/offers-info/': (10, 60),
+        '/checkout/cancel-express-delivery/': (5, 60),
+        # Payment API endpoints
+        '/orders/api/pay/': (10, 60),
+        '/orders/api/refund/': (5, 300),
     }
 
     def _get_redis_client(self):
         """Lazy import and connect to Redis."""
         from redis import Redis
-        return Redis(
-            host=settings.REDIS_URL.split('://')[1].split(':')[0]
+        host = (
+            settings.REDIS_URL.split('://')[1].split(':')[0]
             if '://' in settings.REDIS_URL
-            else 'localhost',
+            else 'localhost'
+        )
+        password = getattr(settings, 'REDIS_PASSWORD', '')
+        return Redis(
+            host=host,
             port=6379,
+            password=password if password else None,
             decode_responses=False,
         )
 

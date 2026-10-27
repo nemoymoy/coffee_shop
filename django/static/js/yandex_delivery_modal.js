@@ -238,6 +238,7 @@ const YandexDeliveryWidget = (() => {
     async function apiPost(url, body) {
         const response = await fetch(url, {
             method: 'POST',
+            credentials: 'same-origin',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRFToken': YandexDeliveryUtils.getCsrfToken(),
@@ -255,6 +256,7 @@ const YandexDeliveryWidget = (() => {
 
     async function apiGet(url) {
         const response = await fetch(url, {
+            credentials: 'same-origin',
             headers: {
                 'X-CSRFToken': YandexDeliveryUtils.getCsrfToken(),
             },
@@ -666,6 +668,7 @@ const YandexDeliveryWidget = (() => {
 
             if (result.success && result.price && result.claim_id) {
                 console.log('[YandexDelivery] ✓ success, price:', result.price, 'claim_id:', result.claim_id, 'expires:', result.expires_in_seconds);
+                console.log('[YandexDelivery] cancelBtn exists:', !!cancelBtn, 'confirmBtn exists:', !!confirmBtn);
 
                 // Сохраняем данные
                 state.expressClaimId = result.claim_id;
@@ -693,11 +696,17 @@ const YandexDeliveryWidget = (() => {
                 // Показываем кнопки подтверждения/отмены
                 if (confirmBtn) {
                     confirmBtn.disabled = false;
-                    console.log('[YandexDelivery] confirmBtn enabled');
+                    confirmBtn.classList.remove('d-none');
+                    confirmBtn.style.display = '';
+                    confirmBtn.style.pointerEvents = 'auto';
+                    console.log('[YandexDelivery] confirmBtn shown, display:', confirmBtn.style.display);
                 }
                 if (cancelBtn) {
                     cancelBtn.disabled = false;
-                    console.log('[YandexDelivery] cancelBtn enabled');
+                    cancelBtn.classList.remove('d-none');
+                    cancelBtn.style.display = '';
+                    cancelBtn.style.pointerEvents = 'auto';
+                    console.log('[YandexDelivery] cancelBtn shown, display:', cancelBtn.style.display);
                 }
 
                 // Показываем блок с деталями расчета (где находится widgetCost)
@@ -808,6 +817,8 @@ const YandexDeliveryWidget = (() => {
         const cancelBtn = $('#cancelDeliveryBtn');
 
         console.log('[YandexDelivery] Cancelling delivery:', state.expressClaimId);
+        console.log('[YandexDelivery] Cancel URL:', CONFIG.CANCEL_EXPRESS_URL);
+        console.log('[YandexDelivery] Cancel payload:', JSON.stringify({ claim_id: state.expressClaimId }));
 
         stopConfirmationTimer();
 
@@ -816,10 +827,20 @@ const YandexDeliveryWidget = (() => {
                 claim_id: state.expressClaimId,
             });
 
-            console.log('[YandexDelivery] Cancel result:', result);
+            console.log('[YandexDelivery] Cancel result:', JSON.stringify(result));
+
+            if (!result.success) {
+                console.error('[YandexDelivery] Cancel failed:', result.error);
+                YandexDeliveryUtils.setTextContent(
+                    costEl,
+                    'Ошибка отмены: ' + (result.error || 'неизвестная ошибка')
+                );
+                return;
+            }
         } catch (err) {
             console.error('[YandexDelivery] Cancel error:', err);
-            // Даже если отмена не удалась — всё равно разблокируем
+            YandexDeliveryUtils.setTextContent(costEl, 'Ошибка при отмене заказа');
+            return;
         }
 
         // Сбрасываем состояние
@@ -843,6 +864,18 @@ const YandexDeliveryWidget = (() => {
 
         stopConfirmationTimer();
         unlockAddress();
+
+        // Скрываем кнопки подтверждения/отмены
+        const confirmBtn = $('#confirmDeliveryBtn');
+        const cancelBtn = $('#cancelDeliveryBtn');
+        if (confirmBtn) {
+            confirmBtn.disabled = true;
+            hide(confirmBtn);
+        }
+        if (cancelBtn) {
+            cancelBtn.disabled = true;
+            hide(cancelBtn);
+        }
     }
 
     /**
@@ -1005,10 +1038,14 @@ const YandexDeliveryWidget = (() => {
         // Подтверждение
         $('#confirmDeliveryBtn')?.addEventListener('click', handleConfirm);
 
-        // Отмена заказа доставки
-        $('#cancelDeliveryBtn')?.addEventListener('click', () => {
-            if (state.deliveryOrderCreated) {
-                if (confirm('Отменить созданный заказ в Яндекс Доставке?')) {
+        // Отмена заказа доставки — делегирование через modal content (footer + body)
+        const modalContent = modalEl.querySelector('.modal-content');
+        modalContent?.addEventListener('click', (e) => {
+            const cancelBtn = e.target.closest('#cancelDeliveryBtn');
+            if (cancelBtn && state.deliveryOrderCreated) {
+                console.log('[YandexDelivery] Cancel button clicked via delegation');
+                const confirmed = confirm('Отменить созданный заказ в Яндекс Доставке?');
+                if (confirmed) {
                     cancelDelivery();
                 }
             }

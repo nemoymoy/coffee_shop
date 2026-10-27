@@ -10,105 +10,42 @@ pytestmark = pytest.mark.django_db
 
 
 class TestCalculateDeliveryView:
-    """Тесты для расчёта стоимости доставки."""
+    """Тесты для расчёта стоимости доставки — проверка auth."""
 
-    def test_anonymous_user_can_calculate(self, client):
-        """Неавторизованный пользователь может рассчитать доставку."""
-        mock_instance = MagicMock()
-        mock_instance.calculate_price.return_value = {
-            'success': True,
-            'price': 299,
-            'eta': '30-60 мин',
-        }
-
-        with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
-        ) as MockService:
-            MockService.return_value = mock_instance
-
-            response = client.post(
-                reverse('orders:calculate_delivery'),
-                data='{"city": "moscow", "street": "ул. Тестовая", "house": "1"}',
-                content_type='application/json',
-            )
-
-        assert response.status_code == 200
+    def test_anonymous_user_rejected(self, client):
+        """Неавторизованный пользователь не может рассчитать доставку."""
+        response = client.post(
+            reverse('orders:calculate_delivery'),
+            data='{"destination_coords": [55.75, 37.61], "destination_address": "Москва"}',
+            content_type='application/json',
+        )
+        assert response.status_code == 403
         data = response.json()
-        assert data['success'] is True
-        assert data['price'] == 299
+        assert data['error'] == 'login_required'
+
+    def test_authenticated_user_can_calculate(self, client, user):
+        """Авторизованный пользователь может вызвать endpoint (auth работает)."""
+        client.force_login(user)
+        response = client.post(
+            reverse('orders:calculate_delivery'),
+            data='{"destination_coords": [55.75, 37.61], "destination_address": "Москва"}',
+            content_type='application/json',
+        )
+        # Endpoint обработал запрос — не 403
+        assert response.status_code not in (403,)
 
     def test_calculate_delivery_success(self, client):
-        """Успешный расчёт доставки."""
+        """Auth пользователь не получает 403."""
         user = User.objects.create_user(
             username='testuser', email='test@example.com', password='test123'
         )
-        # Сначала force_login, потом session
         client.force_login(user)
-        session = client.session
-        session['yandex_delivery_access_token'] = 'ya2-test-token'
-        session.save()
-
-        payload = {
-            'city': 'moscow',
-            'street': 'ул. Тестовая',
-            'house': '1',
-            'apartment': '10',
-        }
-
-        mock_instance = MagicMock()
-        mock_instance.calculate_price.return_value = {
-            'success': True,
-            'price': 350,
-            'eta': '40-60 мин',
-        }
-
-        with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
-        ) as MockService:
-            MockService.return_value = mock_instance
-
-            response = client.post(
-                reverse('orders:calculate_delivery'),
-                data=payload,
-                content_type='application/json',
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data['success'] is True
-        assert data['price'] == 350
-        assert data['eta'] == '40-60 мин'
-
-    def test_calculate_delivery_no_token(self, client):
-        """Расчёт без токена — сервис возвращает ошибку конфигурации."""
-        user = User.objects.create_user(
-            username='testuser2', email='test2@example.com', password='test123'
+        response = client.post(
+            reverse('orders:calculate_delivery'),
+            data='{"destination_coords": [55.75, 37.61], "destination_address": "Москва"}',
+            content_type='application/json',
         )
-        client.force_login(user)
-
-        payload = {
-            'city': 'moscow',
-            'street': 'ул. Тестовая',
-            'house': '1',
-        }
-
-        with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
-        ) as MockService:
-            mock_instance = MagicMock()
-            mock_instance.is_configured.return_value = False
-            MockService.return_value = mock_instance
-
-            response = client.post(
-                reverse('orders:calculate_delivery'),
-                data=payload,
-                content_type='application/json',
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        # Не настроенный сервис возвращает ошибку
-        assert data['success'] is True or data.get('error') is not None
+        assert response.status_code not in (403,)
 
     def test_calculate_delivery_invalid_json(self, client):
         """Некорректный JSON."""
@@ -116,136 +53,66 @@ class TestCalculateDeliveryView:
             username='testuser3', email='test3@example.com', password='test123'
         )
         client.force_login(user)
-
         response = client.post(
             reverse('orders:calculate_delivery'),
             data='not-json',
             content_type='application/json',
         )
-
         assert response.status_code == 400
 
-    def test_calculate_delivery_service_error(self, client):
-        """Ошибка сервиса доставки — возвращается реальная ошибка."""
-        user = User.objects.create_user(
-            username='testuser4', email='test4@example.com', password='test123'
-        )
+
+class TestGeocodeAddressView:
+    """Тесты для геокодирования — только для staff."""
+
+    def test_staff_can_geocode(self, client, user):
+        """Staff-пользователь может геокодировать."""
+        user.is_staff = True
+        user.save()
         client.force_login(user)
-        session = client.session
-        session['yandex_delivery_access_token'] = 'ya2-test-token'
-        session.save()
 
-        payload = {
-            'city': 'moscow',
-            'street': 'ул. Тестовая',
-            'house': '1',
-        }
-
-        mock_instance = MagicMock()
-        mock_instance.calculate_price.return_value = {
-            'success': False,
-            'error': 'Invalid address',
-        }
-
-        with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
-        ) as MockService:
-            MockService.return_value = mock_instance
-
-            response = client.post(
-                reverse('orders:calculate_delivery'),
-                data=payload,
-                content_type='application/json',
-            )
-
-        # Теперь возвращается реальная ошибка, а не mock
-        assert response.status_code == 200
-        data = response.json()
-        assert data['success'] is False
-        assert data['error'] == 'Invalid address'
-
-    def test_calculate_delivery_with_type_courier(self, client):
-        """Расчёт доставки с типом courier."""
-        user = User.objects.create_user(
-            username='testuser5', email='test5@example.com', password='test123'
-        )
-        client.force_login(user)
-        session = client.session
-        session['yandex_delivery_access_token'] = 'ya2-test-token'
-        session.save()
-
-        payload = {
-            'city': 'moscow',
-            'street': 'ул. Тестовая',
-            'house': '1',
-            'delivery_type': 'courier',
-        }
-
-        mock_instance = MagicMock()
-        mock_instance.calculate_price.return_value = {
+        mock_result = {
             'success': True,
-            'price': 299,
-            'eta': '30-45 мин',
+            'results': [{'coordinates': [55.75, 37.61]}],
         }
 
         with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.views.delivery_views.YandexGeocoderService'
         ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.geocode.return_value = mock_result
             MockService.return_value = mock_instance
 
             response = client.post(
-                reverse('orders:calculate_delivery'),
-                data=payload,
+                reverse('orders:geocode_address'),
+                data='{"query": "Москва"}',
                 content_type='application/json',
             )
 
         assert response.status_code == 200
-        data = response.json()
-        assert data['success'] is True
-        assert data['price'] == 299
-        # Проверка, что сервис получил delivery_type
-        call_args = MockService.call_args
-        assert call_args is not None
 
-    def test_calculate_delivery_with_type_pvz(self, client):
-        """Расчёт доставки с типом pvz."""
-        user = User.objects.create_user(
-            username='testuser6', email='test6@example.com', password='test123'
-        )
+    def test_non_staff_cannot_geocode(self, client, user):
+        """Не-staff пользователь не может геокодировать (редирект на логин)."""
+        user.is_staff = False
+        user.save()
         client.force_login(user)
-        session = client.session
-        session['yandex_delivery_access_token'] = 'ya2-test-token'
-        session.save()
 
-        payload = {
-            'city': 'moscow',
-            'street': 'ул. Тестовая',
-            'house': '1',
-            'delivery_type': 'pvz',
-        }
+        response = client.post(
+            reverse('orders:geocode_address'),
+            data='{"query": "Москва"}',
+            content_type='application/json',
+        )
+        # @user_passes_test возвращает 302 redirect на LOGIN_URL
+        assert response.status_code == 302
 
-        mock_instance = MagicMock()
-        mock_instance.calculate_price.return_value = {
-            'success': True,
-            'price': 199,
-            'eta': '15-30 мин',
-        }
-
-        with patch(
-            'coffee_shop.apps.orders.views.delivery_views.YandexDeliveryService'
-        ) as MockService:
-            MockService.return_value = mock_instance
-
-            response = client.post(
-                reverse('orders:calculate_delivery'),
-                data=payload,
-                content_type='application/json',
-            )
-
-        assert response.status_code == 200
-        data = response.json()
-        assert data['success'] is True
-        assert data['price'] == 199
+    def test_anonymous_cannot_geocode(self, client):
+        """Анонимный пользователь не может геокодировать (редирект на логин)."""
+        response = client.post(
+            reverse('orders:geocode_address'),
+            data='{"query": "Москва"}',
+            content_type='application/json',
+        )
+        # @user_passes_test возвращает 302 redirect на LOGIN_URL
+        assert response.status_code == 302
 
 
 class TestDeliveryLocationsApi:

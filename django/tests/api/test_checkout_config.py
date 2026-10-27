@@ -18,7 +18,7 @@ class TestCheckoutConfigView:
 
     def test_authenticated_user_can_get_config(self, client, user):
         """Авторизованный пользователь может получить конфиг."""
-        client.force_authenticate(user=user)
+        client.login(username='testuser', password='testpass123')
         response = client.get(reverse('orders:checkout_config'))
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
@@ -26,6 +26,8 @@ class TestCheckoutConfigView:
         assert 'YANDEX_JAVASCRIPT_API_KEY' in data
 
     def test_anonymous_user_rejected(self, client):
-        """Анонимный пользователь не может получить конфиг."""
+        """Анонимный пользователь не может получить конфиг (редирект на логин)."""
         response = client.get(reverse('orders:checkout_config'))
-        assert response.status_code == status.HTTP_403_FORBIDDEN
+        # @login_required возвращает 302 redirect на LOGIN_URL
+        assert response.status_code == status.HTTP_302_FOUND
+        assert '/accounts/login/' in response.url

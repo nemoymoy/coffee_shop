@@ -11,6 +11,7 @@ from django.utils.decorators import decorator_from_middleware
 from django.middleware.csrf import CsrfViewMiddleware
 from django.views.generic import TemplateView
 from django.http import JsonResponse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST, require_http_methods
 
@@ -42,6 +43,12 @@ def login_view(request):
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             messages.success(request, f'Добро пожаловать, {user.first_name or user.username}!')
             next_url = request.GET.get('next', 'catalog:catalog')
+            if not url_has_allowed_host_and_scheme(
+                url=next_url,
+                allowed_hosts={request.get_host()},
+                require_https=False,
+            ):
+                next_url = 'catalog:catalog'
             return redirect(next_url)
         else:
             messages.error(request, 'Неверное имя пользователя или пароль.')
