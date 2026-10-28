@@ -4,7 +4,7 @@
 [![Django 4.2](https://img.shields.io/badge/Django-4.2-092E20)](https://djangoproject.com)
 [![PostgreSQL 15](https://img.shields.io/badge/PostgreSQL-15-336791)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D)](https://redis.io)
-[![DRF 3.18](https://img.shields.io/badge/DRF-3.18-092E20)](https://www.django-rest-framework.org)
+[![DRF 3.14](https://img.shields.io/badge/DRF-3.14-092E20)](https://www.django-rest-framework.org)
 
 ---
 
@@ -25,6 +25,7 @@
 - [Безопасность](#-безопасность)
 - [Бэкапы и восстановление](#-бэкапы-и-восстановление)
 - [Мониторинг](#-мониторинг)
+- [Известные проблемы](#-известные-проблемы)
 
 ---
 
@@ -45,8 +46,8 @@
 ## ✨ Основные возможности
 
 ### 🛍 Для покупателей
-- **Каталог** с фильтрами (категория, цена, сорт, обжарка, регион, SCA-рейтинг)
-- **Карточка товара** с детальным описанием кофе (сорт, обжарка, регион, обработка, SCA score, tasting notes)
+- **Каталог** с фильтрами (категория, цена, сорт, обжарка, регион)
+- **Карточка товара** с детальным описанием кофе (сорт, обжарка, регион, обработка, tasting notes)
 - **Выбор параметров кофе**:
   - Вес (кратный 50 г, от 50 до 1000 г)
   - Форма: в зёрнах или молотый
@@ -60,7 +61,6 @@
 - **Личный кабинет** с историей заказов и статусами
 - **Отзывы** на товары
 - **Новости** — публикации новостей кофейни с пагинацией и поиском
-- **Акции** — список активных спецпредложений с датами начала и окончания
 
 ### 🎨 Админ-панель
 - Управление товарами, категориями, заказами, промокодами, отзывами
@@ -80,7 +80,7 @@
 - **Фоновые задачи** через Celery + Redis
 - **Rate limiting** на критичные эндпоинты
 - **Structured JSON logging**
-- **News API** — REST API для новостей и акций с поиском, фильтрацией и сортировкой
+- **News API** — REST API для новостей с поиском, фильтрацией и сортировкой
 - **Соответствие 152-ФЗ** — сбор и хранение согласий на обработку персональных данных
 
 ---
@@ -95,7 +95,7 @@
 | **БД** | PostgreSQL | 15 Alpine |
 | **Кэш/Брокер** | Redis | Alpine    |
 | **Фоновые задачи** | Celery | 5.3+      |
-| **API** | Django REST Framework | 3.18+     |
+| **API** | Django REST Framework | 3.14      |
 | **Платежи** | ЮКасса (YooKassa) | REST API v2 (requests)    |
 | **Доставка** | Яндекс Доставка | OAuth 2.0 |
 | **Email** | RuSender | SMTP      |
@@ -109,7 +109,7 @@
 
 ```
 coffee_shop/
-├── docker-compose.yml              # Контейнеры: web, nginx, db, redis, celery-worker, certbot
+├── docker-compose.yml              # Контейнеры: web, nginx, db, redis, celery-worker, celery-beat, certbot
 ├── .env.example                    # Шаблоны переменных окружения
 ├── .gitignore                      # Игнорируемые файлы
 ├── deploy.sh                       # Скрипт деплоя на сервер
@@ -149,20 +149,20 @@ coffee_shop/
 │   │   │   │   ├── urls.py        # URL каталога
 │   │   │   │   └── admin.py       # Админ-категории и товары
 │   │   │   │
-│   │   │   ├── news/              # Новости и акции
-│   │   │   │   ├── models/        # Модели: News, Promotion
-│   │   │   │   ├── services/      # Сервисы: NewsService, PromotionService
-│   │   │   │   ├── forms/         # Формы: NewsForm, PromotionForm
-│   │   │   │   ├── serializers.py # DRF сериализаторы: News, Promotion
+│   │   │   ├── news/              # Новости
+│   │   │   │   ├── models/        # Модель: News
+│   │   │   │   ├── services/      # Сервис: NewsService
+│   │   │   │   ├── forms/         # Форма: NewsForm
+│   │   │   │   ├── serializers.py # DRF сериализаторы: News
 │   │   │   │   ├── api/           # REST API endpoints
-│   │   │   │   │   ├── views.py   # ViewSet: News, Promotion
+│   │   │   │   │   ├── views.py   # ViewSet: News
 │   │   │   │   │   └── urls.py    # /api/news/ маршруты
-│   │   │   │   ├── views.py       # View: новости, акции
+│   │   │   │   ├── views.py       # View: новости
 │   │   │   │   ├── urls.py        # URL новостей
-│   │   │   │   └── admin.py       # Админ-новости и акции
+│   │   │   │   └── admin.py       # Админ: новости
 │   │   │   ├── orders/            # Заказы
-│   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode
-│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, OAuth, Promo, YooKassa
+│   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode, Package
+│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, Promo, YooKassa, Geocoder
 │   │   │   │   ├── forms/         # Формы: CheckoutForm, OrderForm (с промокодом)
 │   │   │   │   ├── serializers.py # DRF сериализаторы: OrderDetail, OrderList, PromoCode
 │   │   │   │   ├── views/         # View: delivery_views
@@ -171,27 +171,17 @@ coffee_shop/
 │   │   │   │   └── admin.py       # Админ-заказы и промокоды
 │   │   │   │
 │   │   │   ├── users/             # Пользователи
-│   │   │   │   ├── forms/         # Формы: UserUpdateForm, UserRegistrationForm
-│   │   │   │   ├── services/      # Сервисы: UserService
+│   │   │   │   ├── models.py      # Модель: User, PersonalDataConsent, DeliveryAddress
+│   │   │   │   ├── forms/         # Формы: UserForm, ProfileForm, RegistrationForm, DeliveryAddressForm
+│   │   │   │   ├── services/      # Сервисы: UserService, EmailVerificationService
 │   │   │   │   ├── views.py       # View: логин, регистрация, OAuth
 │   │   │   │   ├── urls.py        # URL: /accounts/*
 │   │   │   │   ├── serializers.py # DRF сериализаторы
 │   │   │   │   ├── admin.py       # Админ: UserAdmin переопределён
 │   │   │   │   ├── backends.py    # Кастомный backend для Yandex OAuth
-│   │   │   │   └── pipeline.py    # Social auth pipeline
+│   │   │   │   ├── pipeline.py    # Social auth pipeline
+│   │   │   │   └── signals.py   # Сигналы (создание профиля, согласия)
 │   │   │   │
-│   │   │   └── news/              # Новости и акции
-│   │   │       ├── models/        # Модели: News, Promotion
-│   │   │       ├── services/      # Сервисы: NewsService, PromotionService
-│   │   │       ├── forms/         # Формы: NewsForm, PromotionForm
-│   │   │       ├── serializers.py # DRF сериализаторы: News, Promotion
-│   │   │       ├── api/           # REST API endpoints
-│   │   │       │   ├── views.py   # ViewSet: News, Promotion
-│   │   │       │   └── urls.py    # /api/news/ маршруты
-│   │   │       ├── views.py       # View: новости, акции
-│   │   │       ├── urls.py        # URL новостей
-│   │   │       └── admin.py       # Админ-новости и акции
-│   │   │
 │   │   ├── templates/             # Шаблоны Django
 │   │   │   ├── base.html          # Базовый шаблон
 │   │   │   ├── base_without_nav.html # Базовый шаблон без навигации
@@ -206,7 +196,6 @@ coffee_shop/
 │   │   │   ├── profile.html       # Профиль
 │   │   │   ├── news.html          # Новости
 │   │   │   ├── news_detail.html   # Детальная страница новости
-│   │   │   ├── promotions.html    # Список акций
 │   │   │   ├── emails/            # Email-шаблоны
 │   │   │   │   ├── order_confirmation.html
 │   │   │   │   └── order_status_changed.html
@@ -611,7 +600,6 @@ YANDEX_OAUTH_CLIENT_SECRET=
 | `/api/catalog/products/` | GET | Список товаров |
 | `/api/catalog/products/{id}/` | GET | Детали товара |
 | `/api/catalog/products/{id}/reviews/` | GET | Отзывы товара |
-| `/api/catalog/products/featured/` | GET | Рекомендуемые товары (SCA ≥ 85) |
 | `/api/catalog/reviews/` | GET, POST | Список / создание отзывов |
 | `/api/catalog/reviews/{id}/approve/` | POST | Одобрить отзыв |
 
@@ -620,13 +608,12 @@ YANDEX_OAUTH_CLIENT_SECRET=
 |----------|-------|----------|
 | `/api/news/news/` | GET | Список опубликованных новостей |
 | `/api/news/news/{id}/` | GET | Детали новости |
-| `/api/news/promotions/` | GET | Список активных акций |
-| `/api/news/promotions/{id}/` | GET | Детали акции |
 
 ### REST API (`/api/orders/`)
 | Эндпоинт | Метод | Описание |
 |----------|-------|----------|
 | `/api/orders/delivery/locations/` | GET | Список точек Яндекс Доставки (ПВЗ/склады) |
+| `/api/orders/packages/` | GET | Список тары (весовые категории) |
 
 **Ответ `/api/orders/delivery/locations/`:**
 ```json
@@ -665,7 +652,9 @@ YANDEX_OAUTH_CLIENT_SECRET=
 | `/checkout/` | Оформление заказа |
 | `/checkout/calculate-delivery/` (POST) | Расчёт Яндекс Доставки (AJAX) |
 | `/checkout/pvz-locations/` (GET) | Получение точек самовывоза (PVZ) |
+| `/checkout/postamats/` (GET) | Список постоматов |
 | `/checkout/geocode-address/` (GET) | Геокодирование адреса (AJAX) |
+| `/checkout/packages/` (GET) | Список тары (весовые категории) |
 | `/success/<order_id>/` | Страница успешного заказа |
 | `/detail/<pk>/` | Детали заказа |
 | `/cart/webhook/` (POST) | ЮКасса webhook-обработчик |
@@ -744,7 +733,9 @@ tests/
 │   ├── test_order_item.py
 │   ├── test_promo_code.py
 │   ├── test_review.py
-│   └── test_personal_data_consent.py
+│   ├── test_personal_data_consent.py
+│   ├── test_delivery_address.py         # Адреса доставки
+│   └── test_email_verification.py       # Email verification
 ├── services/                            # Тесты сервисов
 │   ├── test_cart_service.py
 │   ├── test_coffee_service.py
@@ -752,26 +743,36 @@ tests/
 │   ├── test_pricing.py
 │   ├── test_stock_service.py
 │   ├── test_users.py                    # UserService тесты
-│   └── test_sync_delivery_task.py       # Celery task тесты
+│   ├── test_sync_delivery_task.py       # Celery task тесты
+│   ├── test_express_delivery.py         # Express API
+│   ├── test_other_day_delivery.py       # Other Day API
+│   ├── test_postamats.py                # Постоматы
+│   ├── test_geocoder_service.py         # Геокодер
+│   └── test_email_verification.py       # Email verification
 ├── views/                               # Тесты view
 │   ├── test_catalog.py
 │   ├── test_checkout.py
 │   ├── test_checkout_delivery.py        # Тесты доставки
+│   ├── test_delivery_addresses.py       # Адреса доставки
+│   ├── test_email_verification.py       # Email verification
+│   ├── test_postamats.py                # Постоматы
 │   └── test_users.py                    # Тесты: login, register, profile, dashboard
 ├── api/                                 # Тесты API
 │   ├── test_catalog_api.py              # Каталог API (Product, Category, Review)
+│   ├── test_checkout_config.py          # Конфигурация чекаута
+│   ├── test_packages_list.py            # Тесты списка тары
 │   ├── test_serializers.py              # DRF сериализаторы
-│   ├── test_yandex_delivery_api.py
-│   ├── test_delivery_api.py
-│   ├── test_delivery_debug.py
-│   ├── test_delivery_debug2.py
-│   └── test_payment_gateway.py
+│   ├── test_yandex_delivery_api.py      # API Яндекс Доставки
+│   ├── test_delivery_api.py             # Delivery API
+│   ├── test_delivery_debug.py           # Debug-тесты доставки
+│   ├── test_delivery_debug2.py          # Debug-тесты доставки (доп.)
+│   └── test_payment_gateway.py          # Платёжный шлюз (ЮКасса)
 ├── news/                                # Тесты news app
-│   ├── test_models.py                   # News, Promotion модели
-│   ├── test_services.py                 # NewsService, PromotionService
-│   ├── test_views.py                    # news_list, news_detail, promotions_list
-│   ├── test_forms.py                    # NewsForm, PromotionForm
-│   └── test_api.py                      # News API, Promotion API
+│   ├── test_models.py                   # News модели
+│   ├── test_services.py                 # NewsService
+│   ├── test_views.py                    # news_list, news_detail
+│   ├── test_forms.py                    # NewsForm
+│   └── test_api.py                      # News API
 └── forms/                               # Тесты форм
     ├── test_order_forms.py
     ├── test_coffee_form.py              # CoffeeForm: вес, помол, brewing_method
@@ -839,13 +840,12 @@ tests/
 - ✅ Модерация отзывов (approve/unapprove)
 - ✅ Фильтры по рейтингу
 
-#### Управление новостями и акциями (news)
-- ✅ CRUD для новостей и акций
-- ✅ Фильтры по опубликованности и активности
+#### Управление новостями (news)
+- ✅ CRUD для новостей
+- ✅ Фильтры по опубликованности
 - ✅ Поиск по заголовку и содержанию
 - ✅ Автоматическая генерация slug из заголовка
 - ✅ Поля created_at / updated_at для отслеживания изменений
-- ✅ Акции с датами начала/окончания и флагом текущей акции (is_current)
 
 ---
 
@@ -866,6 +866,8 @@ tests/
 | `generate_daily_report` | Ежедневный отчёт: заказы, выручка, топ товары | Каждый день в 9:00 |
 | `update_promo_codes_expiry` | Проверка истёкших промокодов | Каждый час |
 | `release_expired_reservations` | Освобождение резервов товаров для неоплаченных заказов (status=awaiting_payment, timeout=30 мин) | Каждый час |
+| `send_order_to_store_email` | Отправка уведомления о новом заказе в кофейню | При создании заказа |
+| `send_verification_email` | Отправка email подтверждения при регистрации | При регистрации пользователя |
 
 #### Запуск Celery worker
 ```bash
@@ -882,7 +884,9 @@ docker compose exec celery-worker celery -A coffee_shop inspect ping
 ```
 
 #### Настройка Celery Beat (periodic tasks)
-Настройка находится в `settings/base.py`:
+Настройка находится в `settings/base.py`.
+
+Celery Beat запущен как отдельный сервис в `docker-compose.yml` и использует `DatabaseScheduler` из `django-celery-beat` для хранения расписания в БД.
 ```python
 CELERY_BEAT_SCHEDULE = {
     'sync-yandex-delivery': {
@@ -1384,3 +1388,27 @@ docker compose logs --tail=100 web | grep ERROR
 - ELK Stack (Elasticsearch, Logstash, Kibana) для логов
 - Sentry для отслеживания ошибок
 - UptimeRobot для внешнего мониторинга
+
+---
+
+## ⚠️ Известные проблемы
+
+### Bug: `restore.sh` использует неверное имя контейнера
+
+Скрипт `restore.sh` вызывает `docker compose exec -T psql`, но сервис в `docker-compose.yml` называется `db`.
+
+**Исправление:** Заменить `psql` на `db` в `restore.sh`.
+
+### Bug: Дубликат `server_name` в nginx.conf
+
+Файл `nginx/sites-available/coffee.conf` содержит две директивы `server_name` — вторая перезаписывает первую.
+
+**Исправление:** Удалить дублирующую строку `server_name localhost 172.28.112.206;`.
+
+### Файл `.env.example` отсутствует в репозитории
+
+README ссылается на `.env.example`, но файл отсутствует в репозитории. Необходимо создать файл со всеми переменными окружения из секции "Переменные окружения".
+
+### Nginx: hardcoded IP-адрес
+
+Файл `nginx/sites-available/coffee.conf` содержит `server_name 172.28.112.206;` — необходимо заменить на реальный домен перед деплоем.

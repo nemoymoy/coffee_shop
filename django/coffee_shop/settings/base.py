@@ -206,28 +206,36 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+
+# Celery Beat — periodic task schedule (overridable via .env)
+CELERY_SYNC_YANDEX_INTERVAL = int(os.environ.get('CELERY_SYNC_YANDEX_INTERVAL', '300'))
+CELERY_ACCEPT_EXPRESS_INTERVAL = int(os.environ.get('CELERY_ACCEPT_EXPRESS_INTERVAL', '120'))
+CELERY_DAILY_REPORT_HOUR = int(os.environ.get('CELERY_DAILY_REPORT_HOUR', '9'))
+CELERY_DAILY_REPORT_MINUTE = int(os.environ.get('CELERY_DAILY_REPORT_MINUTE', '0'))
+CELERY_PROMO_CODES_INTERVAL = int(os.environ.get('CELERY_PROMO_CODES_INTERVAL', '3600'))
+CELERY_RESERVATIONS_INTERVAL = int(os.environ.get('CELERY_RESERVATIONS_INTERVAL', '3600'))
+
 CELERY_BEAT_SCHEDULE = {
     'sync-yandex-delivery': {
         'task': 'coffee_shop.tasks.sync_yandex_delivery_status',
-        'schedule': timedelta(minutes=5),
+        'schedule': timedelta(seconds=CELERY_SYNC_YANDEX_INTERVAL),
     },
     'accept-express-claims': {
         'task': 'coffee_shop.tasks.accept_express_claims_pending',
-        'schedule': timedelta(minutes=2),
+        'schedule': timedelta(seconds=CELERY_ACCEPT_EXPRESS_INTERVAL),
     },
     'generate-daily-report': {
         'task': 'coffee_shop.tasks.generate_daily_report',
-        'schedule': crontab(hour=9, minute=0),
+        'schedule': crontab(hour=CELERY_DAILY_REPORT_HOUR, minute=CELERY_DAILY_REPORT_MINUTE),
     },
     'update-promo-codes': {
         'task': 'coffee_shop.tasks.update_promo_codes_expiry',
-        'schedule': crontab(minute=0),
+        'schedule': timedelta(seconds=CELERY_PROMO_CODES_INTERVAL),
     },
     'release-expired-reservations': {
         'task': 'coffee_shop.tasks.release_expired_reservations',
-        'schedule': crontab(minute=0),
+        'schedule': timedelta(seconds=CELERY_RESERVATIONS_INTERVAL),
     },
-
 }
 
 # Redis

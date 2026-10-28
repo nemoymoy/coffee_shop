@@ -152,6 +152,29 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  celery-beat:
+    build:
+      context: .
+      dockerfile: django/Dockerfile
+    entrypoint: []
+    command: ["celery", "-A", "coffee_shop", "beat", "-l", "info", "--scheduler", "django_celery_beat.schedulers:DatabaseScheduler"]
+    env_file:
+      - .env
+    volumes:
+      - ./django:/app
+    environment:
+      - DJANGO_SETTINGS_MODULE=${DJANGO_SETTINGS_MODULE:-coffee_shop.settings.dev}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://coffee_shop:change-me-dev@db:5432/coffee_shop_dev}
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD:-redis-dev-password}@redis:6379/0}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis-dev-password}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   certbot:
     image: certbot/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
