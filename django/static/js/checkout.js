@@ -66,7 +66,7 @@ const Checkout = (() => {
         email.addEventListener('blur', () => {
             if (email.value && !isValidEmail(email.value)) {
                 email.classList.add('is-invalid');
-                email.nextElementSibling?.classList.contains('invalid-feedback') && (email.nextElementSibling.style.display = 'block');
+                email.nextElementSibling?.classList.contains('invalid-feedback') && email.nextElementSibling.classList.remove('d-none');
             } else {
                 email.classList.remove('is-invalid');
                 email.classList.add('is-valid');
@@ -103,14 +103,14 @@ const Checkout = (() => {
 
         const isDeliveryChecked = () => $('input[name="delivery_method"][value="delivery"]:checked');
         const showAddress = () => {
-            if (state.elements.addressBlock) state.elements.addressBlock.style.display = 'block';
+            if (state.elements.addressBlock) state.elements.addressBlock.classList.remove('d-none');
             state.elements.address?.setAttribute('required', 'required');
         };
         const hideAddress = () => {
-            if (state.elements.addressBlock) state.elements.addressBlock.style.display = 'none';
+            if (state.elements.addressBlock) state.elements.addressBlock.classList.add('d-none');
             state.elements.address?.removeAttribute('required');
             state.elements.address.value = '';
-            if (state.elements.deliveryInfo) state.elements.deliveryInfo.style.display = 'none';
+            if (state.elements.deliveryInfo) state.elements.deliveryInfo.classList.add('d-none');
         };
 
         radios.forEach((radio) => {

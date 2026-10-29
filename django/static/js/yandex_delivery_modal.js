@@ -697,16 +697,12 @@ const YandexDeliveryWidget = (() => {
                 if (confirmBtn) {
                     confirmBtn.disabled = false;
                     confirmBtn.classList.remove('d-none');
-                    confirmBtn.style.display = '';
-                    confirmBtn.style.pointerEvents = 'auto';
-                    console.log('[YandexDelivery] confirmBtn shown, display:', confirmBtn.style.display);
+                    console.log('[YandexDelivery] confirmBtn shown');
                 }
                 if (cancelBtn) {
                     cancelBtn.disabled = false;
                     cancelBtn.classList.remove('d-none');
-                    cancelBtn.style.display = '';
-                    cancelBtn.style.pointerEvents = 'auto';
-                    console.log('[YandexDelivery] cancelBtn shown, display:', cancelBtn.style.display);
+                    console.log('[YandexDelivery] cancelBtn shown');
                 }
 
                 // Показываем блок с деталями расчета (где находится widgetCost)
@@ -1026,6 +1022,8 @@ const YandexDeliveryWidget = (() => {
                 state.selectedAddress = '';
                 state.selectedCoords = [];
                 state.estimatedCost = 0;
+                // Скрываем предупреждение о недоступности постоматов
+                hide($('#postamatUnavailableWarning'));
                 updateMapHintText();
                 goToStep(2);
                 updateConfirmButton();
@@ -1131,6 +1129,8 @@ const YandexDeliveryWidget = (() => {
             if (state.selectedType === 'courier') {
                 // Показываем блок с полем ввода адреса и кнопкой расчета
                 show(courierSearchWrap);
+                show($('#calculateDeliveryBtn'));
+                show($('#courierSearchHint'));
                 hide(mapWarning);
                 hide($('#selectedPvzInfo'));
                 hide($('#calcDetailsBlock'));
@@ -1142,6 +1142,8 @@ const YandexDeliveryWidget = (() => {
                 loadSavedAddresses();
             } else {
                 hide(courierSearchWrap);
+                hide($('#calculateDeliveryBtn'));
+                hide($('#courierSearchHint'));
                 hide(mapWarning);
                 show(widgetContainer);
                 hide($('#selectedPvzInfo'));
@@ -1150,7 +1152,12 @@ const YandexDeliveryWidget = (() => {
                 const costEl = $('#widgetCost');
                 if (costEl) costEl.textContent = 'Расчёт...';
                 updateMapHintText();
-                loadYmaps();
+                // Для ПВЗ/постомат загружаем точки напрямую (не ждём initMap)
+                if (state.selectedType === 'postomat' || state.selectedType === 'pvz') {
+                    loadPvzOnMap();
+                } else {
+                    loadYmaps();
+                }
             }
         }
     }
@@ -1246,13 +1253,18 @@ const YandexDeliveryWidget = (() => {
         const courierSearchWrap = $('#courierSearchWrap');
         if (courierSearchWrap) hide(courierSearchWrap);
 
+        const calculateBtn = $('#calculateDeliveryBtn');
+        if (calculateBtn) hide(calculateBtn);
+        const searchHint = $('#courierSearchHint');
+        if (searchHint) hide(searchHint);
+
         const courierCostBlock = $('#courierCostBlock');
         if (courierCostBlock) hide(courierCostBlock);
 
         const courierPriceBlock = $('#courierPriceBlock');
         if (courierPriceBlock) {
             courierPriceBlock.innerHTML = '';
-            courierPriceBlock.style.display = 'none';
+            courierPriceBlock.classList.add('d-none');
             courierPriceBlock.classList.remove('border-danger');
         }
 
@@ -1603,7 +1615,7 @@ const YandexDeliveryWidget = (() => {
         const el = $('#deliveryModalError');
         if (el) {
             el.textContent = msg;
-            el.style.display = 'block';
+            el.classList.remove('d-none');
         }
     }
 
@@ -1611,7 +1623,7 @@ const YandexDeliveryWidget = (() => {
         const el = $('#deliveryModalError');
         if (el) {
             el.textContent = '';
-            el.style.display = 'none';
+            el.classList.add('d-none');
         }
     }
 
@@ -1671,15 +1683,18 @@ const YandexDeliveryWidget = (() => {
 
         // Для курьера кнопка активна только если заказ создан
         if (state.selectedType === 'courier') {
-            btn.disabled = !state.deliveryOrderCreated;
+            const canConfirm = state.deliveryOrderCreated;
+            btn.disabled = !canConfirm;
+            if (canConfirm) show(btn);
             console.log('[YandexDelivery] updateConfirmButton (courier):', {
                 deliveryOrderCreated: state.deliveryOrderCreated,
-                canConfirm: state.deliveryOrderCreated
+                canConfirm: canConfirm
             });
         } else {
             // Для ПВЗ/постомат — старый расчёт
             const canConfirm = state.selectedType && state.estimatedCost > 0;
             btn.disabled = !canConfirm;
+            if (canConfirm) show(btn);
             console.log('[YandexDelivery] updateConfirmButton (PVZ):', {
                 selectedType: state.selectedType,
                 estimatedCost: state.estimatedCost,
@@ -1892,12 +1907,21 @@ const YandexDeliveryWidget = (() => {
 
         if (!data.success || !data.points?.length) {
             console.warn('[YandexDelivery] No', pointLabel, '(selectedType:', state.selectedType + ')');
+            // Для постоматов показываем специфичное предупреждение
+            if (state.selectedType === 'postomat') {
+                show($('#postamatUnavailableWarning'));
+                showMapError('Постоматы временно недоступны');
+                return;
+            }
             const errorMsg = data.error || `${pointLabel} временно недоступны`;
             showMapError(errorMsg);
             return;
         }
 
         console.log('[YandexDelivery] Loaded', data.points.length, pointLabel);
+
+        // Скрываем предупреждение о недоступности
+        hide($('#postamatUnavailableWarning'));
 
         state.pvzPlacemarks = [];
 
@@ -1970,7 +1994,7 @@ const YandexDeliveryWidget = (() => {
             show(warning);
         }
         hide($('#yandexDeliveryWidgetContainer'));
-        show($('#yandexAddressInputWrap'));
+        // Не скрываем предупреждение о постоматах — оно вне контейнера карты
     }
 
     /**

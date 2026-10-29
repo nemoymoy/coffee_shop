@@ -68,3 +68,8 @@ LOGGING = {
         },
     },
 }
+
+# CORS — production only (DOMAIN only)
+CORS_ALLOWED_ORIGINS = [
+    f"https://{DOMAIN}",
+]

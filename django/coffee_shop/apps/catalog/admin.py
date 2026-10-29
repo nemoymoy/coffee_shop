@@ -2,6 +2,7 @@ from django import forms
 from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
+from simple_history.admin import SimpleHistoryAdmin
 from .models import Category, Product, Review
 import json
 
@@ -207,12 +208,12 @@ class ProductAdmin(admin.ModelAdmin):
 
 
 @admin.register(Product)
-class VisibleProductAdmin(ProductAdmin):
+class VisibleProductAdmin(SimpleHistoryAdmin):
     pass
 
 
 @admin.register(Review)
-class ReviewAdmin(admin.ModelAdmin):
+class ReviewAdmin(SimpleHistoryAdmin):
     list_display = ['user', 'product', 'rating', 'is_approved', 'created_at']
     list_filter = ['rating', 'is_approved']
     search_fields = ['comment', 'user__username', 'product__name']

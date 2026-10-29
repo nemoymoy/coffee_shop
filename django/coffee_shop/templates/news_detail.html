@@ -17,8 +17,8 @@
 
             <article class="card">
                 {% if news.image %}
-                <div class="card-img-wrapper" style="height: 400px; overflow: hidden;">
-                    <img src="{{ news.image.url }}" class="w-100 h-100" style="object-fit: cover;" alt="{{ news.title }}">
+                <div class="card-img-wrapper news-detail-image-wrapper">
+                    <img src="{{ news.image.url }}" class="w-100 h-100 news-detail-image" alt="{{ news.title }}">
                 </div>
                 {% endif %}
                 <div class="card-body">

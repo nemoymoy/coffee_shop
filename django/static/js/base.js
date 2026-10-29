@@ -193,7 +193,7 @@ var CoffeeShop = window.CoffeeShop || {};
         if (!container) {
             container = document.createElement('div');
             container.id = 'toastContainer';
-            container.style.cssText = 'position: fixed; top: 80px; right: 20px; z-index: 9999;';
+            container.classList.add('toast-container-positioned');
             document.body.appendChild(container);
         }
         var bgClass = {

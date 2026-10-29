@@ -69,11 +69,11 @@ const DeliveryAddressManager = (() => {
     }
 
     function showElement(el) {
-        if (el) el.style.display = 'block';
+        if (el) el.classList.remove('d-none');
     }
 
     function hideElement(el) {
-        if (el) el.style.display = 'none';
+        if (el) el.classList.add('d-none');
     }
 
     function setFieldValue(id, value) {
@@ -509,8 +509,8 @@ const DeliveryAddressManager = (() => {
         if (existing) existing.remove();
 
         const notification = document.createElement('div');
-        notification.className = `alert alert-${type} delivery-address-notification position-fixed`;
-        notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);';
+        notification.className = `alert alert-${type} delivery-address-notification position-fixed notification-positioned`;
+        notification.classList.add('notification-fade-in');
         notification.textContent = message;
 
         document.body.appendChild(notification);

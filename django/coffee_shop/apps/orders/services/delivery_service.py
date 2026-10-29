@@ -1265,6 +1265,7 @@ class YandexDeliveryService:
                 'request_id': request_id,
                 'method': method_used,
                 'status': order_info.get('status'),
+                'tracking_number': order_info.get('tracking_number', ''),
                 'tracker_id': order_info.get('tracker_id'),
                 'offer_id': offer_id,
                 'delivery_date': delivery_date,
@@ -1813,11 +1814,67 @@ class YandexDeliveryService:
             logger.info('[OtherDay] request/info full response for %s: %s',
                        request_id, json.dumps(data, ensure_ascii=False)[:3000])
 
+            # Extract status from nested 'state' object
+            state = data.get('state', {})
+            api_status = state.get('status', 'unknown')
+            api_description = state.get('description', '')
+
+            # Extract delivery interval from request.destination
+            request_data = data.get('request', {})
+            destination = request_data.get('destination', {})
+            interval_utc = destination.get('interval_utc', {})
+            interval = destination.get('interval', {})
+
+            delivery_from = interval_utc.get('from') or interval.get('from')
+            delivery_to = interval_utc.get('to') or interval.get('to')
+
+            # Format delivery interval for display
+            delivery_date = ''
+            delivery_time = ''
+            if delivery_from:
+                try:
+                    from datetime import datetime, timezone, timedelta
+                    tz_local = timezone(timedelta(hours=4))
+
+                    if isinstance(delivery_from, (int, float)):
+                        dt_from = datetime.fromtimestamp(delivery_from, tz=timezone.utc).astimezone(tz_local)
+                        if delivery_to and isinstance(delivery_to, (int, float)):
+                            dt_to = datetime.fromtimestamp(delivery_to, tz=timezone.utc).astimezone(tz_local)
+                            delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                        else:
+                            delivery_time = dt_from.strftime('%H:%M')
+                    else:
+                        dt_from = datetime.fromisoformat(
+                            delivery_from.replace('Z', '+00:00')
+                        ).astimezone(tz_local)
+                        if delivery_to:
+                            try:
+                                dt_to = datetime.fromisoformat(
+                                    delivery_to.replace('Z', '+00:00')
+                                ).astimezone(tz_local)
+                                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                            except (ValueError, TypeError):
+                                delivery_time = dt_from.strftime('%H:%M')
+                        else:
+                            delivery_time = dt_from.strftime('%H:%M')
+
+                    delivery_date = dt_from.strftime('%d.%m.%Y')
+                except Exception as e:
+                    logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
+
+            # Tracking number is only available when order is in transit/delivered
+            tracking_number = data.get('tracking_number', '')
+            sharing_url = data.get('sharing_url', '')
+
             return {
                 'success': True,
-                'status': data.get('status', 'unknown'),
+                'status': api_status,
+                'status_description': api_description,
                 'request_id': request_id,
-                'tracking_number': data.get('tracking_number', ''),
+                'tracking_number': tracking_number,
+                'sharing_url': sharing_url,
+                'delivery_date': delivery_date,
+                'delivery_time': delivery_time,
                 'raw': data,
             }
 

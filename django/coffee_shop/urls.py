@@ -5,6 +5,7 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve
 from . import views
 
 urlpatterns = [
@@ -24,6 +25,8 @@ urlpatterns = [
     path('about/', views.about, name='about'),
     path('news/', include('coffee_shop.apps.news.urls', namespace='news')),
     path('news/list/', views.news_view, name='news'),
+    # CSP Report
+    path('csp-report/', views.csp_report, name='csp_report'),
     # Users
     path('accounts/', include('coffee_shop.apps.users.urls', namespace='users')),
     # Social Auth (Yandex OAuth)
@@ -33,3 +36,15 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# Security.txt — security policy contact
+urlpatterns += [
+    path(
+        'security.txt',
+        serve,
+        {
+            'document_root': settings.STATIC_ROOT,
+            'path': 'security.txt',
+        },
+    ),
+]

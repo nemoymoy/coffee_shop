@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from datetime import timedelta
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -28,6 +29,13 @@ SECRET_KEY = SECRET_KEY
 DEBUG = DEBUG
 ALLOWED_HOSTS = ALLOWED_HOSTS.split(',')
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Critical security check — prevent wildcard ALLOWED_HOSTS with DEBUG
+if DEBUG and '*' in ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        "CRITICAL SECURITY: ALLOWED_HOSTS='*' with DEBUG=True is dangerous! "
+        "Fix your settings to use explicit hosts."
+    )
 
 # File upload limits
 DATA_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -64,6 +72,9 @@ INSTALLED_APPS = [
     'coffee_shop.apps.users',
     'coffee_shop.apps.news',
 
+    # Audit trail
+    'simple_history',
+
     # Social Auth
     'social_django',
 ]
@@ -98,6 +109,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'coffee_shop.context_processors.yandex_metrika',
                 'coffee_shop.context_processors.store_info',
+                'coffee_shop.context_processors.csp_nonce',
             ],
         },
     },
@@ -121,7 +133,7 @@ DATABASES = {
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
-    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator', 'OPTIONS': {'min_length': 10}},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
@@ -167,15 +179,16 @@ REST_FRAMEWORK = {
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_SAMESITE = 'None'  # Required for OAuth cross-site redirects over HTTPS
+    CSRF_COOKIE_SAMESITE = 'Lax'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REDIRECT_EXCLUDE = ['/health/']
+else:
+    SESSION_COOKIE_SAMESITE = 'Lax'  # SameSite=None requires Secure=True, which is False in dev
+    CSRF_COOKIE_SAMESITE = 'Lax'
 SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SAMESITE = 'Lax'
-CSRF_COOKIE_SAMESITE = 'Lax'
 
-# CORS settings
-CORS_ALLOWED_ORIGINS = [
-    "https://localhost:8000",
-    "http://localhost:8000",
-]
+# CORS settings — defaults (overridden in dev.py and prod.py)
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_METHODS = [
     "GET",
@@ -434,12 +447,14 @@ SOCIAL_AUTH_PIPELINE = (
     'social_core.pipeline.social_auth.social_uid',
     'social_core.pipeline.social_auth.auth_allowed',
     'social_core.pipeline.social_auth.social_user',
+    'coffee_shop.apps.users.pipeline.filter_oauth_response_fields',
     'social_core.pipeline.user.get_username',
     'social_core.pipeline.user.create_user',
     'social_core.pipeline.social_auth.associate_user',
     'social_core.pipeline.social_auth.load_extra_data',
     'social_core.pipeline.user.user_details',
     'coffee_shop.apps.users.pipeline.auto_link_existing_user',
+    'coffee_shop.apps.users.pipeline.ensure_is_new_attribute',
     'coffee_shop.apps.users.pipeline.create_personal_data_consent',
     'coffee_shop.apps.users.pipeline.set_oauth_email_verified',
 )

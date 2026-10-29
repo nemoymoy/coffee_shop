@@ -12,10 +12,19 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY ../requirements/ ./requirements/
+# Install requirements to /opt/venv to avoid volume mount overwriting
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+COPY requirements/ ./requirements/
 RUN pip install --no-cache-dir -r requirements/base.txt
 
-COPY . .
+COPY django/ .
+
+# Copy entrypoint scripts (build context is project root)
+COPY django/entrypoint.sh /app/entrypoint.sh
+COPY django/celery_entrypoint.sh /app/celery_entrypoint.sh
+RUN chmod +x /app/entrypoint.sh /app/celery_entrypoint.sh
 
 RUN mkdir -p /app/staticfiles /app/media /app/logs
 

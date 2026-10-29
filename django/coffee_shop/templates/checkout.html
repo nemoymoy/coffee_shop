@@ -99,7 +99,7 @@
             </div>
 
             <!-- Инфо о выбранной доставке (появляется после выбора способа и типа доставки) -->
-            <div id="deliveryInfo" class="mb-3" style="display:none;">
+            <div id="deliveryInfo" class="mb-3 d-none">
                 <div class="alert alert-info">
                     <div class="mb-2">
                         <strong>📦 Тип доставки:</strong>
@@ -117,7 +117,7 @@
                 </div>
             </div>
 
-            <div class="mb-3" id="addressBlock" style="display: none;">
+            <div class="mb-3 d-none" id="addressBlock">
                 <!-- Кнопка для открытия виджета Яндекс Доставки -->
                 <button type="button" class="btn btn-coffee w-100 mb-2" id="openDeliveryModal">
                     🚚 Выбрать способ доставки (Яндекс Доставка)
@@ -167,7 +167,7 @@
             <div class="card-body">
                 <h5 class="mb-3">Ваш заказ</h5>
                 {% for item in cart_items %}
-                <div class="d-flex justify-content-between mb-2" style="font-size: 0.9rem;">
+                <div class="d-flex justify-content-between mb-2 fs-0-9rem">
                     <div>
                         <strong>{{ forloop.counter }}.</strong>
                         {% if item.product %}
@@ -186,11 +186,11 @@
                 {% endfor %}
                 <hr>
                 <div class="mb-2">
-                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
+                    <div class="d-flex justify-content-between mb-1 fs-0-9rem">
                         <span>Стоимость товаров:</span>
                         <span id="orderGoodsTotal">{{ total|default:"0"|floatformat:2 }} ₽</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-1" style="font-size: 0.9rem;">
+                    <div class="d-flex justify-content-between mb-1 fs-0-9rem">
                         <span>Стоимость доставки:</span>
                         <span id="orderDeliveryCost">— ₽</span>
                     </div>
@@ -202,7 +202,7 @@
 
                     <!-- Информация о выбранном пункте выдачи/постомате -->
                     <div id="orderDeliveryLocation" class="mt-2 mb-2 d-none">
-                        <div class="alert alert-info py-2" style="font-size: 0.85rem;">
+                        <div class="alert alert-info py-2 fs-0-85rem">
                             <div class="mb-1">
                                 <strong>📍 Пункт выдачи:</strong>
                             </div>
@@ -222,20 +222,20 @@
 <div class="modal fade" id="deliveryModal" tabindex="-1" aria-labelledby="deliveryModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         {% if YANDEX_JAVASCRIPT_API_KEY %}
-        <script>
+        <script nonce="{{ csp_nonce }}">
             window.YANDEX_JAVASCRIPT_API_KEY = "{{ YANDEX_JAVASCRIPT_API_KEY }}";
         </script>
         {% endif %}
         {% if YANDEX_GEOCODER_API_KEY %}
-        <script>
+        <script nonce="{{ csp_nonce }}">
             window.YANDEX_GEOCODER_API_KEY = "{{ YANDEX_GEOCODER_API_KEY }}";
         </script>
         {% endif %}
-        <script>
+        <script nonce="{{ csp_nonce }}">
             window.YANDEX_DELIVERY_WEBHOOK_URL = "{{ YANDEX_DELIVERY_WEBHOOK_URL }}";
         </script>
         {% load l10n %}
-        <script>
+        <script nonce="{{ csp_nonce }}">
             window.YANDEX_SHOP_LAT = {{ YANDEX_SHOP_LAT|unlocalize|default:"53.216940239129094" }};
             window.YANDEX_SHOP_LON = {{ YANDEX_SHOP_LON|unlocalize|default:"50.162688008923745" }};
         </script>
@@ -300,15 +300,15 @@
                         <div id="courierSearchWrap" class="mb-2">
                             <label class="form-label small">Адрес доставки</label>
                             <input type="text" id="yandexAddressInput" class="form-control" placeholder="Начните вводить адрес или выберите на карте..." autocomplete="off">
-                            <div id="yandexAutocompleteList" class="autocomplete-list mt-1 d-none" style="position: absolute; z-index: 1060; width: calc(100% + 2px); left: -1px;"></div>
-
-                            <!-- Кнопка расчета доставки -->
-                            <button type="button" class="btn btn-primary w-100 mt-2" id="calculateDeliveryBtn" disabled>
-                                🚚 Рассчитать доставку
-                            </button>
-
-                            <small class="text-muted">Введите адрес или выберите на карте</small>
+                            <div id="yandexAutocompleteList" class="autocomplete-list mt-1 d-none autocomplete-list-positioned">
+                            </div>
                         </div>
+                        <!-- Кнопка расчета доставки -->
+                        <button type="button" class="btn btn-primary w-100 mt-2 d-none" id="calculateDeliveryBtn" disabled>
+                            🚚 Рассчитать доставку
+                        </button>
+
+                        <small id="courierSearchHint" class="text-muted d-none">Введите адрес или выберите на карте</small>
                         <!-- Блок с рассчитанной стоимостью доставки (для курьера) -->
                         <div id="courierCostBlock" class="card mt-2 d-none">
                             <div class="card-body p-3">
@@ -345,8 +345,9 @@
                             </div>
                         </div>
                         <!-- Карта с низкой прозрачностью когда показаны ошибки/интервалы -->
-                        <div id="delivery-widget" style="width:100%;min-height:400px;"></div>
+                        <div id="delivery-widget" class="w-100 delivery-map-container">
                         <small id="mapHintText" class="text-muted d-block mt-2">Выберите пункт выдачи или постомат на карте</small>
+                        </div>
 
                         <!-- Детали расчета (показываются под картой) -->
                         <div id="calcDetailsBlock" class="card mt-3 d-none">
@@ -358,7 +359,7 @@
                                             <strong>📍 Адрес:</strong><br>
                                             <span id="calcAddress">—</span>
                                         </div>
-                                        <div class="mb-2" id="calcPvzBlock" style="display:none;">
+                                        <div class="mb-2 d-none" id="calcPvzBlock">
                                             <strong>📦 Пункт выдачи:</strong><br>
                                             <span id="calcPvzName"></span>
                                         </div>
@@ -372,7 +373,7 @@
                                             <strong>📦 Вес/Габариты:</strong><br>
                                             <span id="calcItemDetails">—</span>
                                         </div>
-                                        <div class="mb-2" id="calcPostomatInfo" style="display:none;">
+                                        <div class="mb-2 d-none" id="calcPostomatInfo">
                                             <strong>📮 Постомат:</strong><br>
                                             <span id="calcPostomatDetails"></span>
                                         </div>
@@ -400,13 +401,18 @@
                                 </div>
                             </div>
                         </div>
-                    </div>
                     
                     <!-- Сообщение если API не подключён -->
                     <div id="mapUnavailableWarning" class="alert alert-warning d-none">
                         <strong>⚠️ Яндекс Карты API не подключены</strong>
                         <p class="mb-0 small">Введите адрес вручную для расчёта доставки.</p>
                     </div>
+                </div>
+
+                <!-- Предупреждение о недоступности постоматов (вне контейнера карты) -->
+                <div id="postamatUnavailableWarning" class="alert alert-warning mt-3 d-none">
+                    <strong>⚠️ Внимание!</strong> Доставка в постоматы временно недоступна.
+                    Пожалуйста, выберите «Курьер» или «ПВЗ».
                 </div>
             </div>
             <div class="modal-footer">

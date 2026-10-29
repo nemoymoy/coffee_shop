@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Activate virtual environment
+. /opt/venv/bin/activate
+
 echo "Running migrations..."
 python manage.py migrate --noinput
 

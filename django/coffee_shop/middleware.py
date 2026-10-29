@@ -1,5 +1,7 @@
 """Middleware for Coffee Shop."""
 import logging
+import secrets
+import threading
 import time
 
 from django.conf import settings
@@ -7,6 +9,10 @@ from django.shortcuts import redirect
 from django.utils.deprecation import MiddlewareMixin
 
 from coffee_shop.apps.users.models import UserEmailVerification, UserProfile
+
+# In-memory fallback for rate limiting when Redis is unavailable
+_memory_rate_limit = {}
+_memory_lock = threading.Lock()
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +58,25 @@ class RequestLoggingMiddleware(MiddlewareMixin):
 class SecurityHeadersMiddleware(MiddlewareMixin):
     """Add security headers to responses."""
 
+    def process_request(self, request):
+        """Generate CSP nonce early so context processors can access it.
+
+        The nonce is stored in request.csp_nonce (public name) so that:
+        1. Context processors can access it during template rendering
+        2. process_response can use the same nonce in CSP header
+        """
+        request.csp_nonce = secrets.token_hex(16)
+
     def process_response(self, request, response):
-        # HSTS — только для production
+        # HSTS — только для production (2 года для preload)
         if settings.DEBUG is False:
             response['Strict-Transport-Security'] = (
-                'max-age=31536000; includeSubDomains'
+                'max-age=63072000; includeSubDomains; preload'
             )
+
+        # Get nonce from request (generated in process_request)
+        # This ensures the SAME nonce is used in both CSP header and templates
+        nonce = getattr(request, 'csp_nonce', secrets.token_hex(16))
 
         # CSP — всегда, чтобы работали сервисы Яндекса и ЮКасса
         # Включает все необходимые домены для:
@@ -66,9 +85,9 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
         # - Яндекс Доставка (cargo, express, pickup)
         # - Яндекс Карты (maps, tiles, tiles-static)
         # - ЮKassa (yoomoney)
-        response['Content-Security-Policy'] = (
+        csp = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+            f"script-src 'self' 'nonce-{nonce}' "
             "https://cdn.jsdelivr.net "
             "https://api-maps.yandex.ru https://api-maps.yandex.com "
             "https://yastatic.net "
@@ -87,6 +106,8 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "object-src 'none'; "
             "base-uri 'self'; "
             "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline' https://yastatic.net; "
+            # 'unsafe-inline' required for Yandex Maps API (full.js injects <style> elements dynamically)
+            # We accept this trade-off: CSS-based attacks are lower risk than JS execution
             "img-src 'self' data: https: https://avatars.mds.yandex.net https://smart-yandex.yandex.net https://core-renderer-tiles.maps.yandex.net https://tiles.maps.yandex.net; "
             "font-src 'self' https://cdn.jsdelivr.net; "
             "connect-src 'self' "
@@ -118,8 +139,17 @@ class SecurityHeadersMiddleware(MiddlewareMixin):
             "https://kards.fp.yandex.net "
             "wss://delivery.yandex.ru; "
             "frame-src 'self' https://dostavka.yandex.ru https://delivery.yandex.ru https://yandex.ru https://mc.yandex.ru https://yandex.ru/maps https://yoomoney.ru https://*.yoomoney.ru; "
-            "frame-ancestors 'self' https://dostavka.yandex.ru https://delivery.yandex.ru;"
+            "frame-ancestors 'self' https://dostavka.yandex.ru https://delivery.yandex.ru; "
+            "report-to csp-endpoint; "
+            "report-uri /csp-report/;"
         )
+
+        # In dev mode, use CSP Report-Only to avoid blocking Bootstrap styles
+        # Bootstrap dynamically injects <style> elements that bypass CSP
+        if settings.DEBUG:
+            response['Content-Security-Policy-Report-Only'] = csp
+        else:
+            response['Content-Security-Policy'] = csp
 
         # Hardened headers (also apply in dev for consistency)
         response['X-Frame-Options'] = 'DENY'
@@ -139,7 +169,7 @@ class RateLimitingMiddleware(MiddlewareMixin):
         '/pay/': (5, 60),
         # Authentication endpoints
         '/accounts/login/': (10, 300),
-        '/accounts/register/': (5, 3600),
+        '/accounts/register/': (3, 3600),  # Reduced from 5 to prevent bot registrations
         # Delivery endpoints
         '/checkout/geocode-address/': (20, 60),
         '/checkout/create-express-delivery/': (10, 60),
@@ -175,10 +205,8 @@ class RateLimitingMiddleware(MiddlewareMixin):
         return request.META.get('REMOTE_ADDR', 'unknown')
 
     def process_view(self, request, view_func, view_args, view_kwargs):
-        # Skip rate limiting for test environment and superusers
+        # Skip rate limiting for test environment
         if getattr(settings, 'TESTING', False):
-            return None
-        if request.user.is_staff and request.user.is_authenticated:
             return None
 
         path = request.path
@@ -190,6 +218,10 @@ class RateLimitingMiddleware(MiddlewareMixin):
             return None
 
         ip = self._get_client_ip(request)
+
+        # Adjust limits for superusers (reduce by half, but don't disable)
+        if request.user.is_authenticated and request.user.is_superuser:
+            max_requests = int(max_requests * 0.5)
         now = time.time()
         window_start = now - window_seconds
 
@@ -231,10 +263,33 @@ class RateLimitingMiddleware(MiddlewareMixin):
             pipe.execute()
 
         except Exception as e:
-            logger.error('Redis rate limit error: %s', e)
-            # Fail open — allow the request if Redis is down
+            logger.error('Redis rate limit error: %s, using memory fallback', e)
+            # Fail-closed with in-memory fallback
+            if _memory_rate_limit_check(ip, path, max_requests, window_seconds):
+                return JsonResponse(
+                    {'error': 'Слишком много запросов. Попробуйте позже.'},
+                    status=429,
+                )
 
         return None
+
+
+def _memory_rate_limit_check(ip, path, max_requests, window_seconds):
+    """Fallback in-memory rate limiter when Redis is unavailable."""
+    key = f"{ip}:{path}"
+    now = time.time()
+    with _memory_lock:
+        if key not in _memory_rate_limit:
+            _memory_rate_limit[key] = []
+        timestamps = _memory_rate_limit[key]
+        # Filter out old entries
+        valid = [t for t in timestamps if t > now - window_seconds]
+        if len(valid) >= max_requests:
+            _memory_rate_limit[key] = valid
+            return True  # rate limited
+        valid.append(now)
+        _memory_rate_limit[key] = valid[-max_requests:]
+        return False
 
 
 class EmailVerificationMiddleware(MiddlewareMixin):

@@ -104,7 +104,7 @@ var Cart = (function () {
         CoffeeShop.postJson(REMOVE_URL, {key: key})
             .then(function (response) {
                 if (card) {
-                    card.style.transition = 'opacity 0.3s';
+                    card.classList.add('fade');
                     card.style.opacity = '0';
                     setTimeout(function () {
                         card.remove();
@@ -252,9 +252,9 @@ var Cart = (function () {
 
         if (count > 0) {
             badge.textContent = count;
-            badge.style.display = 'inline-block';
+            badge.classList.remove('d-none');
         } else {
-            badge.style.display = 'none';
+            badge.classList.add('d-none');
         }
     }
 

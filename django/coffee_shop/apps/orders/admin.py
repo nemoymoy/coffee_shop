@@ -2,6 +2,7 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils import timezone
 from django.db import models
+from simple_history.admin import SimpleHistoryAdmin
 
 from coffee_shop.tasks import send_order_status_changed_email
 
@@ -28,7 +29,7 @@ class OrderItemInline(admin.TabularInline):
 
 
 @admin.register(Order)
-class OrderAdmin(admin.ModelAdmin):
+class OrderAdmin(SimpleHistoryAdmin):
     list_display = [
         'id', 'status', 'status_badge', 'full_name', 'phone', 'total_amount',
         'delivery_method', 'payment_method', 'created_at'
@@ -174,7 +175,7 @@ class OrderAdmin(admin.ModelAdmin):
 
 
 @admin.register(PromoCode)
-class PromoCodeAdmin(admin.ModelAdmin):
+class PromoCodeAdmin(SimpleHistoryAdmin):
     list_display = [
         'code', 'discount_type', 'discount_value', 'used_count',
         'max_uses', 'remaining_uses_badge', 'is_active', 'valid_period',

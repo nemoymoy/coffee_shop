@@ -1,0 +1,8 @@
+# Security.txt — Security Policy Contact
+
+Contact: mailto:security@coffeeshop.ru
+Contact: https://github.com/your-username/coffee_shop/issues
+Expires: 2027-01-01T00:00Z
+Encryption: https://pgp.mit.edu/pks/lookup?op=get&search=0xYOURKEY
+Preferred-Languages: ru, en
+Hiring: https://yourdomain.com/jobs

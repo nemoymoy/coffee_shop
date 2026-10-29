@@ -1247,7 +1247,7 @@ def pvz_locations_view(request):
 
 @csrf_exempt
 @require_POST
-@user_passes_test(lambda u: u.is_staff)
+@_json_login_required
 def geocode_address_view(request):
     """Geocode addresses via Yandex Geocoder API.
 

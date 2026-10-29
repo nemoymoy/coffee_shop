@@ -188,15 +188,29 @@
             {% if order.yandex_order_id or order.tracking_number or order.delivery_status %}
             <div class="card mb-4 border-info">
                 <div class="card-body">
-                    <h5 class="mb-3">🚚 Информация о доставке</h5>
-                    {% if order.tracking_number %}
+                    <h5 class="mb-3">📦 Яндекс Доставка</h5>
+                    {% if order.yandex_order_id %}
                     <div class="mb-2">
-                        <strong>Трек-номер:</strong> {{ order.tracking_number }}
+                        <strong>Идентификатор заказа:</strong> <code>{{ order.yandex_order_id }}</code>
                     </div>
                     {% endif %}
                     {% if order.delivery_status %}
                     <div class="mb-2">
-                        <strong>Статус доставки:</strong> {{ order.delivery_status }}
+                        <strong>Статус:</strong> {{ order.delivery_status }}
+                    </div>
+                    {% endif %}
+                    {% if order.tracking_number %}
+                    <div class="mb-2">
+                        <strong>Трек-номер:</strong> <strong>{{ order.tracking_number }}</strong>
+                    </div>
+                    {% endif %}
+                    {% if order.delivery_interval_from %}
+                    <div class="mb-2">
+                        <strong>Интервал доставки:</strong>
+                        {{ order.delivery_interval_from|date:"d.m.Y" }}
+                        {% if order.delivery_interval_to %}
+                            — {{ order.delivery_interval_from|date:"H:i" }} – {{ order.delivery_interval_to|date:"H:i" }}
+                        {% endif %}
                     </div>
                     {% endif %}
                     {% if order.express_claim_id %}

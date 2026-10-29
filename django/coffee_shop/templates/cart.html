@@ -24,7 +24,7 @@
                         {% if item.product.image %}
                         <img src="{{ item.product.image.url }}" class="img-fluid rounded" alt="{{ item.product.name }}">
                         {% else %}
-                        <div class="bg-light rounded d-flex align-items-center justify-content-center" style="height: 80px;">
+                        <div class="bg-light rounded d-flex align-items-center justify-content-center placeholder-img-80px">
                             ☕
                         </div>
                         {% endif %}
@@ -116,7 +116,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 // Promo code handler (placeholder)
 document.addEventListener('DOMContentLoaded', function() {
     var applyBtn = document.getElementById('applyPromoBtn');

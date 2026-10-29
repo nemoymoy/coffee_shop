@@ -30,6 +30,11 @@ echo ""
 echo "Launching docker compose..."
 docker compose up -d --build
 
+# Verify critical environment variables are set
+if [ -z "$SECRET_KEY" ] || grep -q 'SECRET_KEY=$' .env 2>/dev/null; then
+    echo "WARN: SECRET_KEY may not be set in .env"
+fi
+
 echo ""
 echo "Waiting for database..."
 for i in $(seq 1 30); do

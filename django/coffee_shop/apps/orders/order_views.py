@@ -851,11 +851,13 @@ def order_success(request, order_id):
     return render(request, 'order_success.html', context)
 
 
+@login_required
 def order_detail(request, pk):
     """Детальная страница заказа."""
     from decimal import Decimal
-    
-    order = get_object_or_404(Order, pk=pk)
+
+    # IDOR fix: ensure user can only access their own orders
+    order = get_object_or_404(Order, pk=pk, user=request.user)
     # Стоимость товаров = итог минус доставка
     goods_total = order.total_amount - order.delivery_cost
     context = {'order': order, 'goods_total': float(goods_total)}
@@ -920,20 +922,35 @@ def payment_webhook(request):
 
     logger = logging.getLogger(__name__)
 
+    # Get client IP for logging
+    client_ip = request.META.get('HTTP_X_FORWARDED_FOR', request.META.get('REMOTE_ADDR', 'unknown'))
+    if client_ip and ',' in client_ip:
+        client_ip = client_ip.split(',')[0].strip()
+
     try:
         body = request.body.decode('utf-8')
         data = json.loads(body)
     except (json.JSONDecodeError, UnicodeDecodeError):
-        logger.error('Invalid JSON in webhook')
+        logger.warning('Invalid JSON in webhook from IP: %s', client_ip)
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
     yookassa = YooKassaService()
 
-    # Проверка подписи webhook
+    # Check webhook signature
     signature = request.META.get('HTTP_X_YOOMONEY_SIGNATURE', '')
     if not yookassa.verify_webhook(body, signature):
-        logger.error('Webhook signature verification failed')
+        logger.warning('Webhook signature verification failed from IP: %s', client_ip)
         return HttpResponse("Forbidden", status=403)
+
+    # Replay protection — check if event_id was already processed
+    event_id = data.get('event_id', '')
+    if event_id:
+        from django.core.cache import cache
+        cache_key = f'yookassa_event_{event_id}'
+        if cache.get(cache_key):
+            logger.info('Duplicate webhook event_id: %s from IP: %s', event_id, client_ip)
+            return JsonResponse({"status": "ok"}, status=200)  # Already processed
+        cache.set(cache_key, True, timeout=86400)  # 24 hours
 
     result = yookassa.process_webhook(data)
     logger.info('Webhook processed: %s', result)
@@ -1010,9 +1027,32 @@ def payment_webhook(request):
                                     order.yandex_offer_id = result.get('offer_id')
                                     order.yandex_order_id = result.get('request_id')
                                     order.tracking_number = result.get(
-                                        'delivery_time', ''
+                                        'tracking_number', ''
                                     )
                                     order.delivery_status = result.get('status', 'pending')
+                                    
+                                    # Сохраняем интервал доставки из API
+                                    if result.get('delivery_date') and result.get('delivery_time'):
+                                        from datetime import datetime as dt
+                                        try:
+                                            delivery_date_str = result['delivery_date']
+                                            delivery_time_str = result['delivery_time']
+                                            time_parts = delivery_time_str.split('–')
+                                            if time_parts:
+                                                date_part = dt.strptime(delivery_date_str, '%d.%m.%Y').date()
+                                                time_from = dt.strptime(time_parts[0].strip(), '%H:%M').time()
+                                                datetime_from = dt.combine(date_part, time_from)
+                                                order.delivery_interval_from = datetime_from
+                                                
+                                                if len(time_parts) > 1:
+                                                    time_to = dt.strptime(time_parts[1].strip(), '%H:%M').time()
+                                                    datetime_to = dt.combine(date_part, time_to)
+                                                    order.delivery_interval_to = datetime_to
+                                                
+                                                order.save(update_fields=['delivery_interval_from', 'delivery_interval_to'])
+                                        except Exception as e:
+                                            logger.warning('payment_webhook: Failed to parse delivery interval: %s', e)
+                                    
                                     # Сохраняем ФИНАЛЬНУЮ цену из request/info (может отличаться от оценки)
                                     final_price = result.get('price')
                                     if final_price and final_price not in ('0', 'N/A', None):
@@ -1293,16 +1333,45 @@ def payment_result(request):
                                             order.yandex_offer_id = result.get('offer_id')
                                             order.yandex_order_id = result.get('request_id')
                                             order.tracking_number = result.get(
-                                                'delivery_time', ''
+                                                'tracking_number', ''
                                             )
                                             order.delivery_status = result.get(
                                                 'status', 'pending'
                                             )
-                                            order.save(update_fields=[
-                                                'yandex_order_id', 'tracking_number',
-                                                'delivery_status', 'updated_at',
-                                                'yandex_offer_id'
-                                            ])
+                                            
+                                            # Сохраняем интервал доставки из API
+                                            if result.get('delivery_date') and result.get('delivery_time'):
+                                                from datetime import datetime as dt
+                                                try:
+                                                    delivery_date_str = result['delivery_date']
+                                                    delivery_time_str = result['delivery_time']
+                                                    time_parts = delivery_time_str.split('–')
+                                                    if time_parts:
+                                                        date_part = dt.strptime(delivery_date_str, '%d.%m.%Y').date()
+                                                        time_from = dt.strptime(time_parts[0].strip(), '%H:%M').time()
+                                                        datetime_from = dt.combine(date_part, time_from)
+                                                        order.delivery_interval_from = datetime_from
+                                                        
+                                                        if len(time_parts) > 1:
+                                                            time_to = dt.strptime(time_parts[1].strip(), '%H:%M').time()
+                                                            datetime_to = dt.combine(date_part, time_to)
+                                                            order.delivery_interval_to = datetime_to
+                                                        
+                                                        order.save(update_fields=[
+                                                            'yandex_order_id', 'tracking_number',
+                                                            'delivery_status', 'delivery_interval_from',
+                                                            'delivery_interval_to', 'updated_at',
+                                                            'yandex_offer_id'
+                                                        ])
+                                                except Exception as e:
+                                                    logger.warning('payment_result: Failed to parse delivery interval: %s', e)
+                                            else:
+                                                order.save(update_fields=[
+                                                    'yandex_order_id', 'tracking_number',
+                                                    'delivery_status', 'updated_at',
+                                                    'yandex_offer_id'
+                                                ])
+                                            
                                             messages.info(
                                                 request,
                                                 f'Заказ на доставку создан в Яндекс Доставке. '
@@ -1347,13 +1416,14 @@ def payment_result(request):
     return redirect('catalog:catalog')
 
 
-@login_required
+@permission_classes([IsAdminUser])
 @never_cache
 def checkout_config_view(request):
     """Return Yandex API keys for checkout frontend.
 
     API keys are not exposed in the main page HTML to prevent scraping.
     They are fetched via this authenticated, cache-disabled endpoint.
+    Only admin users can access this endpoint.
     """
     return JsonResponse({
         'YANDEX_GEOCODER_API_KEY': getattr(settings, 'YANDEX_GEOCODER_API_KEY', ''),

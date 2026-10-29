@@ -5,7 +5,7 @@ from .base import *
 
 DEBUG = True
 SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production-1234567890')
-ALLOWED_HOSTS = ['*', 'localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 # Enable for pytest (conftest adds django/ to sys.path)
 TESTING = True
@@ -39,6 +39,19 @@ LOGGING = {
     'root': {
         'handlers': ['console'],
         'level': 'DEBUG',
+    },
+}
+
+# CORS — dev only (localhost)
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:8000",
+]
+
+# Cache — Redis for OAuth state storage
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': os.environ.get('REDIS_URL', 'redis://redis:6379/0'),
     },
 }
 

@@ -13,7 +13,7 @@
     <h2>Спасибо за заказ!</h2>
     <p class="lead">Ваш заказ #{{ order.pk }} успешно оформлен.</p>
     
-    <div class="card mx-auto" style="max-width: 500px;">
+    <div class="card mx-auto order-success-card">
         <div class="card-body">
             <h5>Детали заказа</h5>
             <p><strong>Статус:</strong> {{ order.get_status_display }}</p>
@@ -33,24 +33,20 @@
                 {% endif %}
             {% endif %}
             <p><strong>Способ оплаты:</strong> {{ order.get_payment_method_display }}</p>
-            {% if order.tracking_number %}
+            {% if order.yandex_order_id or order.tracking_number %}
             <div class="alert alert-secondary">
-                <strong>Трек-номер Яндекс Доставки:</strong>
-                <br>{{ order.tracking_number }}
+                <strong>📦 Яндекс Доставка:</strong>
+                {% if order.yandex_order_id %}
+                <br>Идентификатор заказа: <code>{{ order.yandex_order_id }}</code>
+                {% endif %}
+                {% if order.tracking_number %}
+                <br>Трек-номер: <strong>{{ order.tracking_number }}</strong>
+                {% endif %}
                 {% if order.delivery_status %}
                 <br><small class="text-muted">Статус: {{ order.delivery_status }}</small>
                 {% endif %}
-            </div>
-            {% endif %}
-            {% if order.delivery_type in 'pickup postamat' and order.delivery_interval_from %}
-            <div class="alert alert-info">
-                <strong>📦 Доставка:</strong>
-                <br>
                 {% if order.delivery_interval_from %}
-                <strong>Дата:</strong> {{ order.delivery_interval_from|date:"d.m.Y" }}
-                {% endif %}
-                {% if order.delivery_interval_from and order.delivery_interval_to %}
-                    <br><strong>Время:</strong> {{ order.delivery_interval_from|date:"H:i" }} – {{ order.delivery_interval_to|date:"H:i" }}
+                <br><small class="text-muted">Интервал: {{ order.delivery_interval_from|date:"d.m.Y" }}{% if order.delivery_interval_to %} {{ order.delivery_interval_from|date:"H:i" }} – {{ order.delivery_interval_to|date:"H:i" }}{% endif %}</small>
                 {% endif %}
             </div>
             {% endif %}

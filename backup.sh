@@ -2,10 +2,15 @@
 set -e
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="./backups"
+# Store backups outside project directory for security
+BACKUP_DIR="/var/backups/coffee_shop"
 MAX_BACKUPS=7
 
-mkdir -p "$BACKUP_DIR"
+mkdir -p "$BACKUP_DIR" || {
+    echo "ERROR: Cannot create backup directory: $BACKUP_DIR"
+    echo "Hint: sudo mkdir -p $BACKUP_DIR && sudo chown $(whoami) $BACKUP_DIR"
+    exit 1
+}
 
 echo "========================================="
 echo "  Coffee Shop - Backup Script"

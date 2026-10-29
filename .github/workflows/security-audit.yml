@@ -1,0 +1,30 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  audit:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Run security audit on base requirements
+        run: pip-audit -r requirements/base.txt --fail-on vulnerable
+
+      - name: Run security audit on production requirements
+        run: pip-audit -r requirements/prod.txt --fail-on vulnerable || true

@@ -29,6 +29,7 @@
 
 /* Map container for delivery selection */
 #delivery-widget {
+    height: 400px;
     border-radius: 0.5rem;
     overflow: hidden;
     border: 2px solid var(--coffee-lighter);
@@ -777,4 +778,137 @@
     color: var(--coffee-medium);
     margin-top: 2px;
     font-style: italic;
+}
+
+/* ======================= Inline-Style Replacement Utilities ======================= */
+
+/* Toast notification container positioning (replaces inline cssText in base.js) */
+.toast-container-positioned {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    z-index: 9999;
+}
+
+/* Notification element positioning (replaces inline cssText in delivery_address_manager.js) */
+.notification-positioned {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    min-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Fade-in animation for notifications (replaces inline opacity in delivery_address_manager.js) */
+.notification-fade-in {
+    transition: opacity 0.3s ease;
+    opacity: 0;
+}
+
+/* Small font size utilities (replaces inline font-size in checkout.html) */
+.fs-0-9rem {
+    font-size: 0.9rem;
+}
+
+.fs-0-85rem {
+    font-size: 0.85rem;
+}
+
+/* Autocomplete list positioning (replaces inline style in checkout.html) */
+.autocomplete-list-positioned {
+    position: absolute;
+    z-index: 1060;
+    width: calc(100% + 2px);
+    left: -1px;
+}
+
+/* Placeholder image sizing (replaces inline style in cart.html) */
+.placeholder-img-80px {
+    height: 80px;
+}
+
+/* Product detail page utilities (replaces inline styles in product_detail.html) */
+.product-image-max-height {
+    max-height: 500px;
+    width: 100%;
+    object-fit: contain;
+}
+
+.empty-product-card {
+    min-height: 400px;
+    background: var(--coffee-bg-alt);
+}
+
+.empty-product-icon {
+    font-size: 5rem;
+}
+
+.sca-badge-sm {
+    font-size: 0.75rem;
+    padding: 2px 8px;
+}
+
+/* Delivery map container (replaces inline style in checkout.html) */
+.delivery-map-container {
+    min-height: 400px;
+}
+
+/* ======================= Dashboard Utilities ======================= */
+.user-avatar-circle {
+    width: 80px;
+    height: 80px;
+    font-size: 2rem;
+}
+
+.order-item-image {
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
+    border-radius: 6px;
+}
+
+/* ======================= Home Page Utilities ======================= */
+.hero-banner {
+    background: linear-gradient(135deg, var(--coffee-dark), var(--coffee-medium)) !important;
+    color: white;
+}
+
+/* ======================= Card Image Wrappers ======================= */
+.card-img-wrapper {
+    position: relative;
+    overflow: hidden;
+}
+
+.news-image-wrapper,
+.promo-image-wrapper {
+    height: 200px;
+    overflow: hidden;
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.news-image,
+.promo-image,
+.news-detail-image {
+    object-fit: cover;
+}
+
+.news-detail-image-wrapper {
+    height: 400px;
+    overflow: hidden;
+}
+
+/* ======================= Order Success ======================= */
+.order-success-card {
+    max-width: 500px;
+}
+
+/* ======================= Top Bar (checkout page) ======================= */
+.top-bar-alt {
+    background: var(--coffee-bg-alt);
+}
+
+.top-bar-link {
+    color: var(--coffee-dark);
+    font-weight: 600;
 }

@@ -64,9 +64,9 @@ var CoffeeSelector = (function () {
             radio.addEventListener('change', function () {
                 state.form = this.value;
                 if (state.form === 'ground') {
-                    if (brewingBlock) brewingBlock.style.display = 'block';
+                    if (brewingBlock) brewingBlock.classList.remove('d-none');
                 } else {
-                    if (brewingBlock) brewingBlock.style.display = 'none';
+                    if (brewingBlock) brewingBlock.classList.add('d-none');
                 }
                 showWeightInfo(state.weight);
             });
@@ -101,7 +101,8 @@ var CoffeeSelector = (function () {
             recalcPrice();
             showWeightInfo(state.weight);
         }
-        if (brewingBlock) brewingBlock.style.display = 'none';
+        if (brewingBlock) brewingBlock.classList.add('d-none');
+        // Note: brewingBlock already has d-none class in template, this is redundant but safe
 
         /* ---- Helper functions ---- */
         function recalcPrice() {
@@ -145,7 +146,7 @@ var CoffeeSelector = (function () {
                 // Валидация: молотый → способ заваривания обязателен
                 if (state.form === 'ground' && !state.brewingMethod) {
                     CoffeeShop.showToast('Выберите способ заваривания', 'warning');
-                    if (brewingBlock) brewingBlock.style.display = 'block';
+                    if (brewingBlock) brewingBlock.classList.remove('d-none');
                     if (brewingSelect) brewingSelect.focus();
                     return;
                 }
@@ -198,9 +199,9 @@ var CoffeeSelector = (function () {
             if (!badge) return;
             if (count > 0) {
                 badge.textContent = count;
-                badge.style.display = 'inline-block';
+                badge.classList.remove('d-none');
             } else {
-                badge.style.display = 'none';
+                badge.classList.add('d-none');
             }
         }
     }

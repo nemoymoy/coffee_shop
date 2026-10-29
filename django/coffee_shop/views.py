@@ -7,11 +7,18 @@ from django.conf import settings
 from django.utils import timezone
 from django.core.paginator import Paginator
 from django.core.exceptions import ValidationError
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+from django.contrib.admin.views.decorators import staff_member_required
 from datetime import date
 import os
+import json
+import logging
 
 from coffee_shop.apps.catalog.models import Category, Product
 from coffee_shop.apps.orders.models import Order
+
+logger = logging.getLogger(__name__)
 
 
 def home(request):
@@ -52,10 +59,8 @@ def favicon(request):
         settings.STATIC_ROOT, 'img', 'favicon.ico'
     )
     if os.path.exists(favicon_path):
-        return FileResponse(
-            open(favicon_path, 'rb'),
-            content_type='image/x-icon'
-        )
+        with open(favicon_path, 'rb') as f:
+            return FileResponse(f, content_type='image/x-icon')
     return JsonResponse({'error': 'favicon not found'}, status=404)
 
 
@@ -178,3 +183,31 @@ def news_view(request):
     return render(request, 'news.html', {
         'news': news,
     })
+
+
+@require_POST
+@csrf_exempt
+@staff_member_required
+def csp_report(request):
+    """CSP violation report endpoint.
+    
+    Receives CSP violation reports from browsers and logs them
+    for monitoring. Only accessible by superusers.
+    """
+    try:
+        report = json.loads(request.body)
+        csp_report = report.get('csp-report', {})
+        violated_directive = csp_report.get('violated-directive', '')
+        blocked_uri = csp_report.get('blocked-uri', '')
+        original_policy = csp_report.get('original-policy', '')
+        
+        logger.warning(
+            'CSP Violation | directive: %s | blocked-uri: %s | policy: %s',
+            violated_directive,
+            blocked_uri,
+            original_policy[:100] if original_policy else '',
+        )
+    except (json.JSONDecodeError, AttributeError) as e:
+        logger.error('CSP report parse error: %s', e)
+    
+    return JsonResponse({'status': 'ok'}, status=200)

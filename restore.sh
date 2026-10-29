@@ -25,7 +25,7 @@ docker compose down
 
 # Restore database
 echo "Restoring database..."
-gunzip -c "$BACKUP_FILE" | docker compose exec -T psql -U coffee_shop -d coffee_shop_dev
+gunzip -c "$BACKUP_FILE" | docker compose exec -T db psql -U coffee_shop -d coffee_shop_dev
 
 echo "Database restored from: $BACKUP_FILE"
 

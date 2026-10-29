@@ -248,7 +248,7 @@
                         <label class="form-label">Адрес <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" id="addressAutocompleteInput" placeholder="Начните вводить адрес...">
                         <div class="form-text">Начните вводить адрес и выберите из списка подсказок Яндекс</div>
-                        <div id="addressSuggestions" class="list-group mt-2" style="display:none;"></div>
+                        <div id="addressSuggestions" class="list-group mt-2 d-none"></div>
                     </div>
 
                     <div class="mb-3">
@@ -302,7 +302,7 @@
 {% else %}
 <script id="profile-addresses-data" type="application/json">[]</script>
 {% endif %}
-<script>
+<script nonce="{{ csp_nonce }}">
     window.PROFILE_ADDRESSES = JSON.parse(document.getElementById('profile-addresses-data').textContent);
 </script>
 <script src="{% static 'js/delivery_address_manager.js' %}"></script>
