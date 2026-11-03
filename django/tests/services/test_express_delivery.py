@@ -163,7 +163,7 @@ class TestExpressStatusMapping:
     """Tests for Express API status mapping."""
 
     def test_delivered_statuses(self):
-        from coffee_shop.apps.orders.tasks import (
+        from coffee_shop.tasks import (
             EXPRESS_DELIVERED_STATUSES, _map_yandex_status_to_order
         )
         assert 'delivered' in EXPRESS_DELIVERED_STATUSES
@@ -172,7 +172,7 @@ class TestExpressStatusMapping:
         assert 'delivered_finish' in EXPRESS_DELIVERED_STATUSES
 
     def test_in_progress_statuses(self):
-        from coffee_shop.apps.orders.tasks import (
+        from coffee_shop.tasks import (
             EXPRESS_IN_PROGRESS_STATUSES, _map_yandex_status_to_order
         )
         assert 'accepted' in EXPRESS_IN_PROGRESS_STATUSES
@@ -181,7 +181,7 @@ class TestExpressStatusMapping:
         assert 'pickuped' in EXPRESS_IN_PROGRESS_STATUSES
 
     def test_map_delivered_status(self):
-        from coffee_shop.apps.orders.tasks import _map_yandex_status_to_order
+        from coffee_shop.tasks import _map_yandex_status_to_order
         order_status, is_final = _map_yandex_status_to_order(
             'delivered', api_type='express'
         )
@@ -189,7 +189,7 @@ class TestExpressStatusMapping:
         assert is_final is True
 
     def test_map_in_progress_status(self):
-        from coffee_shop.apps.orders.tasks import _map_yandex_status_to_order
+        from coffee_shop.tasks import _map_yandex_status_to_order
         order_status, is_final = _map_yandex_status_to_order(
             'performer_found', api_type='express'
         )
@@ -197,7 +197,7 @@ class TestExpressStatusMapping:
         assert is_final is False
 
     def test_map_new_status_no_update(self):
-        from coffee_shop.apps.orders.tasks import _map_yandex_status_to_order
+        from coffee_shop.tasks import _map_yandex_status_to_order
         order_status, is_final = _map_yandex_status_to_order(
             'new', api_type='express'
         )
@@ -205,7 +205,7 @@ class TestExpressStatusMapping:
         assert is_final is False
 
     def test_map_rejected_status(self):
-        from coffee_shop.apps.orders.tasks import _map_yandex_status_to_order
+        from coffee_shop.tasks import _map_yandex_status_to_order
         order_status, is_final = _map_yandex_status_to_order(
             'rejection', api_type='express'
         )
@@ -213,7 +213,7 @@ class TestExpressStatusMapping:
         assert is_final is True
 
     def test_other_day_delivered_status(self):
-        from coffee_shop.apps.orders.tasks import _map_yandex_status_to_order
+        from coffee_shop.tasks import _map_yandex_status_to_order
         order_status, is_final = _map_yandex_status_to_order(
             'finished', api_type='other_day'
         )

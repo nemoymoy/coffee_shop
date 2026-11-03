@@ -289,10 +289,17 @@ class TestOtherDayDeliveryService:
     def test_get_request_info_success(self, service):
         mock_response = MagicMock()
         mock_response.status_code = 200
+        # Implementation expects state at top level: data['state']['status']
         mock_response.json.return_value = {
-            'request_id': 'req-123',
-            'status': 'in_work',
+            'state': {
+                'status': 'in_work',
+                'description': 'В работе',
+            },
             'tracking_number': 'TRACK-456',
+            'request': {
+                'id': 'req-123',
+                'sharing_url': 'https://track.yandex.ru/...',
+            },
         }
 
         with patch.object(service.session, 'get', return_value=mock_response):

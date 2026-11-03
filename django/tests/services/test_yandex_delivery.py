@@ -91,9 +91,17 @@ class TestYandexDeliveryService:
         # Test status retrieval
         settings.YANDEX_DELIVERY_TOKEN = 'dev-token'
         mock_response = MagicMock()
+        # Implementation expects state at top level: data['state']['status']
         mock_response.json.return_value = {
-            'status': 'in_work',
+            'state': {
+                'status': 'in_work',
+                'description': 'В работе',
+            },
             'tracking_number': 'YA-TRACK-001',
+            'request': {
+                'id': 'request-123',
+                'sharing_url': 'https://track.yandex.ru/...',
+            },
         }
         mock_response.status_code = 200
 

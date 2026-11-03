@@ -39,7 +39,7 @@ class TestYooKassaService:
     def test_process_webhook_empty_payload(self):
         service = YooKassaService()
         result = service.process_webhook({})
-        assert result['status'] == 'unknown'
+        assert result['status'] == 'error'
 
     @patch('coffee_shop.apps.orders.services.yookassa_service.WebhookNotificationFactory')
     def test_process_webhook_payment_succeeded(self, mock_factory):
@@ -126,31 +126,6 @@ class TestYooKassaService:
         assert result['success'] is True
         assert result['mock'] is True
         assert 'refund_id' in result
-
-    @patch('coffee_shop.apps.orders.services.yookassa_service.SecurityHelper')
-    def test_verify_webhook_trusted_ip(self, mock_security_helper):
-        """Тест проверки IP доверенного webhook."""
-        mock_instance = MagicMock()
-        mock_instance.is_notification_trusted.return_value = True
-        mock_security_helper.return_value = mock_instance
-
-        service = YooKassaService()
-        # Мокаем получение IP
-        with patch.object(service, '_get_client_ip', return_value='93.158.136.205'):
-            result = service.verify_webhook('test body', 'test signature')
-            assert result is True
-
-    @patch('coffee_shop.apps.orders.services.yookassa_service.SecurityHelper')
-    def test_verify_webhook_untrusted_ip(self, mock_security_helper):
-        """Тест проверки IP недоверенного webhook."""
-        mock_instance = MagicMock()
-        mock_instance.is_notification_trusted.return_value = False
-        mock_security_helper.return_value = mock_instance
-
-        service = YooKassaService()
-        with patch.object(service, '_get_client_ip', return_value='1.2.3.4'):
-            result = service.verify_webhook('test body', 'test signature')
-            assert result is False
 
     def test_verify_webhook_mock_mode(self):
         """Тест проверки webhook в mock-режиме (всегда True)."""

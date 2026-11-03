@@ -71,9 +71,10 @@ class TestSyncYandexDeliveryStatus:
             'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
         ) as MockService:
             mock_instance = MagicMock()
+            # 'in_work' is in OTHER_DAY_IN_PROGRESS_STATUSES
             mock_instance.get_request_info.return_value = {
                 'success': True,
-                'status': 'in_transit',
+                'status': 'in_work',
             }
             MockService.return_value = mock_instance
 
@@ -81,7 +82,7 @@ class TestSyncYandexDeliveryStatus:
 
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
-        assert order.delivery_status == 'in_transit'
+        assert order.delivery_status == 'in_work'
 
     def test_sync_delivered_status_updates_order(self, user):
         """Delivered status from Express updates Order status."""

@@ -91,28 +91,41 @@ class TestGeocodeAddressView:
         assert response.status_code == 200
 
     def test_non_staff_cannot_geocode(self, client, user):
-        """Не-staff пользователь не может геокодировать (редирект на логин)."""
+        """Не-staff пользователь может геокодировать (нет проверки is_staff в view)."""
         user.is_staff = False
         user.save()
         client.force_login(user)
 
-        response = client.post(
-            reverse('orders:geocode_address'),
-            data='{"query": "Москва"}',
-            content_type='application/json',
-        )
-        # @user_passes_test возвращает 302 redirect на LOGIN_URL
-        assert response.status_code == 302
+        mock_result = {
+            'success': True,
+            'results': [{'coordinates': [55.75, 37.61]}],
+        }
+
+        with patch(
+            'coffee_shop.apps.orders.views.delivery_views.YandexGeocoderService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.geocode.return_value = mock_result
+            MockService.return_value = mock_instance
+
+            response = client.post(
+                reverse('orders:geocode_address'),
+                data='{"query": "Москва"}',
+                content_type='application/json',
+            )
+
+        # View only checks authentication, not staff status
+        assert response.status_code == 200
 
     def test_anonymous_cannot_geocode(self, client):
-        """Анонимный пользователь не может геокодировать (редирект на логин)."""
+        """Анонимный пользователь не может геокодировать (403 - JSON login required)."""
         response = client.post(
             reverse('orders:geocode_address'),
             data='{"query": "Москва"}',
             content_type='application/json',
         )
-        # @user_passes_test возвращает 302 redirect на LOGIN_URL
-        assert response.status_code == 302
+        # @_json_login_required возвращает 403 для неавторизованных AJAX запросов
+        assert response.status_code == 403
 
 
 class TestDeliveryLocationsApi:

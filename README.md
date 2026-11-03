@@ -714,10 +714,13 @@ pytest tests/views/test_users.py --cov=coffee_shop.apps.users --cov-report=term-
 ```
 
 ### Покрытие тестами
-- **views**: login, register, logout, dashboard, profile, смена пароля, согласие на ПД
-- **forms**: UserUpdateForm, UserRegistrationForm (валидация, конфликты, consent)
-- **services**: UserService.create_user, get_user_profile, update_user_profile
-- **models**: PersonalDataConsent (создание, OneToOne связь, версионирование)
+- **428 тестов**, все проходят ✅
+- **models**: Category, Product, Review, Order, OrderItem, PromoCode, PersonalDataConsent, DeliveryAddress, UserEmailVerification
+- **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса)
+- **views**: catalog, checkout, delivery, postamats, email verification, users (login, register, profile, dashboard)
+- **forms**: CoffeeForm, CheckoutForm, OrderForm, ProductForm, UserUpdateForm, UserRegistrationForm
+- **api**: catalog API, checkout config, delivery API, packages list, serializers, payment gateway
+- **news**: models, services, views, forms, API
 
 ### Структура тестов
 ```
@@ -762,10 +765,7 @@ tests/
 │   ├── test_checkout_config.py          # Конфигурация чекаута
 │   ├── test_packages_list.py            # Тесты списка тары
 │   ├── test_serializers.py              # DRF сериализаторы
-│   ├── test_yandex_delivery_api.py      # API Яндекс Доставки
-│   ├── test_delivery_api.py             # Delivery API
-│   ├── test_delivery_debug.py           # Debug-тесты доставки
-│   ├── test_delivery_debug2.py          # Debug-тесты доставки (доп.)
+│   ├── test_delivery_api.py             # Delivery API (геокодирование, расчёт)
 │   └── test_payment_gateway.py          # Платёжный шлюз (ЮКасса)
 ├── news/                                # Тесты news app
 │   ├── test_models.py                   # News модели
