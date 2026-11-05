@@ -6,7 +6,7 @@ import time
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
-from django.shortcuts import redirect
+from django.shortcuts import redirect, get_object_or_404
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
 from django.utils import timezone
@@ -31,7 +31,7 @@ def _json_login_required(view_func):
 
 from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
 from coffee_shop.apps.orders.services.geocoder_service import YandexGeocoderService
-from coffee_shop.apps.orders.models import Package
+from coffee_shop.apps.orders.models import Order, Package
 
 logger = logging.getLogger(__name__)
 
@@ -1341,3 +1341,83 @@ def yandex_delivery_status_view(request):
     }
 
     return JsonResponse(status_info)
+
+
+@login_required
+@require_POST
+def refresh_order_status_view(request, order_id):
+    """Manually refresh Yandex Delivery status for a specific order.
+
+    GET/POST /orders/refresh-status/<order_id>/
+    Returns JSON with updated status.
+    """
+    order = get_object_or_404(Order, pk=order_id, user=request.user)
+
+    if order.delivery_method != Order.DeliveryMethod.DELIVERY:
+        return JsonResponse({
+            'success': False,
+            'error': 'У этого заказа не используется доставка Яндекс',
+        })
+
+    service = YandexDeliveryService()
+    if not service.is_configured():
+        return JsonResponse({
+            'success': False,
+            'error': 'Яндекс Доставка не настроена',
+        })
+
+    yandex_status = None
+
+    if order.delivery_api_type == 'express' and order.express_claim_id:
+        result = service.get_express_claim_info(order.express_claim_id)
+        if result.get('success'):
+            yandex_status = result.get('status')
+    elif order.delivery_api_type == 'other_day' and order.yandex_order_id:
+        result = service.get_request_info(order.yandex_order_id)
+        if result.get('success'):
+            yandex_status = result.get('status')
+
+    if yandex_status is None:
+        return JsonResponse({
+            'success': False,
+            'error': 'Не удалось получить статус из Яндекс Доставки',
+        })
+
+    # Update order with new status
+    from coffee_shop.tasks import _map_yandex_status_to_order
+
+    order.yandex_delivery_status_raw = yandex_status
+    order.yandex_delivery_status = yandex_status
+    order.yandex_delivery_status_updated_at = timezone.now()
+
+    order_status, is_final = _map_yandex_status_to_order(
+        yandex_status, api_type=order.delivery_api_type
+    )
+    # yandex_delivery_status уже установлен выше (yandex_status)
+
+    if order_status:
+        old_status = order.status
+        order.status = order_status
+        order.save(update_fields=[
+            'yandex_delivery_status_raw',
+            'yandex_delivery_status',
+            'yandex_delivery_status_updated_at',
+            'status',
+        ])
+
+        if old_status != order_status:
+            from coffee_shop.tasks import send_order_status_changed_email
+            send_order_status_changed_email.delay(order.pk, order_status)
+    else:
+        order.save(update_fields=[
+            'yandex_delivery_status_raw',
+            'yandex_delivery_status',
+            'yandex_delivery_status_updated_at',
+        ])
+
+    return JsonResponse({
+        'success': True,
+        'yandex_status': yandex_status,
+        'order_status': order.status,
+        'order_status_display': order.get_status_display(),
+    })

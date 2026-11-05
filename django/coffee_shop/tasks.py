@@ -226,7 +226,7 @@ def _map_yandex_status_to_order(yandex_status, api_type='express'):
         elif yandex_status in ('new', 'estimating', 'ready_for_approval'):
             return (None, False)  # Don't update order status yet
         elif yandex_status in ('cancelled', 'rejected', 'rejection'):
-            return ('canceled', True)
+            return ('cancelled', True)
     else:
         # Other Day
         if yandex_status in OTHER_DAY_DELIVERED_STATUSES:
@@ -234,7 +234,7 @@ def _map_yandex_status_to_order(yandex_status, api_type='express'):
         elif yandex_status in OTHER_DAY_IN_PROGRESS_STATUSES:
             return ('in_progress', False)
         elif yandex_status in ('cancelled', 'rejected', 'rejection'):
-            return ('canceled', True)
+            return ('cancelled', True)
 
     return (None, False)
 
@@ -268,8 +268,12 @@ def sync_yandex_delivery_status():
             continue
 
         yandex_status = result.get('status', '')
-        order.delivery_status = yandex_status
-        order_status, is_final = _map_yandex_status_to_order(
+        # Сохраняем сырой статус из API
+        order.yandex_delivery_status_raw = yandex_status
+        # Сохраняем структурированный статус для отображения
+        order.yandex_delivery_status = yandex_status
+        order.yandex_delivery_status_updated_at = timezone.now()
+        order_status, _, is_final = _map_yandex_status_to_order(
             yandex_status, api_type='express'
         )
 
@@ -277,7 +281,12 @@ def sync_yandex_delivery_status():
             old_status = order.status
             order.status = order_status
 
-            order.save(update_fields=['delivery_status', 'status'])
+            order.save(update_fields=[
+                'yandex_delivery_status_raw',
+                'yandex_delivery_status',
+                'yandex_delivery_status_updated_at',
+                'status',
+            ])
 
             # Отправляем email, если статус изменился
             if old_status != order_status:
@@ -300,8 +309,12 @@ def sync_yandex_delivery_status():
             continue
 
         yandex_status = result.get('status', '')
-        order.delivery_status = yandex_status
-        order_status, is_final = _map_yandex_status_to_order(
+        # Сохраняем сырой статус из API
+        order.yandex_delivery_status_raw = yandex_status
+        # Сохраняем структурированный статус для отображения
+        order.yandex_delivery_status = yandex_status
+        order.yandex_delivery_status_updated_at = timezone.now()
+        order_status, _, is_final = _map_yandex_status_to_order(
             yandex_status, api_type='other_day'
         )
 
@@ -309,7 +322,12 @@ def sync_yandex_delivery_status():
             old_status = order.status
             order.status = order_status
 
-            order.save(update_fields=['delivery_status', 'status'])
+            order.save(update_fields=[
+                'yandex_delivery_status_raw',
+                'yandex_delivery_status',
+                'yandex_delivery_status_updated_at',
+                'status',
+            ])
 
             # Отправляем email, если статус изменился
             if old_status != order_status:

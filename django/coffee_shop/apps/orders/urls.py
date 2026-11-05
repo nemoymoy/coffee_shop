@@ -35,6 +35,8 @@ urlpatterns = [
     path('payment/result/', views.payment_result, name='payment_result'),
     # Yandex Delivery Status
     path('delivery/status/', delivery_views.yandex_delivery_status_view, name='yandex_delivery_status'),
+    # Refresh order status from Yandex Delivery
+    path('refresh-status/<int:order_id>/', delivery_views.refresh_order_status_view, name='refresh_order_status'),
     # Checkout config (API keys for frontend)
     path('api/checkout/config/', never_cache(views.checkout_config_view), name='checkout_config'),
 ]

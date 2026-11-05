@@ -22,7 +22,7 @@
             <!-- Статус заказа -->
             <div class="card mb-4">
                 <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
                         <div>
                             <h5 class="mb-1">Статус заказа</h5>
                             <p class="mb-0">
@@ -36,6 +36,27 @@
                             <p class="mb-0 fw-bold">{{ order.created_at|date:"d.m.Y H:i" }}</p>
                         </div>
                     </div>
+                    {% if order.yandex_delivery_status %}
+                    <hr>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="mb-1 text-muted">Статус Яндекс Доставки</h6>
+                            <p class="mb-0">
+                                <span class="badge bg-{% if order.yandex_delivery_status == 'cancelled' %}danger{% elif order.yandex_delivery_status == 'delivered_to_address' or order.yandex_delivery_status == 'delivered_finish' %}success{% elif order.yandex_delivery_status in 'accepted performer_lookup performer_found pickup_arrived pickuped delivery_arrived'.split %}primary{% else %}secondary{% endif %} fs-6">
+                                    {{ order.yandex_delivery_status|capfirst }}
+                                </span>
+                            </p>
+                            {% if order.yandex_delivery_status_updated_at %}
+                            <small class="text-muted">Обновлён: {{ order.yandex_delivery_status_updated_at|date:"d.m.Y H:i" }}</small>
+                            {% endif %}
+                        </div>
+                        {% if order.status != 'delivered' and order.status != 'cancelled' and order.status != 'refunded' %}
+                        <button type="button" class="btn btn-outline-primary btn-sm" id="refreshStatusBtn" onclick="refreshOrderStatus({{ order.pk }})">
+                            🔄 Обновить статус
+                        </button>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
             </div>
 
@@ -235,15 +256,51 @@
                 </a>
             </div>
             {% endif %}
-
-            {% if order.status != 'delivered' and order.status != 'cancelled' and order.status != 'refunded' %}
-            <div class="text-center mt-4">
-                <a href="{% url 'orders:order_detail' pk=order.pk %}" class="btn btn-outline-secondary">
-                    🔄 Обновить статус
-                </a>
-            </div>
-            {% endif %}
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function refreshOrderStatus(orderId) {
+    const btn = document.getElementById('refreshStatusBtn');
+    if (!btn) return;
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Обновление...';
+
+    fetch(`/orders/refresh-status/${orderId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Обновляем статус Яндекс Доставки
+            const badge = document.querySelector('.badge.bg-secondary, .badge.bg-primary, .badge.bg-success, .badge.bg-danger');
+            if (badge) {
+                badge.textContent = data.yandex_status;
+            }
+            // Показываем уведомление
+            alert('Статус обновлён: ' + data.yandex_status);
+            // Перезагружаем страницу для обновления всех данных
+            location.reload();
+        } else {
+            alert('Ошибка: ' + data.error);
+            btn.disabled = false;
+            btn.innerHTML = '🔄 Обновить статус';
+        }
+    })
+    .catch(error => {
+        console.error('Refresh status error:', error);
+        alert('Не удалось обновить статус');
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Обновить статус';
+    });
+}
+</script>
 {% endblock %}

@@ -37,7 +37,9 @@ class OrderAdmin(SimpleHistoryAdmin):
     list_filter = ['status', 'delivery_method', 'payment_method', 'created_at']
     search_fields = ['first_name', 'last_name', 'phone', 'email']
     readonly_fields = ['created_at', 'updated_at',
-                       'yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost']
+                       'yandex_order_id', 'tracking_number',
+                       'yandex_delivery_status_raw', 'yandex_delivery_status',
+                       'yandex_delivery_status_updated_at', 'delivery_cost']
     inlines = [OrderItemInline]
     actions = ['mark_awaiting_payment', 'mark_in_progress', 'mark_ready', 'mark_delivered', 'mark_cancelled', 'mark_refunded', 'export_to_csv']
     list_editable = ['status', 'delivery_method', 'payment_method']
@@ -56,7 +58,11 @@ class OrderAdmin(SimpleHistoryAdmin):
             'fields': ('delivery_address', 'delivery_date', 'delivery_time')
         }),
         ('Информация о Яндекс Доставке', {
-            'fields': ('yandex_order_id', 'tracking_number', 'delivery_status', 'delivery_cost'),
+            'fields': (
+                'yandex_order_id', 'tracking_number',
+                'yandex_delivery_status_raw', 'yandex_delivery_status',
+                'yandex_delivery_status_updated_at', 'delivery_cost',
+            ),
             'classes': ('collapse',)
         }),
         ('Комментарий', {

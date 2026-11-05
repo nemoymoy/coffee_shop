@@ -28,6 +28,35 @@ class Order(models.Model):
         PVZ = "pickup", "ПВЗ"
         POSTAMAT = "postamat", "Постомат"
 
+    class YandexDeliveryStatus(models.TextChoices):
+        """Статусы заказа в Яндекс Доставке (Express API)."""
+        NEW = "new", "Новая"
+        ESTIMATING = "estimating", "Расчёт стоимости"
+        READY_FOR_APPROVAL = "ready_for_approval", "Готова к подтверждению"
+        ACCEPTING = "accepting", "Подтверждение"
+        ACCEPTED = "accepted", "Принята"
+        PERFORMER_LOOKUP = "performer_lookup", "Поиск исполнителя"
+        PERFORMER_FOUND = "performer_found", "Исполнитель найден"
+        PICKUP_ARRIVED = "pickup_arrived", "Курьер на складе"
+        PICKUPED = "pickuped", "Забор курьером"
+        DELIVERY_ARRIVED = "delivery_arrived", "Курьер в пути"
+        DELIVERED_TO_ADDRESS = "delivered_to_address", "Доставлен по адресу"
+        DELIVERED_TO_POINT = "delivered_to_point", "Доставлен в ПВЗ"
+        DELIVERED_FINISH = "delivered_finish", "Завершена"
+        CANCELLED = "cancelled", "Отменена"
+        REJECTED = "rejected", "Отклонена"
+        FAILED = "failed", "Ошибка"
+
+    # Other Day API statuses
+    class OtherDayStatus(models.TextChoices):
+        CREATED = "created", "Создана"
+        IN_WORK = "in_work", "В работе"
+        PICKED_UP = "picked_up", "Забирает курьер"
+        DELIVERED = "delivered", "Доставлена"
+        FINISHED = "finished", "Завершена"
+        CANCELLED = "cancelled", "Отменена"
+        REJECTED = "rejected", "Отклонена"
+
     order_number = models.CharField(
         max_length=50,
         unique=True,
@@ -97,11 +126,25 @@ class Order(models.Model):
         null=True,
         verbose_name='Трек-номер'
     )
-    delivery_status = models.CharField(
+    # Сырой статус из API Яндекс Доставки (для отладки)
+    yandex_delivery_status_raw = models.CharField(
         max_length=50,
         blank=True,
         null=True,
-        verbose_name='Статус доставки'
+        verbose_name='Статус Яндекс Доставки (raw)'
+    )
+    # Структурированный статус для отображения в магазине
+    yandex_delivery_status = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        choices=YandexDeliveryStatus.choices,
+        verbose_name='Статус Яндекс Доставки'
+    )
+    yandex_delivery_status_updated_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name='Обновлён в Яндекс Доставке'
     )
     delivery_cost = models.DecimalField(
         max_digits=10,
