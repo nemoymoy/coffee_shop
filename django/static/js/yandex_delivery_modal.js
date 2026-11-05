@@ -1152,12 +1152,9 @@ const YandexDeliveryWidget = (() => {
                 const costEl = $('#widgetCost');
                 if (costEl) costEl.textContent = 'Расчёт...';
                 updateMapHintText();
-                // Для ПВЗ/постомат загружаем точки напрямую (не ждём initMap)
-                if (state.selectedType === 'postomat' || state.selectedType === 'pvz') {
-                    loadPvzOnMap();
-                } else {
-                    loadYmaps();
-                }
+                // Для ПВЗ/постомат — загружаем YMaps, initMap сам вызовет loadPvzOnMap()
+                // после создания карты, чтобы избежать обращения к null mapInstance
+                loadYmaps();
             }
         }
     }
@@ -1915,6 +1912,13 @@ const YandexDeliveryWidget = (() => {
             }
             const errorMsg = data.error || `${pointLabel} временно недоступны`;
             showMapError(errorMsg);
+            return;
+        }
+
+        // Карта может быть ещё не инициализирована — точки будут добавлены
+        // после создания карты через initMap -> loadPvzOnMap()
+        if (!state.mapInstance) {
+            console.warn('[YandexDelivery] loadPvzOnMap: map not ready yet, skipping placemark placement');
             return;
         }
 
