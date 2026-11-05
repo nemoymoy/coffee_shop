@@ -150,11 +150,49 @@ class TestSyncYandexDeliveryStatus:
         order.refresh_from_db()
         assert order.delivery_status is None
 
-    def test_sync_ignores_non_matching_statuses(self, user):
-        """Orders with NEW/PAID status are not synced."""
-        Order.objects.create(
+    def test_sync_cancellation_for_new_order(self, user):
+        """Cancelled Express claim updates order status from 'new' to 'cancelled'.
+
+        Regression test: orders with status 'new' or 'awaiting_payment'
+        must be synced so we catch cancellations from Yandex Delivery.
+        """
+        order = Order.objects.create(
             user=user,
             status=Order.Status.NEW,
+            total_amount=Decimal('1000'),
+            payment_method=Order.PaymentMethod.CASH,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
+            delivery_api_type='express',
+            first_name='Иван',
+            last_name='Иванов',
+            phone='+79991234567',
+            email='test@example.com',
+            delivery_address='Москва, ул. Тестовая, 1',
+            express_claim_id='CLAIM-CANCELLED',
+        )
+
+        with patch(
+            'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_express_claim_info.return_value = {
+                'success': True,
+                'status': 'cancelled',
+            }
+            MockService.return_value = mock_instance
+
+            result = sync_yandex_delivery_status()
+
+        assert 'Synced 1 of 1' in result
+        order.refresh_from_db()
+        assert order.status == Order.Status.CANCELED
+        assert order.delivery_status == 'cancelled'
+
+    def test_sync_cancellation_for_awaiting_payment_order(self, user):
+        """Cancelled Express claim updates order from 'awaiting_payment' to 'cancelled'."""
+        order = Order.objects.create(
+            user=user,
+            status=Order.Status.AWAITING_PAYMENT,
             total_amount=Decimal('1000'),
             payment_method=Order.PaymentMethod.ONLINE,
             delivery_method=Order.DeliveryMethod.DELIVERY,
@@ -164,16 +202,53 @@ class TestSyncYandexDeliveryStatus:
             phone='+79991234567',
             email='test@example.com',
             delivery_address='Москва, ул. Тестовая, 1',
-            express_claim_id='CLAIM-IGNORE',
+            express_claim_id='CLAIM-CANCELLED-2',
         )
 
         with patch(
             'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
         ) as MockService:
             mock_instance = MagicMock()
+            mock_instance.get_express_claim_info.return_value = {
+                'success': True,
+                'status': 'cancelled',
+            }
+            MockService.return_value = mock_instance
+
+            sync_yandex_delivery_status()
+
+        order.refresh_from_db()
+        assert order.status == Order.Status.CANCELED
+        assert order.delivery_status == 'cancelled'
+
+    def test_sync_includes_all_statuses(self, user):
+        """Orders with any status are synced if they have express_claim_id."""
+        order = Order.objects.create(
+            user=user,
+            status=Order.Status.NEW,
+            total_amount=Decimal('1000'),
+            payment_method=Order.PaymentMethod.CASH,
+            delivery_method=Order.DeliveryMethod.DELIVERY,
+            delivery_api_type='express',
+            first_name='Иван',
+            last_name='Иванов',
+            phone='+79991234567',
+            email='test@example.com',
+            delivery_address='Москва, ул. Тестовая, 1',
+            express_claim_id='CLAIM-ANY-STATUS',
+        )
+
+        with patch(
+            'coffee_shop.apps.orders.services.delivery_service.YandexDeliveryService'
+        ) as MockService:
+            mock_instance = MagicMock()
+            mock_instance.get_express_claim_info.return_value = {
+                'success': True,
+                'status': 'accepted',
+            }
             MockService.return_value = mock_instance
 
             result = sync_yandex_delivery_status()
 
-        assert 'Synced 0 of 0' in result
-        mock_instance.get_express_claim_info.assert_not_called()
+        assert 'Synced 1 of 1' in result
+        mock_instance.get_express_claim_info.assert_called_once_with('CLAIM-ANY-STATUS')

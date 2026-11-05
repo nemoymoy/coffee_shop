@@ -251,11 +251,12 @@ def sync_yandex_delivery_status():
 
     synced = 0
 
-    # Sync Express API claims
+    # Sync Express API claims — include ALL orders with express_claim_id
+    # regardless of status, so we catch cancellations even for 'new' or
+    # 'awaiting_payment' orders
     express_orders = Order.objects.filter(
         delivery_method='delivery',
         delivery_api_type='express',
-        status__in=['in_progress', 'ready'],
         express_claim_id__isnull=False,
     )
 
@@ -284,11 +285,11 @@ def sync_yandex_delivery_status():
 
         synced += 1
 
-    # Sync Other Day API requests
+    # Sync Other Day API requests — include ALL orders with yandex_order_id
+    # regardless of status, so we catch cancellations for any status
     other_day_orders = Order.objects.filter(
         delivery_method='delivery',
         delivery_api_type='other_day',
-        status__in=['in_progress', 'ready'],
         yandex_order_id__isnull=False,
     )
 
