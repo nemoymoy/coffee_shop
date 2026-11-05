@@ -42,7 +42,7 @@
                         <div>
                             <h6 class="mb-1 text-muted">Статус Яндекс Доставки</h6>
                             <p class="mb-0">
-                                <span class="badge bg-{% if order.yandex_delivery_status == 'cancelled' %}danger{% elif order.yandex_delivery_status == 'delivered_to_address' or order.yandex_delivery_status == 'delivered_finish' %}success{% elif order.yandex_delivery_status in 'accepted performer_lookup performer_found pickup_arrived pickuped delivery_arrived'.split %}primary{% else %}secondary{% endif %} fs-6">
+                                <span id="yandexDeliveryBadge" class="badge bg-{% if order.yandex_delivery_status == 'cancelled' %}danger{% elif order.yandex_delivery_status == 'delivered_to_address' or order.yandex_delivery_status == 'delivered_finish' %}success{% elif order.yandex_delivery_status in 'accepted performer_lookup performer_found pickup_arrived pickuped delivery_arrived'.split %}primary{% else %}secondary{% endif %} fs-6">
                                     {{ order.yandex_delivery_status|capfirst }}
                                 </span>
                             </p>
@@ -206,7 +206,7 @@
             </div>
 
             <!-- Информация о доставке (Яндекс) -->
-            {% if order.yandex_order_id or order.tracking_number or order.delivery_status %}
+            {% if order.yandex_order_id or order.tracking_number or order.yandex_delivery_status %}
             <div class="card mb-4 border-info">
                 <div class="card-body">
                     <h5 class="mb-3">📦 Яндекс Доставка</h5>
@@ -215,9 +215,9 @@
                         <strong>Идентификатор заказа:</strong> <code>{{ order.yandex_order_id }}</code>
                     </div>
                     {% endif %}
-                    {% if order.delivery_status %}
+                    {% if order.yandex_delivery_status %}
                     <div class="mb-2">
-                        <strong>Статус:</strong> {{ order.delivery_status }}
+                        <strong>Статус:</strong> {{ order.yandex_delivery_status }}
                     </div>
                     {% endif %}
                     {% if order.tracking_number %}
@@ -281,7 +281,7 @@ function refreshOrderStatus(orderId) {
     .then(data => {
         if (data.success) {
             // Обновляем статус Яндекс Доставки
-            const badge = document.querySelector('.badge.bg-secondary, .badge.bg-primary, .badge.bg-success, .badge.bg-danger');
+            const badge = document.getElementById('yandexDeliveryBadge');
             if (badge) {
                 badge.textContent = data.yandex_status;
             }

@@ -1384,36 +1384,40 @@ def refresh_order_status_view(request, order_id):
         })
 
     # Update order with new status
-    from coffee_shop.tasks import _map_yandex_status_to_order
-
     order.yandex_delivery_status_raw = yandex_status
-    order.yandex_delivery_status = yandex_status
     order.yandex_delivery_status_updated_at = timezone.now()
+
+    from coffee_shop.tasks import _map_yandex_status_to_order
 
     order_status, is_final = _map_yandex_status_to_order(
         yandex_status, api_type=order.delivery_api_type
     )
-    # yandex_delivery_status уже установлен выше (yandex_status)
 
+    # Для отображения в магазине используем mapped status
     if order_status:
+        order.yandex_delivery_status = order_status
+
+    # Сохраняем все поля статуса
+    save_fields = [
+        'yandex_delivery_status_raw',
+        'yandex_delivery_status_updated_at',
+    ]
+    if order_status:
+        order.yandex_delivery_status = order_status
+        save_fields.append('yandex_delivery_status')
         old_status = order.status
         order.status = order_status
-        order.save(update_fields=[
-            'yandex_delivery_status_raw',
-            'yandex_delivery_status',
-            'yandex_delivery_status_updated_at',
-            'status',
-        ])
+        save_fields.append('status')
+    else:
+        # Если order_status None — оставляем текущий yandex_delivery_status
+        pass
 
+    order.save(update_fields=save_fields)
+
+    if order_status:
         if old_status != order_status:
             from coffee_shop.tasks import send_order_status_changed_email
             send_order_status_changed_email.delay(order.pk, order_status)
-    else:
-        order.save(update_fields=[
-            'yandex_delivery_status_raw',
-            'yandex_delivery_status',
-            'yandex_delivery_status_updated_at',
-        ])
 
     return JsonResponse({
         'success': True,

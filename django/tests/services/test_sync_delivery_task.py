@@ -48,7 +48,8 @@ class TestSyncYandexDeliveryStatus:
 
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
-        assert order.delivery_status == 'accepted'
+        assert order.yandex_delivery_status_raw == 'accepted'
+        assert order.yandex_delivery_status == 'in_progress'
 
     def test_sync_other_day_orders(self, user):
         """Other Day orders are synced via get_request_info."""
@@ -82,7 +83,8 @@ class TestSyncYandexDeliveryStatus:
 
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
-        assert order.delivery_status == 'in_work'
+        assert order.yandex_delivery_status_raw == 'in_work'
+        assert order.yandex_delivery_status == 'in_progress'
 
     def test_sync_delivered_status_updates_order(self, user):
         """Delivered status from Express updates Order status."""
@@ -114,7 +116,8 @@ class TestSyncYandexDeliveryStatus:
             sync_yandex_delivery_status()
 
         order.refresh_from_db()
-        assert order.delivery_status == 'delivered'
+        assert order.yandex_delivery_status_raw == 'delivered'
+        assert order.yandex_delivery_status == 'delivered'
         assert order.status == Order.Status.DELIVERED
 
     def test_sync_service_error_ignored(self, user):
@@ -148,7 +151,7 @@ class TestSyncYandexDeliveryStatus:
 
         assert 'Synced 0 of 1' in result
         order.refresh_from_db()
-        assert order.delivery_status is None
+        assert order.yandex_delivery_status_raw is None
 
     def test_sync_cancellation_for_new_order(self, user):
         """Cancelled Express claim updates order status from 'new' to 'cancelled'.
@@ -186,7 +189,8 @@ class TestSyncYandexDeliveryStatus:
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
         assert order.status == Order.Status.CANCELED
-        assert order.delivery_status == 'cancelled'
+        assert order.yandex_delivery_status_raw == 'cancelled'
+        assert order.yandex_delivery_status == 'cancelled'
 
     def test_sync_cancellation_for_awaiting_payment_order(self, user):
         """Cancelled Express claim updates order from 'awaiting_payment' to 'cancelled'."""
@@ -219,7 +223,8 @@ class TestSyncYandexDeliveryStatus:
 
         order.refresh_from_db()
         assert order.status == Order.Status.CANCELED
-        assert order.delivery_status == 'cancelled'
+        assert order.yandex_delivery_status_raw == 'cancelled'
+        assert order.yandex_delivery_status == 'cancelled'
 
     def test_sync_includes_all_statuses(self, user):
         """Orders with any status are synced if they have express_claim_id."""
