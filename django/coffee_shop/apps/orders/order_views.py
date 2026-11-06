@@ -977,11 +977,18 @@ def payment_webhook(request):
 
                     # Если заказ ещё не передан в Яндекс Доставку (онлайн-оплата),
                     # создаём заказ в Яндекс Доставке сейчас
-                    logger.info('payment_webhook: order=%s, delivery_method=%s, yandex_order_id=%s, express_claim_id=%s',
-                               order.pk, order.delivery_method, order.yandex_order_id, order.express_claim_id)
+                    # Express API: claim уже создан в checkout (при расчёте цены),
+                    #   нужно только принять его после оплаты
+                    # Other Day API: заказ ещё не создан, нужно создать
+                    logger.info('payment_webhook: order=%s, delivery_method=%s, delivery_api_type=%s, yandex_order_id=%s, express_claim_id=%s',
+                               order.pk, order.delivery_method, order.delivery_api_type,
+                               order.yandex_order_id, order.express_claim_id)
                     if (
                         order.delivery_method == Order.DeliveryMethod.DELIVERY
-                        and not order.yandex_order_id
+                        and (
+                            order.express_claim_id  # Express — нужно принять
+                            or not order.yandex_order_id  # Other Day — нужно создать
+                        )
                     ):
                         logger.info('payment_webhook: Creating/accepting Yandex delivery for order %s', order.pk)
                         service = YandexDeliveryService()
