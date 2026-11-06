@@ -109,6 +109,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'coffee_shop.context_processors.yandex_metrika',
                 'coffee_shop.context_processors.store_info',
+                'coffee_shop.context_processors.store_timezone',
                 'coffee_shop.context_processors.csp_nonce',
             ],
         },
@@ -140,7 +141,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 # Internationalization
 LANGUAGE_CODE = 'ru-ru'
-TIME_ZONE = 'Europe/Moscow'
+TIME_ZONE = os.environ.get('TIME_ZONE', 'Asia/Samara')
 USE_I18N = True
 USE_TZ = True
 

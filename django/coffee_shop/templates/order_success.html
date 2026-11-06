@@ -33,15 +33,10 @@
                 {% endif %}
             {% endif %}
             <p><strong>Способ оплаты:</strong> {{ order.get_payment_method_display }}</p>
-            {% if order.yandex_order_id or order.tracking_number %}
+            {% if order.yandex_order_id %}
             <div class="alert alert-secondary">
                 <strong>📦 Яндекс Доставка:</strong>
-                {% if order.yandex_order_id %}
                 <br>Идентификатор заказа: <code>{{ order.yandex_order_id }}</code>
-                {% endif %}
-                {% if order.tracking_number %}
-                <br>Трек-номер: <strong>{{ order.tracking_number }}</strong>
-                {% endif %}
                 {% if order.delivery_status %}
                 <br><small class="text-muted">Статус: {{ order.delivery_status }}</small>
                 {% endif %}

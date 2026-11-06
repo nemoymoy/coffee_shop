@@ -29,7 +29,8 @@ class Order(models.Model):
         POSTAMAT = "postamat", "Постомат"
 
     class YandexDeliveryStatus(models.TextChoices):
-        """Статусы заказа в Яндекс Доставке (Express API)."""
+        """Статусы заказа в Яндекс Доставке (Express + Other Day API)."""
+        # Express API
         NEW = "new", "Новая"
         ESTIMATING = "estimating", "Расчёт стоимости"
         READY_FOR_APPROVAL = "ready_for_approval", "Готова к подтверждению"
@@ -46,16 +47,12 @@ class Order(models.Model):
         CANCELLED = "cancelled", "Отменена"
         REJECTED = "rejected", "Отклонена"
         FAILED = "failed", "Ошибка"
-
-    # Other Day API statuses
-    class OtherDayStatus(models.TextChoices):
+        # Other Day API
         CREATED = "created", "Создана"
         IN_WORK = "in_work", "В работе"
         PICKED_UP = "picked_up", "Забирает курьер"
         DELIVERED = "delivered", "Доставлена"
         FINISHED = "finished", "Завершена"
-        CANCELLED = "cancelled", "Отменена"
-        REJECTED = "rejected", "Отклонена"
 
     order_number = models.CharField(
         max_length=50,
@@ -106,11 +103,6 @@ class Order(models.Model):
         null=True,
         blank=True,
         verbose_name='Дата доставки'
-    )
-    delivery_time = models.TimeField(
-        null=True,
-        blank=True,
-        verbose_name='Время доставки'
     )
 
     # Yandex Cargo API integration

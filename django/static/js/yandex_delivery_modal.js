@@ -84,9 +84,111 @@ const YandexDeliveryWidget = (() => {
         SHOP_LAT: window.YANDEX_SHOP_LAT ?? 53.216940239129094,
         SHOP_LON: window.YANDEX_SHOP_LON ?? 50.162688008923745,
         CONFIRMATION_TIMEOUT_SECONDS: 600, // 10 минут
+        // Время магазина (из настроек Django TIME_ZONE)
+        SHOP_TIMEZONE: window.SHOP_TIMEZONE ?? 'Europe/Moscow',
+        // Courier delivery time restrictions (по времени магазина)
+        COURIER_WEEKDAY_FROM: 8,  // 08:00
+        COURIER_WEEKDAY_TO: 19,   // 19:00
+        COURIER_WEEKEND_FROM: 9,  // 09:00
+        COURIER_WEEKEND_TO: 18,   // 18:00
     };
 
     /* ==================== Cart State ==================== */
+
+    /* ==================== Courier Time Restriction ==================== */
+
+    /**
+     * Returns current time in the store's timezone.
+     * Uses IANA timezone names (e.g., 'Europe/Moscow', 'Asia/Samara').
+     */
+    function getStoreTime() {
+        // Получаем текущее время в UTC
+        const now = new Date();
+        const utcTime = now.getTime() + (now.getTimezoneOffset() * 60000);
+        
+        // Конвертируем в время магазина через IANA timezone
+        try {
+            const storeTimeString = new Intl.DateTimeFormat('ru-RU', {
+                timeZone: CONFIG.SHOP_TIMEZONE,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).format(now);
+            
+            // Парсим время из отформатанной строки
+            const parts = storeTimeString.split(/\./g);
+            if (parts.length >= 3) {
+                const day = parseInt(parts[0], 10);
+                const month = parseInt(parts[1], 10) - 1; // Months are 0-indexed
+                const year = parseInt(parts[2], 10);
+                
+                // Извлекаем часы и минуты из оставшейся части строки
+                const timeMatch = storeTimeString.match(/(\d{2}):(\d{2})/);
+                if (timeMatch) {
+                    const hours = parseInt(timeMatch[1], 10);
+                    const minutes = parseInt(timeMatch[2], 10);
+                    
+                    // Создаём Date объект с правильным временем
+                    const storeTime = new Date(year, month, day, hours, minutes, 0);
+                    return storeTime;
+                }
+            }
+        } catch (e) {
+            console.warn('[YandexDelivery] Failed to parse store time, fallback to UTC+3:', e);
+        }
+        
+        // Fallback: UTC+3 (Moscow/Samara)
+        const moscowOffset = 3 * 60;
+        return new Date(utcTime + (moscowOffset * 60000));
+    }
+
+    /**
+     * Checks if courier delivery is available now.
+     * Weekdays (Mon-Fri): 08:00-19:00 store time
+     * Weekends (Sat-Sun): 09:00-18:00 store time
+     */
+    function isCourierAvailable() {
+        const storeTime = getStoreTime();
+        const dayOfWeek = storeTime.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
+        const hours = storeTime.getHours();
+
+        // Check if weekend (Saturday=6 or Sunday=0)
+        const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+        if (isWeekend) {
+            // Weekend: 09:00-18:00
+            return hours >= CONFIG.COURIER_WEEKEND_FROM && hours < CONFIG.COURIER_WEEKEND_TO;
+        } else {
+            // Weekday: 08:00-19:00
+            return hours >= CONFIG.COURIER_WEEKDAY_FROM && hours < CONFIG.COURIER_WEEKDAY_TO;
+        }
+    }
+
+    /**
+     * Updates courier radio button availability based on store's local time.
+     */
+    function updateCourierAvailability() {
+        const courierRadio = document.querySelector('input[name="yandex_delivery_type"][value="courier"]');
+        const available = isCourierAvailable();
+
+        if (courierRadio) {
+            if (!available) {
+                courierRadio.disabled = true;
+                courierRadio.closest('.form-check')?.setAttribute('title', 'Курьерская доставка недоступна в текущее время');
+            } else {
+                courierRadio.disabled = false;
+                courierRadio.closest('.form-check')?.removeAttribute('title');
+            }
+            const storeTime = getStoreTime();
+            console.log('[YandexDelivery] Courier availability:', available, '| Store time:', storeTime.toLocaleTimeString('ru-RU'), '| Timezone:', CONFIG.SHOP_TIMEZONE);
+        }
+    }
+
+    /* ==================== Cart from Page ==================== */
     const cartState = {
         items: [],  // [{product_id, weight, quantity, price}]
         packages: [],  // [{weight_range, length, width, height, tare_weight}]
@@ -999,6 +1101,8 @@ const YandexDeliveryWidget = (() => {
         modalEl.addEventListener('show.bs.modal', () => {
             resetState();
             goToStep(1);
+            // Обновляем доступность курьерской доставки
+            updateCourierAvailability();
             // Очищаем стоимость доставки на главной странице,
             // чтобы не показывать старую цену при открытии модалки
             const orderDeliveryCost = $('#orderDeliveryCost');
@@ -1027,6 +1131,8 @@ const YandexDeliveryWidget = (() => {
                 updateMapHintText();
                 goToStep(2);
                 updateConfirmButton();
+                // Обновляем доступность курьерской доставки при смене типа
+                updateCourierAvailability();
             }
         });
 
@@ -1564,12 +1670,9 @@ const YandexDeliveryWidget = (() => {
         if (state.selectedOfferId) {
             YandexDeliveryUtils.setFieldValue('id_yandex_offer_id', state.selectedOfferId);
         }
-        // Сохраняем delivery_date/delivery_time если заказ создан через request/create
+        // Сохраняем delivery_date если заказ создан через request/create
         if (state.deliveryDate) {
             YandexDeliveryUtils.setFieldValue('id_delivery_date', state.deliveryDate);
-        }
-        if (state.deliveryTime) {
-            YandexDeliveryUtils.setFieldValue('id_delivery_time', state.deliveryTime);
         }
         if (state.deliveryRequest_id) {
             YandexDeliveryUtils.setFieldValue('id_yandex_request_id', state.deliveryRequest_id);

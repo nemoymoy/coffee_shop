@@ -38,6 +38,9 @@ const Checkout = (() => {
             addressBlock: form.querySelector('#addressBlock'),
             deliveryRadios: form.querySelectorAll('input[name="delivery_method"]'),
             deliveryInfo: form.querySelector('#deliveryInfo'),
+            paymentMethodRadios: form.querySelectorAll('input[name="payment_method"]'),
+            cashPaymentWrapper: form.querySelector('.payment-method-cash-wrapper'),
+            cashPaymentHint: form.querySelector('#cashPaymentDisabledHint'),
             total: form.querySelector('#checkoutTotal'),
             submitBtn: form.querySelector('button[type="submit"]'),
         };
@@ -120,6 +123,49 @@ const Checkout = (() => {
         });
 
         isDeliveryChecked() ? showAddress() : hideAddress();
+    }
+
+    /* ==================== Payment Method Restriction ==================== */
+    function initPaymentMethodToggle() {
+        const paymentRadios = state.elements.paymentMethodRadios;
+        const cashWrapper = state.elements.cashPaymentWrapper;
+        const cashHint = state.elements.cashPaymentHint;
+        if (!paymentRadios?.length) return;
+
+        function updatePaymentMethod() {
+            const isDeliveryChecked = $('input[name="delivery_method"][value="delivery"]:checked');
+            const isCashChecked = $('input[name="payment_method"][value="cash"]:checked');
+
+            if (isDeliveryChecked) {
+                // Доставка — только онлайн
+                if (cashWrapper) cashWrapper.classList.add('d-none');
+                if (cashHint) cashHint.classList.remove('d-none');
+                // Если была выбрана наличная — переключить на онлайн
+                if (isCashChecked) {
+                    $('input[name="payment_method"][value="online"]')?.setAttribute('checked', 'checked');
+                }
+            } else {
+                // Самовывоз — доступны оба способа
+                if (cashWrapper) cashWrapper.classList.remove('d-none');
+                if (cashHint) cashHint.classList.add('d-none');
+            }
+        }
+
+        // Слушаем изменения обоих способов оплаты
+        paymentRadios.forEach((radio) => {
+            radio.addEventListener('change', updatePaymentMethod);
+        });
+
+        // Слушаем изменения способа доставки (для мгновенной реакции)
+        const deliveryRadios = state.elements.deliveryRadios;
+        if (deliveryRadios?.length) {
+            deliveryRadios.forEach((radio) => {
+                radio.addEventListener('change', updatePaymentMethod);
+            });
+        }
+
+        // Инициализация
+        updatePaymentMethod();
     }
 
     /* ==================== Yandex Widget ==================== */
@@ -237,6 +283,7 @@ const Checkout = (() => {
         initEmail();
         initNames();
         initDeliveryToggle();
+        initPaymentMethodToggle();
         initYandexWidget();
         initSubmit();
         initTotal();

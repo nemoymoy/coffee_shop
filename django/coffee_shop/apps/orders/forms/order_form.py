@@ -69,10 +69,6 @@ class OrderForm(CheckoutForm):
         required=False,
         widget=forms.HiddenInput(),
     )
-    delivery_time = forms.CharField(
-        required=False,
-        widget=forms.HiddenInput(),
-    )
     yandex_request_id = forms.CharField(
         required=False,
         widget=forms.HiddenInput(),

@@ -218,22 +218,24 @@ def _map_yandex_status_to_order(yandex_status, api_type='express'):
     Returns:
         Tuple (order_status, is_final)
     """
+    # Yandex returns statuses in UPPER CASE, normalize for comparison
+    yandex_status_lower = yandex_status.lower() if yandex_status else ''
     if api_type == 'express':
-        if yandex_status in EXPRESS_DELIVERED_STATUSES:
+        if yandex_status_lower in EXPRESS_DELIVERED_STATUSES:
             return ('delivered', True)
-        elif yandex_status in EXPRESS_IN_PROGRESS_STATUSES:
+        elif yandex_status_lower in EXPRESS_IN_PROGRESS_STATUSES:
             return ('in_progress', False)
-        elif yandex_status in ('new', 'estimating', 'ready_for_approval'):
+        elif yandex_status_lower in ('new', 'estimating', 'ready_for_approval'):
             return (None, False)  # Don't update order status yet
-        elif yandex_status in ('cancelled', 'rejected', 'rejection'):
+        elif yandex_status_lower in ('cancelled', 'rejected', 'rejection'):
             return ('cancelled', True)
     else:
         # Other Day
-        if yandex_status in OTHER_DAY_DELIVERED_STATUSES:
+        if yandex_status_lower in OTHER_DAY_DELIVERED_STATUSES:
             return ('delivered', True)
-        elif yandex_status in OTHER_DAY_IN_PROGRESS_STATUSES:
+        elif yandex_status_lower in OTHER_DAY_IN_PROGRESS_STATUSES:
             return ('in_progress', False)
-        elif yandex_status in ('cancelled', 'rejected', 'rejection'):
+        elif yandex_status_lower in ('cancelled', 'rejected', 'rejection'):
             return ('cancelled', True)
 
     return (None, False)
@@ -268,22 +270,22 @@ def sync_yandex_delivery_status():
             continue
 
         yandex_status = result.get('status', '')
-        # Сохраняем сырой статус из API
+        # Сохраняем сырой статус из API Яндекс Доставки
+        order.yandex_delivery_status = yandex_status.lower() if yandex_status else ''
         order.yandex_delivery_status_raw = yandex_status
         order.yandex_delivery_status_updated_at = timezone.now()
         order_status, is_final = _map_yandex_status_to_order(
             yandex_status, api_type='express'
         )
 
-        # Для отображения в магазине используем mapped status
+        # order.status — mapped статус для внутреннего использования
         if order_status:
-            order.yandex_delivery_status = order_status
             old_status = order.status
             order.status = order_status
 
             order.save(update_fields=[
-                'yandex_delivery_status_raw',
                 'yandex_delivery_status',
+                'yandex_delivery_status_raw',
                 'yandex_delivery_status_updated_at',
                 'status',
             ])
@@ -292,8 +294,8 @@ def sync_yandex_delivery_status():
             if old_status != order_status:
                 send_order_status_changed_email.delay(order.pk, order_status)
         else:
-            # Сохраняем только raw статус и timestamp
             order.save(update_fields=[
+                'yandex_delivery_status',
                 'yandex_delivery_status_raw',
                 'yandex_delivery_status_updated_at',
             ])
@@ -315,22 +317,22 @@ def sync_yandex_delivery_status():
             continue
 
         yandex_status = result.get('status', '')
-        # Сохраняем сырой статус из API
+        # Сохраняем сырой статус из API Яндекс Доставки
+        order.yandex_delivery_status = yandex_status.lower() if yandex_status else ''
         order.yandex_delivery_status_raw = yandex_status
         order.yandex_delivery_status_updated_at = timezone.now()
         order_status, is_final = _map_yandex_status_to_order(
             yandex_status, api_type='other_day'
         )
 
-        # Для отображения в магазине используем mapped status
+        # order.status — mapped статус для внутреннего использования
         if order_status:
-            order.yandex_delivery_status = order_status
             old_status = order.status
             order.status = order_status
 
             order.save(update_fields=[
-                'yandex_delivery_status_raw',
                 'yandex_delivery_status',
+                'yandex_delivery_status_raw',
                 'yandex_delivery_status_updated_at',
                 'status',
             ])
@@ -339,8 +341,8 @@ def sync_yandex_delivery_status():
             if old_status != order_status:
                 send_order_status_changed_email.delay(order.pk, order_status)
         else:
-            # Сохраняем только raw статус и timestamp
             order.save(update_fields=[
+                'yandex_delivery_status',
                 'yandex_delivery_status_raw',
                 'yandex_delivery_status_updated_at',
             ])

@@ -1384,6 +1384,9 @@ def refresh_order_status_view(request, order_id):
         })
 
     # Update order with new status
+    # yandex_delivery_status хранит нормализованный статус (нижний регистр)
+    # yandex_delivery_status_raw — сырой статус из API для отладки
+    order.yandex_delivery_status = yandex_status.lower() if yandex_status else ''
     order.yandex_delivery_status_raw = yandex_status
     order.yandex_delivery_status_updated_at = timezone.now()
 
@@ -1393,23 +1396,18 @@ def refresh_order_status_view(request, order_id):
         yandex_status, api_type=order.delivery_api_type
     )
 
-    # Для отображения в магазине используем mapped status
-    if order_status:
-        order.yandex_delivery_status = order_status
-
     # Сохраняем все поля статуса
     save_fields = [
+        'yandex_delivery_status',
         'yandex_delivery_status_raw',
         'yandex_delivery_status_updated_at',
     ]
     if order_status:
-        order.yandex_delivery_status = order_status
-        save_fields.append('yandex_delivery_status')
         old_status = order.status
         order.status = order_status
         save_fields.append('status')
     else:
-        # Если order_status None — оставляем текущий yandex_delivery_status
+        # Если order_status None — оставляем текущий order.status
         pass
 
     order.save(update_fields=save_fields)

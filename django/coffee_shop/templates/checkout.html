@@ -142,14 +142,15 @@
             <h5 class="mb-3">Способ оплаты</h5>
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="radio" name="payment_method" id="online" value="online" checked>
+                    <input class="form-check-input payment-method-radio" type="radio" name="payment_method" id="online" value="online" checked>
                     <label class="form-check-label" for="online">💳 Онлайн</label>
                 </div>
-                <div class="form-check">
-                    <input class="form-check-input" type="radio" name="payment_method" id="cash" value="cash">
+                <div class="form-check payment-method-cash-wrapper">
+                    <input class="form-check-input payment-method-radio" type="radio" name="payment_method" id="cash" value="cash">
                     <label class="form-check-label" for="cash">💵 При получении</label>
                 </div>
             </div>
+            <small class="text-muted d-none" id="cashPaymentDisabledHint">💡 Для курьерской доставки доступна только онлайн-оплата</small>
 
             <div class="mb-3">
                 <label class="form-label">Комментарий к заказу</label>

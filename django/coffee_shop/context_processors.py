@@ -21,6 +21,13 @@ def store_info(request):
     }
 
 
+def store_timezone(request):
+    """Pass store timezone to all templates for JavaScript."""
+    return {
+        'SHOP_TIMEZONE': getattr(settings, 'TIME_ZONE', 'Europe/Moscow'),
+    }
+
+
 def csp_nonce(request):
     """Add CSP nonce to template context for inline scripts/styles.
 

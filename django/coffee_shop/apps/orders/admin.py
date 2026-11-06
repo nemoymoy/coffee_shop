@@ -55,12 +55,12 @@ class OrderAdmin(SimpleHistoryAdmin):
             'fields': ('status', 'total_amount', 'payment_method', 'delivery_method')
         }),
         ('Доставка', {
-            'fields': ('delivery_address', 'delivery_date', 'delivery_time')
+            'fields': ('delivery_address', 'delivery_date', 'delivery_interval_from', 'delivery_interval_to')
         }),
         ('Информация о Яндекс Доставке', {
             'fields': (
                 'yandex_order_id', 'tracking_number',
-                'yandex_delivery_status_raw', 'yandex_delivery_status',
+                'yandex_delivery_status',
                 'yandex_delivery_status_updated_at', 'delivery_cost',
             ),
             'classes': ('collapse',)

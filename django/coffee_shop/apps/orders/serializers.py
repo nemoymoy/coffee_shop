@@ -103,7 +103,6 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             'comment',
             'delivery_address',
             'delivery_date',
-            'delivery_time',
             'delivery_cost',
             'delivery_interval_from',
             'delivery_interval_to',
@@ -158,7 +157,6 @@ class OrderCreateSerializer(serializers.Serializer):
         default=''
     )
     delivery_date = serializers.DateTimeField(required=False, allow_null=True)
-    delivery_time = serializers.TimeField(required=False, allow_null=True)
     items = OrderItemCreateSerializer(many=True)
     promo_code = serializers.CharField(
         required=False,

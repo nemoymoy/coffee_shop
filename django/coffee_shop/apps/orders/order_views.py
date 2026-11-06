@@ -31,6 +31,7 @@ from coffee_shop.tasks import (
     send_order_confirmation_email,
     send_order_status_changed_email,
     send_order_to_store_email,
+    _map_yandex_status_to_order,
 )
 
 
@@ -510,9 +511,8 @@ def checkout_view(request):
         # Express claim ID (если выбран через виджет)
         express_claim_id = request.POST.get('express_claim_id', '')
 
-        # Delivery date/time (если заказ создан через request/create)
+        # Delivery date (если заказ создан через request/create)
         delivery_date_str = cleaned.get('delivery_date', '') or request.POST.get('delivery_date', '')
-        delivery_time_str = cleaned.get('delivery_time', '') or request.POST.get('delivery_time', '')
         yandex_request_id = cleaned.get('yandex_request_id', '') or request.POST.get('yandex_request_id', '')
 
         # Валидация: для доставки адрес обязателен
@@ -532,26 +532,10 @@ def checkout_view(request):
             initial_status = Order.Status.NEW
 
         with transaction.atomic():
-            # Парсим delivery_date/delivery_time если есть
+            # delivery_interval_from/to теперь заполняется из API Яндекс Доставки
+            # при создании заказа в checkout_view / payment_webhook
             delivery_interval_from_dt = None
             delivery_interval_to_dt = None
-            if delivery_date_str and delivery_time_str:
-                try:
-                    from datetime import datetime, timedelta, timezone
-                    # delivery_date_str = "15.09.2026", delivery_time_str = "10:00–14:00"
-                    date_part = datetime.strptime(delivery_date_str, '%d.%m.%Y').date()
-                    time_parts = delivery_time_str.split('–')
-                    if time_parts:
-                        time_from = datetime.strptime(time_parts[0].strip(), '%H:%M').time()
-                        datetime_from = datetime.combine(date_part, time_from)
-                        delivery_interval_from_dt = datetime_from
-
-                        if len(time_parts) > 1:
-                            time_to = datetime.strptime(time_parts[1].strip(), '%H:%M').time()
-                            datetime_to = datetime.combine(date_part, time_to)
-                            delivery_interval_to_dt = datetime_to
-                except (ValueError, IndexError) as e:
-                    logger.warning('Failed to parse delivery_date/time: %s', e)
 
             order = Order.objects.create(
                 user=request.user if request.user.is_authenticated else None,
@@ -710,11 +694,50 @@ def checkout_view(request):
                                     if not order.express_claim_id:
                                         order.express_claim_id = create_result.get('claim_id', '')
                                     order.yandex_order_id = order.express_claim_id
-                                    order.delivery_status = create_result.get('status', 'accepted')
+                                    order.yandex_delivery_status = create_result.get('status', 'accepted').lower()
+                                    order.yandex_delivery_status_raw = create_result.get('status', 'accepted')
                                     # Заявка уже подтверждена при расчёте цены, повторное подтверждение не нужно
                                     order.status = 'in_progress'
                                     messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
-                                # Для Other Day API (PVZ/postamat) заказ создаётся в payment_webhook
+                                else:
+                                    # Other Day API (PVZ/postamat) с наличной оплатой — создаём заказ сразу
+                                    try:
+                                        other_day_items, other_day_places = (
+                                            service._build_items_payload_for_other_day(
+                                                order.items.all(), pvz_id=order.pvz_id
+                                            )
+                                        )
+
+                                        result = service.create_order(
+                                            items=other_day_items,
+                                            places=other_day_places,
+                                            client_order_id=order.pk,
+                                            destination_coords=[],
+                                            destination_address=cleaned.get('delivery_address', ''),
+                                            delivery_type=order.delivery_type,
+                                            pvz_id=order.pvz_id,
+                                            recipient_name=order.recipient_name,
+                                            recipient_phone=order.recipient_phone,
+                                            email=order.email,
+                                            delivery_cost=float(order.delivery_cost),
+                                            payment_method='already_paid',
+                                        )
+
+                                        if result.get('success'):
+                                            order.yandex_offer_id = result.get('offer_id')
+                                            order.yandex_order_id = result.get('request_id')
+                                            order.tracking_number = result.get('tracking_number', '')
+                                            order.yandex_delivery_status = result.get('status', 'pending').lower()
+                                            order.yandex_delivery_status_raw = result.get('status', 'pending')
+                                            messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
+                                        else:
+                                            messages.warning(
+                                                request,
+                                                f'Не удалось создать заказ в Яндекс Доставке: {result.get("error", "unknown")}'
+                                            )
+                                    except Exception as e:
+                                        messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {e}')
+                                    # Для Other Day API (PVZ/postamat) заказ создаётся в payment_webhook
                             else:
                                 messages.warning(request, f'Не удалось создать заказ в Яндекс Доставке: {create_result.get("error", "unknown")}')
                     except Exception as e:
@@ -726,11 +749,13 @@ def checkout_view(request):
 
             fields_to_save = ['delivery_cost', 'total_amount']
             if order.yandex_order_id:
-                fields_to_save.extend(['yandex_order_id', 'tracking_number', 'delivery_status', 'status'])
+                fields_to_save.extend(['yandex_order_id', 'tracking_number', 'yandex_delivery_status', 'status'])
             if order.express_claim_id:
                 fields_to_save.append('express_claim_id')
             if order.yandex_offer_id:
                 fields_to_save.append('yandex_offer_id')
+            if order.yandex_delivery_status:
+                fields_to_save.append('yandex_delivery_status')
 
             order.save(update_fields=fields_to_save)
 
@@ -1002,7 +1027,8 @@ def payment_webhook(request):
                                 accept_result = service.accept_express_claim(order.express_claim_id, version=version)
                                 if accept_result.get('success'):
                                     order.yandex_order_id = order.express_claim_id
-                                    order.delivery_status = accept_result.get('status', 'accepted')
+                                    order.yandex_delivery_status = accept_result.get('status', 'accepted').lower()
+                                    order.yandex_delivery_status_raw = accept_result.get('status', 'accepted')
                                     logger.info('payment_webhook: Express claim accepted: %s', accept_result.get('status'))
                                 else:
                                     logger.error('payment_webhook: failed to accept Express claim: %s', accept_result.get('error'))
@@ -1036,7 +1062,8 @@ def payment_webhook(request):
                                     order.tracking_number = result.get(
                                         'tracking_number', ''
                                     )
-                                    order.delivery_status = result.get('status', 'pending')
+                                    order.yandex_delivery_status = result.get('status', 'pending').lower()
+                                    order.yandex_delivery_status_raw = result.get('status', 'pending')
                                     
                                     # Сохраняем интервал доставки из API
                                     if result.get('delivery_date') and result.get('delivery_time'):
@@ -1108,7 +1135,7 @@ def payment_webhook(request):
                         'updated_at',
                         'yandex_order_id',
                         'tracking_number',
-                        'delivery_status',
+                        'yandex_delivery_status',
                         'delivery_cost',
                         'total_amount',
                     ]
@@ -1307,8 +1334,9 @@ def payment_result(request):
                                         accept_result = service.accept_express_claim(order.express_claim_id, version=version)
                                         if accept_result.get('success'):
                                             order.yandex_order_id = order.express_claim_id
-                                            order.delivery_status = accept_result.get('status', 'accepted')
-                                            order.save(update_fields=['yandex_order_id', 'delivery_status', 'updated_at', 'express_claim_id'])
+                                            order.yandex_delivery_status = accept_result.get('status', 'accepted').lower()
+                                            order.yandex_delivery_status_raw = accept_result.get('status', 'accepted')
+                                            order.save(update_fields=['yandex_order_id', 'yandex_delivery_status', 'yandex_delivery_status_raw', 'updated_at', 'express_claim_id'])
                                             messages.info(request, 'Заказ на доставку создан в Яндекс Доставке')
                                         else:
                                             messages.warning(request, f'Не удалось подтвердить заказ в Яндекс Доставке: {accept_result.get("error", "unknown")}')
@@ -1342,9 +1370,10 @@ def payment_result(request):
                                             order.tracking_number = result.get(
                                                 'tracking_number', ''
                                             )
-                                            order.delivery_status = result.get(
+                                            order.yandex_delivery_status = result.get(
                                                 'status', 'pending'
-                                            )
+                                            ).lower()
+                                            order.yandex_delivery_status_raw = result.get('status', 'pending')
                                             
                                             # Сохраняем интервал доставки из API
                                             if result.get('delivery_date') and result.get('delivery_time'):
@@ -1366,7 +1395,7 @@ def payment_result(request):
                                                         
                                                         order.save(update_fields=[
                                                             'yandex_order_id', 'tracking_number',
-                                                            'delivery_status', 'delivery_interval_from',
+                                                            'yandex_delivery_status', 'delivery_interval_from',
                                                             'delivery_interval_to', 'updated_at',
                                                             'yandex_offer_id'
                                                         ])
@@ -1375,7 +1404,7 @@ def payment_result(request):
                                             else:
                                                 order.save(update_fields=[
                                                     'yandex_order_id', 'tracking_number',
-                                                    'delivery_status', 'updated_at',
+                                                    'yandex_delivery_status', 'updated_at',
                                                     'yandex_offer_id'
                                                 ])
                                             
