@@ -82,7 +82,7 @@ class StockService:
         """
         available = StockService.get_available_stock(product)
 
-        if product.stock_unit == Product.STOCK_UNIT_GRAM:
+        if product.stock_unit == product.STOCK_UNIT_GRAM:
             required = weight if weight else quantity
         else:
             required = quantity
