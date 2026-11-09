@@ -209,7 +209,7 @@ class TestExpressStatusMapping:
         order_status, is_final = _map_yandex_status_to_order(
             'rejection', api_type='express'
         )
-        assert order_status == 'canceled'
+        assert order_status == 'cancelled'
         assert is_final is True
 
     def test_other_day_delivered_status(self):

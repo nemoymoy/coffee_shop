@@ -67,7 +67,7 @@ class TestCheckoutWithDelivery:
         # Яндекс Доставка НЕ создаётся при онлайн-оплате — ждёт подтверждения платежа
         assert order.yandex_order_id is None
         assert order.tracking_number is None
-        assert order.delivery_status is None
+        assert order.yandex_delivery_status is None
         assert order.status == 'awaiting_payment'
         assert order.delivery_method == 'delivery'
         # При онлайн-оплате YandexDeliveryService вообще не вызывается
@@ -219,7 +219,7 @@ class TestCheckoutWithDeliveryType:
 
         assert order.yandex_order_id == 'CLAIM-001'
         assert order.express_claim_id == 'CLAIM-001'
-        assert order.delivery_status == 'accepted'
+        assert order.yandex_delivery_status == 'accepted'
         assert order.status == 'in_progress'
         assert order.delivery_method == 'delivery'
         assert order.payment_method == 'cash'

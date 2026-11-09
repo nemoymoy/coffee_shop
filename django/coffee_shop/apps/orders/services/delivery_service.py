@@ -364,23 +364,12 @@ class YandexDeliveryService:
                     '[Express] Accept response: %s',
                     json.dumps(data, ensure_ascii=False)[:500]
                 )
-                # Extract price from accept response
-                cost = data.get('cost', {})
-                price = cost.get('value', '0')
-                # Fallback: order.cost.value (Yandex Express API wraps response)
-                if price == '0':
-                    order_data = data.get('order', {})
-                    if isinstance(order_data, dict):
-                        order_cost = order_data.get('cost', {})
-                        if isinstance(order_cost, dict):
-                            price = order_cost.get('value', '0')
-                            logger.info('[Express] Price from accept order.cost.value: %s', price)
                 return {
                     'success': True,
                     'claim_id': claim_id,
                     'status': data.get('status', 'accepted'),
                     'raw': data,
-                    'price': price,
+                    'price': self._extract_price(data),
                 }
 
             # Other error
@@ -420,23 +409,12 @@ class YandexDeliveryService:
             logger.info('[Express] claims/info response for %s: %s',
                        claim_id, json.dumps(data, ensure_ascii=False)[:2000])
 
-            # Extract price from info response
-            cost = data.get('cost', {})
-            price = cost.get('value', '0')
-            # Fallback: order.cost.value (Yandex Express API wraps response in 'order')
-            if price == '0':
-                order_data = data.get('order', {})
-                if isinstance(order_data, dict):
-                    order_cost = order_data.get('cost', {})
-                    if isinstance(order_cost, dict):
-                        price = order_cost.get('value', '0')
-                        logger.info('[Express] Price from info order.cost.value: %s', price)
             return {
                 'success': True,
                 'status': data.get('status', 'unknown'),
                 'claim_id': claim_id,
                 'raw': data,
-                'price': price,
+                'price': self._extract_price(data),
             }
 
         except requests.exceptions.RequestException as e:
@@ -583,19 +561,9 @@ class YandexDeliveryService:
         Returns:
             Complete payload dict for Other Day API
         """
-        name_parts = recipient_name.split() if recipient_name else ['', '']
-        # Yandex requires valid phone format (+7XXXXXXXXXX)
-        phone = recipient_phone or '+79000000000'
-        if not phone.startswith('+'):
-            phone = '+7' + phone if phone.startswith('8') else '+7' + phone
-        # Remove all characters except digits and leading +
-        phone = '+' + ''.join(c for c in phone if c.isdigit())
-        recipient_info = {
-            'first_name': name_parts[0] if name_parts else '',
-            'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-            'phone': phone,
-            'email': email or '',
-        }
+        recipient_info = self._build_recipient_info(
+            recipient_name, recipient_phone, email
+        )
 
         return {
             'info': {
@@ -827,19 +795,9 @@ class YandexDeliveryService:
             )
 
             # Recipient info
-            name_parts = recipient_name.split() if recipient_name else ['', '']
-            phone = recipient_phone or '+79000000000'
-            # Normalize phone: remove all non-digit chars except leading +
-            if not phone.startswith('+'):
-                phone = '+7' + phone if phone.startswith('8') else '+7' + phone
-            # Remove all characters except digits and leading +
-            phone = '+' + ''.join(c for c in phone if c.isdigit())
-            recipient_info = {
-                'first_name': name_parts[0] if name_parts else '',
-                'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
-                'phone': phone,
-                'email': email or '',
-            }
+            recipient_info = self._build_recipient_info(
+                recipient_name, recipient_phone, email
+            )
 
             # ── Step 1: offers/info — check available intervals ────────
             logger.info('[OtherDay] === create_order: offers/info ===')
@@ -1082,85 +1040,10 @@ class YandexDeliveryService:
             d_from = di.get('from')
             d_to = di.get('to')
 
-            delivery_date = ''
-            delivery_time = ''
-            if d_from:
-                try:
-                    from datetime import datetime, timezone, timedelta
-                    tz_local = timezone(timedelta(hours=4))
+            delivery_date, delivery_time = self._format_delivery_interval(d_from, d_to)
 
-                    # Handle both ISO format and Unix timestamp
-                    if isinstance(d_from, (int, float)):
-                        dt_from = datetime.fromtimestamp(d_from, tz=timezone.utc).astimezone(tz_local)
-                        if d_to and isinstance(d_to, (int, float)):
-                            dt_to = datetime.fromtimestamp(d_to, tz=timezone.utc).astimezone(tz_local)
-                            delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                        else:
-                            delivery_time = dt_from.strftime('%H:%M')
-                    else:
-                        dt_from = datetime.fromisoformat(
-                            d_from.replace('Z', '+00:00')
-                        ).astimezone(tz_local)
-                        if d_to:
-                            try:
-                                dt_to = datetime.fromisoformat(
-                                    d_to.replace('Z', '+00:00')
-                                ).astimezone(tz_local)
-                                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                            except (ValueError, TypeError):
-                                delivery_time = dt_from.strftime('%H:%M')
-                        else:
-                            delivery_time = dt_from.strftime('%H:%M')
-
-                    delivery_date = dt_from.strftime('%d.%m.%Y')
-                except Exception as e:
-                    logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
-
-            pricing = order_info.get('pricing') or {}
-            price_total = pricing.get('total')
-            currency = pricing.get('currency', 'RUB')
-
-            logger.info('[OtherDay] pricing object: %s', json.dumps(pricing, ensure_ascii=False)[:500])
-
-            # Если цена не в pricing.total, ищем в других полях
-            if price_total is None or price_total == 0 or price_total == '0':
-                # Path 1: pricing.cost.value
-                cost = pricing.get('cost') or {}
-                if isinstance(cost, dict):
-                    price_total = cost.get('value') or cost.get('total')
-                    logger.info('[OtherDay] Found price in pricing.cost: %s', price_total)
-
-                # Path 2: pricing.total_cost
-                if price_total is None or price_total in (0, '0'):
-                    price_total = pricing.get('total_cost')
-                    logger.info('[OtherDay] Found price in pricing.total_cost: %s', price_total)
-
-                # Path 3: order.pricing.total (вложенный order)
-                if price_total is None or price_total in (0, '0'):
-                    inner_order = order_info.get('order', {})
-                    if isinstance(inner_order, dict):
-                        inner_pricing = inner_order.get('pricing') or {}
-                        price_total = inner_pricing.get('total')
-                        logger.info('[OtherDay] Found price in order.pricing.total: %s', price_total)
-
-                # Path 4: order.cost.value
-                if price_total is None or price_total in (0, '0'):
-                    inner_order = order_info.get('order', {})
-                    if isinstance(inner_order, dict):
-                        cost = inner_order.get('cost') or {}
-                        if isinstance(cost, dict):
-                            price_total = cost.get('value') or cost.get('total')
-                            logger.info('[OtherDay] Found price in order.cost: %s', price_total)
-
-            # Конвертируем в строку для JSON
-            if price_total is None:
-                price_total = 'N/A'
-            else:
-                try:
-                    price_total = str(float(price_total))
-                except (ValueError, TypeError):
-                    price_total = str(price_total)
-
+            currency = order_info.get('pricing', {}).get('currency', 'RUB')
+            price_total = self._extract_price(order_info)
             logger.info('[OtherDay] Final price_total: %s', price_total)
 
             return {
@@ -1465,39 +1348,7 @@ class YandexDeliveryService:
             delivery_from = interval_utc.get('from') or interval.get('from')
             delivery_to = interval_utc.get('to') or interval.get('to')
 
-            # Format delivery interval for display
-            delivery_date = ''
-            delivery_time = ''
-            if delivery_from:
-                try:
-                    from datetime import datetime, timezone, timedelta
-                    tz_local = timezone(timedelta(hours=4))
-
-                    if isinstance(delivery_from, (int, float)):
-                        dt_from = datetime.fromtimestamp(delivery_from, tz=timezone.utc).astimezone(tz_local)
-                        if delivery_to and isinstance(delivery_to, (int, float)):
-                            dt_to = datetime.fromtimestamp(delivery_to, tz=timezone.utc).astimezone(tz_local)
-                            delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                        else:
-                            delivery_time = dt_from.strftime('%H:%M')
-                    else:
-                        dt_from = datetime.fromisoformat(
-                            delivery_from.replace('Z', '+00:00')
-                        ).astimezone(tz_local)
-                        if delivery_to:
-                            try:
-                                dt_to = datetime.fromisoformat(
-                                    delivery_to.replace('Z', '+00:00')
-                                ).astimezone(tz_local)
-                                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-                            except (ValueError, TypeError):
-                                delivery_time = dt_from.strftime('%H:%M')
-                        else:
-                            delivery_time = dt_from.strftime('%H:%M')
-
-                    delivery_date = dt_from.strftime('%d.%m.%Y')
-                except Exception as e:
-                    logger.warning('[OtherDay] Failed to parse delivery interval: %s', e)
+            delivery_date, delivery_time = self._format_delivery_interval(delivery_from, delivery_to)
 
             # Tracking number is only available when order is in transit/delivered
             tracking_number = data.get('tracking_number', '')
@@ -1564,12 +1415,8 @@ class YandexDeliveryService:
 
             pickup_points_url = f'{self.platform_base_url}/pickup-points/list'
 
-            @retry_with_backoff(max_retries=3, base_delay=3)
-            def _fetch_pvz():
-                return self.session.post(pickup_points_url, json=payload, timeout=15)
-
             try:
-                response = _fetch_pvz()
+                response = self._post_with_retry(pickup_points_url, payload)
             except requests.exceptions.Timeout:
                 return {'success': False, 'error': 'Таймаут запроса к API'}
 
@@ -1583,38 +1430,9 @@ class YandexDeliveryService:
             data = response.json()
             points = data.get('points', [])
 
-            normalized = []
-            for p in points:
-                pos = p.get('position', {})
-                addr = p.get('address', {})
-                latitude = float(pos.get('latitude', 0))
-                longitude = float(pos.get('longitude', 0))
-
-                if not latitude or not longitude:
-                    continue
-
-                distance_km = self._haversine_distance(
-                    center_lat, center_lon, latitude, longitude
-                )
-                if distance_km > radius_km:
-                    continue
-
-                normalized.append({
-                    'id': p.get('id', ''),
-                    'name': p.get('name', ''),
-                    'address': addr.get('full_address', ''),
-                    'latitude': latitude,
-                    'longitude': longitude,
-                    'operator_id': p.get('operator_id', ''),
-                    'type': p.get('type', ''),
-                    'work_schedule': p.get('work_schedule', {}),
-                    'distance_km': round(distance_km, 1),
-                })
-
-                if len(normalized) >= max_results:
-                    break
-
-            normalized.sort(key=lambda x: x.get('distance_km', 999999))
+            normalized = self._normalize_pvz_points(
+                points, center_lat, center_lon, radius_km, max_results
+            )
 
             result = {
                 'success': True,
@@ -1689,12 +1507,8 @@ class YandexDeliveryService:
 
         pickup_points_url = f'{self.platform_base_url}/pickup-points/list'
 
-        @retry_with_backoff(max_retries=3, base_delay=3)
-        def _fetch_page():
-            return self.session.post(pickup_points_url, json=payload, timeout=15)
-
         try:
-            response = _fetch_page()
+            response = self._post_with_retry(pickup_points_url, payload)
         except requests.exceptions.Timeout:
             return {'success': False, 'error': 'Таймаут запроса к API'}
 
@@ -1722,8 +1536,181 @@ class YandexDeliveryService:
             cache.set(cache_key, result, 3600)
             return result
 
+        normalized = self._normalize_pvz_points(
+            postamats, center_lat, center_lon, radius_km, max_results
+        )
+
+        result = {
+            'success': True,
+            'points': normalized,
+            'count': len(normalized),
+        }
+
+        cache.set(cache_key, result, 3600)
+        return result
+
+    # ----------------------------------------------------------------
+    # Helpers
+    # ----------------------------------------------------------------
+
+    @staticmethod
+    def _extract_price(data: dict) -> str:
+        """Extract price value from API response data.
+
+        Tries multiple paths:
+        1. data['cost']['value']
+        2. data['order']['cost']['value']
+        3. data['pricing']['total']
+        4. data['pricing']['cost']['value']
+        5. data['pricing']['total_cost']
+        6. data['order']['pricing']['total']
+        7. data['order']['cost']['value']
+
+        Returns:
+            Price as string, or 'N/A' if not found.
+        """
+        price = None
+
+        # Path 1: data['cost']['value'] (Express API)
+        cost = data.get('cost', {})
+        if isinstance(cost, dict):
+            price = cost.get('value')
+
+        # Path 2: data['order']['cost']['value'] (Express API wrapped)
+        if (price is None or price in (0, '0')):
+            order_data = data.get('order', {})
+            if isinstance(order_data, dict):
+                order_cost = order_data.get('cost', {})
+                if isinstance(order_cost, dict):
+                    price = order_cost.get('value')
+
+        # Path 3: data['pricing']['total'] (Other Day API)
+        if price is None or price in (0, '0', None):
+            pricing = data.get('pricing') or {}
+            price = pricing.get('total')
+
+        # Path 4: data['pricing']['cost']['value']
+        if price is None or price in (0, '0'):
+            cost = pricing.get('cost') or {}
+            if isinstance(cost, dict):
+                price = cost.get('value') or cost.get('total')
+
+        # Path 5: data['pricing']['total_cost']
+        if price is None or price in (0, '0'):
+            price = pricing.get('total_cost')
+
+        # Path 6: data['order']['pricing']['total']
+        if price is None or price in (0, '0'):
+            inner_order = data.get('order', {})
+            if isinstance(inner_order, dict):
+                inner_pricing = inner_order.get('pricing') or {}
+                price = inner_pricing.get('total')
+
+        # Path 7: data['order']['cost']['value']
+        if price is None or price in (0, '0'):
+            inner_order = data.get('order', {})
+            if isinstance(inner_order, dict):
+                cost = inner_order.get('cost') or {}
+                if isinstance(cost, dict):
+                    price = cost.get('value') or cost.get('total')
+
+        if price is None:
+            return 'N/A'
+        try:
+            return str(float(price))
+        except (ValueError, TypeError):
+            return str(price)
+
+    @staticmethod
+    def _format_delivery_interval(from_ts, to_ts) -> tuple[str, str]:
+        """Format delivery interval timestamps into (date, time) strings.
+
+        Args:
+            from_ts: Unix timestamp (int/float) or ISO format string.
+            to_ts: Optional same format for end time.
+
+        Returns:
+            (delivery_date, delivery_time) e.g. ('09.11.2026', '14:00–16:00')
+        """
+        from datetime import datetime, timezone, timedelta
+
+        delivery_date = ''
+        delivery_time = ''
+        if not from_ts:
+            return delivery_date, delivery_time
+
+        try:
+            tz_local = timezone(timedelta(hours=4))
+
+            if isinstance(from_ts, (int, float)):
+                dt_from = datetime.fromtimestamp(from_ts, tz=timezone.utc).astimezone(tz_local)
+                if to_ts and isinstance(to_ts, (int, float)):
+                    dt_to = datetime.fromtimestamp(to_ts, tz=timezone.utc).astimezone(tz_local)
+                    delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                else:
+                    delivery_time = dt_from.strftime('%H:%M')
+            else:
+                dt_from = datetime.fromisoformat(from_ts.replace('Z', '+00:00')).astimezone(tz_local)
+                if to_ts:
+                    try:
+                        dt_to = datetime.fromisoformat(to_ts.replace('Z', '+00:00')).astimezone(tz_local)
+                        delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                    except (ValueError, TypeError):
+                        delivery_time = dt_from.strftime('%H:%M')
+                else:
+                    delivery_time = dt_from.strftime('%H:%M')
+
+            delivery_date = dt_from.strftime('%d.%m.%Y')
+        except Exception as e:
+            logger.warning('Failed to parse delivery interval: %s', e)
+
+        return delivery_date, delivery_time
+
+    def _build_recipient_info(self, recipient_name: str, recipient_phone: str, email: str) -> dict:
+        """Build recipient_info dict for Other Day API.
+
+        Args:
+            recipient_name: Full name (will be split into first/last).
+            recipient_phone: Phone number (normalized to +7... format).
+            email: Email address.
+
+        Returns:
+            Dict with first_name, last_name, phone, email.
+        """
+        name_parts = recipient_name.split() if recipient_name else ['', '']
+        phone = recipient_phone or '+79000000000'
+        if not phone.startswith('+'):
+            phone = '+7' + phone if phone.startswith('8') else '+7' + phone
+        phone = '+' + ''.join(c for c in phone if c.isdigit())
+        return {
+            'first_name': name_parts[0] if name_parts else '',
+            'last_name': ' '.join(name_parts[1:]) if len(name_parts) > 1 else '',
+            'phone': phone,
+            'email': email or '',
+        }
+
+    def _normalize_pvz_points(
+        self,
+        points: list[dict],
+        center_lat: float,
+        center_lon: float,
+        radius_km: float,
+        max_results: int,
+    ) -> list[dict]:
+        """Normalize and filter PVZ/postamat points by distance.
+
+        Args:
+            points: Raw points from Yandex API.
+            center_lat: Center latitude for distance calculation.
+            center_lon: Center longitude for distance calculation.
+            radius_km: Maximum distance in km.
+            max_results: Maximum number of results to return.
+
+        Returns:
+            Sorted list of normalized point dicts.
+        """
         normalized = []
-        for p in postamats:
+        for p in points:
             pos = p.get('position', {})
             addr = p.get('address', {})
             latitude = float(pos.get('latitude', 0))
@@ -1754,19 +1741,25 @@ class YandexDeliveryService:
                 break
 
         normalized.sort(key=lambda x: x.get('distance_km', 999999))
+        return normalized
 
-        result = {
-            'success': True,
-            'points': normalized,
-            'count': len(normalized),
-        }
+    def _post_with_retry(self, url: str, payload: dict) -> requests.Response:
+        """POST request with retry backoff for rate limiting.
 
-        cache.set(cache_key, result, 3600)
-        return result
+        Args:
+            url: Target URL.
+            payload: JSON payload.
 
-    # ----------------------------------------------------------------
-    # Helpers
-    # ----------------------------------------------------------------
+        Returns:
+            requests.Response on success.
+
+        Raises:
+            requests.exceptions.HTTPError on failure after retries.
+        """
+        @retry_with_backoff(max_retries=3, base_delay=3)
+        def _fetch():
+            return self.session.post(url, json=payload, timeout=15)
+        return _fetch()
 
     @staticmethod
     def _haversine_distance(lat1, lon1, lat2, lon2) -> float:

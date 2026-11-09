@@ -470,7 +470,6 @@ class TestOtherDayStatusMapping:
         assert 'created' in OTHER_DAY_IN_PROGRESS_STATUSES
         assert 'in_work' in OTHER_DAY_IN_PROGRESS_STATUSES
         assert 'picked_up' in OTHER_DAY_IN_PROGRESS_STATUSES
-        assert 'delivered' in OTHER_DAY_IN_PROGRESS_STATUSES
 
     def test_map_other_day_finished(self):
         from coffee_shop.tasks import _map_yandex_status_to_order

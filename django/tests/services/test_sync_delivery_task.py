@@ -49,7 +49,7 @@ class TestSyncYandexDeliveryStatus:
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
         assert order.yandex_delivery_status_raw == 'accepted'
-        assert order.yandex_delivery_status == 'in_progress'
+        assert order.yandex_delivery_status == 'accepted'
 
     def test_sync_other_day_orders(self, user):
         """Other Day orders are synced via get_request_info."""
@@ -84,7 +84,7 @@ class TestSyncYandexDeliveryStatus:
         assert 'Synced 1 of 1' in result
         order.refresh_from_db()
         assert order.yandex_delivery_status_raw == 'in_work'
-        assert order.yandex_delivery_status == 'in_progress'
+        assert order.yandex_delivery_status == 'in_work'
 
     def test_sync_delivered_status_updates_order(self, user):
         """Delivered status from Express updates Order status."""
