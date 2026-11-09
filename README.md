@@ -368,6 +368,7 @@ SECRET_KEY=your-super-secret-key-at-least-50-chars-long
 DEBUG=False
 DOMAIN=yourdomain.com
 ALLOWED_HOSTS=yourdomain.com,www.yourdomain.com
+TIME_ZONE=Europe/Samara
 
 # Database
 DATABASE_URL=postgresql://coffee_shop:strong-password@db:5432/coffee_shop
@@ -517,6 +518,7 @@ SECRET_KEY=your-super-secret-key-at-least-50-chars-long
 DEBUG=True/False
 DOMAIN=yourdomain.com
 ALLOWED_HOSTS=localhost,127.0.0.1,example.com
+TIME_ZONE=Europe/Samara  # Часовой пояс магазина (для ограничений курьерской доставки)
 
 # Database
 DATABASE_URL=postgresql://user:password@db:5432/coffee_shop
