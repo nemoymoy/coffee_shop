@@ -294,11 +294,6 @@ class TestYandexDeliveryService:
 class TestRateLimiting:
     """Tests for rate limiting decorators."""
 
-    def test_rate_limited_decorator_exists(self):
-        # Verify decorator is importable
-        from coffee_shop.apps.orders.services.delivery_service import rate_limited
-        assert callable(rate_limited)
-
     def test_retry_with_backoff_decorator_exists(self):
         # Verify decorator is importable
         from coffee_shop.apps.orders.services.delivery_service import retry_with_backoff

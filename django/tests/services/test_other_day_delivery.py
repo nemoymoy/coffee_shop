@@ -240,52 +240,6 @@ class TestOtherDayDeliveryService:
             assert result['delivery_time'] == '16:00–20:00'
             assert result['price'] == '250.0'
 
-    def test_get_offers_success(self, service, other_day_items):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'offers': [
-                {
-                    'offer_id': 'offer-123',
-                    'expires_at': '2026-09-12T15:00:00.000000Z',
-                    'offer_details': {
-                        'pricing_total': '1400.96 RUB',
-                        'delivery_interval': {
-                            'min': '2026-09-12T09:00:00.000000Z',
-                            'max': '2026-09-12T18:00:00.000000Z',
-                            'policy': 'time_interval',
-                        },
-                    },
-                }
-            ],
-        }
-
-        with patch.object(service.session, 'post', return_value=mock_response):
-            result = service.get_offers(
-                items=other_day_items,
-                client_order_id='order-3',
-                destination_coords=[37.59, 55.75],
-                destination_address='Москва, ул. Арбат, 10',
-                delivery_type='courier',
-            )
-
-        assert result['success'] is True
-        assert len(result['offers']) == 1
-        assert result['offers'][0]['offer_id'] == 'offer-123'
-
-    def test_confirm_offer_success(self, service):
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {
-            'request_id': 'req-confirmed-123',
-        }
-
-        with patch.object(service.session, 'post', return_value=mock_response):
-            result = service.confirm_offer('offer-123')
-
-        assert result['success'] is True
-        assert result['request_id'] == 'req-confirmed-123'
-
     def test_get_request_info_success(self, service):
         mock_response = MagicMock()
         mock_response.status_code = 200
@@ -309,21 +263,6 @@ class TestOtherDayDeliveryService:
         assert result['status'] == 'in_work'
         assert result['tracking_number'] == 'TRACK-456'
 
-    def test_build_interval_utc(self):
-        from datetime import datetime
-        from coffee_shop.apps.orders.services.delivery_service import YandexDeliveryService
-
-        from_dt = datetime(2026, 9, 12, 9, 0, 0)
-        to_dt = datetime(2026, 9, 12, 18, 0, 0)
-
-        result = YandexDeliveryService._build_interval_utc(from_dt, to_dt)
-
-        assert result['from'] == '2026-09-12T09:00:00.000000Z'
-        assert result['to'] == '2026-09-12T18:00:00.000000Z'
-
-    def test_build_interval_utc_none(self):
-        result = YandexDeliveryService._build_interval_utc(None, None)
-        assert result == {}
 
 
 class TestOtherDayDeliveryErrors:

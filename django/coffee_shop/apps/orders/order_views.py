@@ -1370,10 +1370,9 @@ def payment_result(request):
                                             order.tracking_number = result.get(
                                                 'tracking_number', ''
                                             )
-                                            order.yandex_delivery_status = result.get(
-                                                'status', 'pending'
-                                            ).lower()
-                                            order.yandex_delivery_status_raw = result.get('status', 'pending')
+                                            yandex_status = result.get('status') or 'pending'
+                                            order.yandex_delivery_status = yandex_status.lower()
+                                            order.yandex_delivery_status_raw = yandex_status
                                             
                                             # Сохраняем интервал доставки из API
                                             if result.get('delivery_date') and result.get('delivery_time'):
