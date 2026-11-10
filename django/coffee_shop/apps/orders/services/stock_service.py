@@ -1,9 +1,12 @@
 """Stock management service."""
 from decimal import Decimal
-from typing import List, Tuple
+from typing import Tuple
 from django.db import transaction, models
+from django.db.models import Case, Sum, When, Value, IntegerField
 from django.conf import settings
 from django.utils import timezone
+
+from ..models import Order, OrderItem
 
 
 class StockService:
@@ -38,34 +41,24 @@ class StockService:
         Returns:
             Зарезервированное количество
         """
-        from ..models import Order, OrderItem
-
-        reserved_items = (
-            OrderItem.objects
-            .filter(
-                order__status__in=[
-                    Order.Status.NEW,
-                    Order.Status.AWAITING_PAYMENT,
-                    Order.Status.PAID,
-                ],
-                product_id=product_id,
-            )
-            .select_related('order', 'product')
-        )
-
-        reserved = 0
-        for item in reserved_items:
-            if item.order.status in (
+        reserved_aggregation = OrderItem.objects.filter(
+            order__status__in=[
                 Order.Status.NEW,
                 Order.Status.AWAITING_PAYMENT,
                 Order.Status.PAID,
-            ):
-                if item.coffee_weight_grams:
-                    reserved += item.coffee_weight_grams
-                else:
-                    reserved += item.quantity
-
-        return reserved
+            ],
+            product_id=product_id,
+        ).aggregate(
+            reserved=Sum(
+                Case(
+                    When(coffee_weight_grams__isnull=False, then='coffee_weight_grams'),
+                    default='quantity',
+                    output_field=IntegerField(),
+                ),
+                default=0,
+            )
+        )
+        return reserved_aggregation['reserved']
 
     @staticmethod
     def is_available(product, weight: int = None, quantity: int = 1) -> Tuple[bool, str]:
@@ -87,13 +80,31 @@ class StockService:
         else:
             required = quantity
 
+        if required <= 0:
+            return False, 'Некорректное количество'
+        if available <= 0:
+            return False, 'Товар закончился'
         if required > available:
             unit_label = product.stock_unit_label
             return False, f'Доступно не более {available} {unit_label}'
-        if available <= 0:
-            return False, 'Товар закончился'
 
         return True, ''
+
+    @staticmethod
+    def _check_item_availability(item) -> bool:
+        """
+        Проверить доступность одного позиционного товара.
+
+        Args:
+            item: OrderItem instance
+
+        Returns:
+            True если товар доступен
+        """
+        product = item.product
+        required = item.coffee_weight_grams if item.coffee_weight_grams else item.quantity
+        available = StockService.get_available_stock(product)
+        return required <= available
 
     @staticmethod
     @transaction.atomic
@@ -110,8 +121,6 @@ class StockService:
         Returns:
             True если резерв успешен
         """
-        from ..models import Order, OrderItem
-
         try:
             order = Order.objects.select_for_update().get(pk=order_id)
         except Order.DoesNotExist:
@@ -119,15 +128,8 @@ class StockService:
 
         # Проверяем доступность всех товаров в заказе
         for item in order.items.all():
-            product = item.product
-            if item.coffee_weight_grams:
-                available = StockService.get_available_stock(product)
-                if item.coffee_weight_grams > available:
-                    return False
-            else:
-                available = StockService.get_available_stock(product)
-                if item.quantity > available:
-                    return False
+            if not StockService._check_item_availability(item):
+                return False
 
         # Меняем статус на AWAITING_PAYMENT только для заказов со статусом 'new'
         # (для online-оплаты статус уже AWAITING_PAYMENT, для cash — остаётся NEW)
@@ -141,6 +143,28 @@ class StockService:
 
     @staticmethod
     @transaction.atomic
+    def _adjust_stock(order_id: int, delta: int) -> None:
+        """
+        Пакетно изменить остатки товаров заказа.
+
+        Args:
+            order_id: ID заказа
+            delta: +1 для увеличения (release), -1 для уменьшения (confirm)
+        """
+        order = Order.objects.select_for_update().prefetch_related('items__product').get(
+            pk=order_id
+        )
+
+        for item in order.items.all():
+            product = item.product
+            adjustment = item.coffee_weight_grams if item.coffee_weight_grams else item.quantity
+            product.stock += delta * adjustment
+            product.save(update_fields=['stock'])
+
+        order.save(update_fields=['reserved_at', 'updated_at'])
+
+    @staticmethod
+    @transaction.atomic
     def confirm_stock(order_id: int) -> None:
         """
         Подтвердить резервирование — списать остатки.
@@ -150,8 +174,6 @@ class StockService:
         Args:
             order_id: ID заказа
         """
-        from ..models import Order
-
         try:
             order = Order.objects.select_for_update().get(pk=order_id)
         except Order.DoesNotExist:
@@ -163,14 +185,7 @@ class StockService:
         ):
             return
 
-        for item in order.items.all():
-            product = item.product
-            if item.coffee_weight_grams:
-                product.stock -= item.coffee_weight_grams
-            else:
-                product.stock -= item.quantity
-            product.save(update_fields=['stock'])
-        order.save(update_fields=['reserved_at', 'updated_at'])
+        StockService._adjust_stock(order_id, -1)
 
     @staticmethod
     @transaction.atomic
@@ -183,8 +198,6 @@ class StockService:
         Args:
             order_id: ID заказа
         """
-        from ..models import Order
-
         try:
             order = Order.objects.select_for_update().get(pk=order_id)
         except Order.DoesNotExist:
@@ -196,14 +209,7 @@ class StockService:
         ):
             return
 
-        for item in order.items.all():
-            product = item.product
-            if item.coffee_weight_grams:
-                product.stock += item.coffee_weight_grams
-            else:
-                product.stock += item.quantity
-            product.save(update_fields=['stock'])
-        order.save(update_fields=['status', 'reserved_at', 'updated_at'])
+        StockService._adjust_stock(order_id, 1)
 
     @staticmethod
     def release_expired_reservations() -> int:
@@ -215,8 +221,6 @@ class StockService:
         Returns:
             Количество освобождённых заказов
         """
-        from ..models import Order
-
         threshold = timezone.now() - timezone.timedelta(
             minutes=StockService.RESERVATION_TIMEOUT_MINUTES
         )
@@ -224,7 +228,7 @@ class StockService:
         expired = Order.objects.filter(
             status=Order.Status.AWAITING_PAYMENT,
             reserved_at__lt=threshold,
-        )
+        ).select_related().iterator()
 
         released = 0
         for order in expired:
@@ -234,9 +238,9 @@ class StockService:
         return released
 
     @staticmethod
-    def recalculate_total(order) -> Decimal:
+    def recalculate_order_total(order) -> Decimal:
         """
-        Пересчитать сумму заказа на основе актуальных остатков.
+        Пересчитать сумму заказа на основе актуальных цен позиций.
 
         Args:
             order: Модель Order
@@ -244,9 +248,7 @@ class StockService:
         Returns:
             Новая сумма заказа
         """
-        total = Decimal('0.00')
-        for item in order.items.all():
-            total += item.total_price
+        total = sum((item.total_price for item in order.items.all()), Decimal('0.00'))
         order.total_amount = total
         order.save(update_fields=['total_amount', 'updated_at'])
         return total
