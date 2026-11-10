@@ -118,7 +118,11 @@ const Checkout = (() => {
 
         radios.forEach((radio) => {
             radio.addEventListener('change', () => {
-                radio.checked ? showAddress() : hideAddress();
+                if (radio.value === 'delivery') {
+                    showAddress();
+                } else {
+                    hideAddress();
+                }
             });
         });
 

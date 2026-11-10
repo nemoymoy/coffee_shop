@@ -161,7 +161,7 @@
                                 {% endif %}
                             </p>
                         </div>
-                        {% if order.delivery_type %}
+                        {% if order.delivery_method == 'delivery' and order.delivery_type %}
                         <div class="col-md-6 mb-3">
                             <strong>Тип доставки:</strong>
                             <p class="mb-0">
@@ -257,7 +257,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<script>
+<script nonce="{{ csp_nonce }}">
 function refreshOrderStatus(orderId) {
     const btn = document.getElementById('refreshStatusBtn');
     if (!btn) return;

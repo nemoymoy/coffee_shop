@@ -488,7 +488,12 @@ def checkout_view(request):
         # JS виджет устанавливает значение в delivery_type (hidden field)
         delivery_type_raw = cleaned.get('delivery_type', '') or request.POST.get('delivery_type', '')
         if delivery_type_raw not in dict(Order.DeliveryType.choices):
-            delivery_type_raw = 'courier'
+            # При самовывозе тип доставки не нужен (пустая строка)
+            # При доставке — по умолчанию 'courier'
+            if cleaned['delivery_method'] == 'pickup':
+                delivery_type_raw = ''
+            else:
+                delivery_type_raw = 'courier'
 
         pvz_id = cleaned.get('pvz_id', '') or request.POST.get('pvz_id', '')
         destination_coords = cleaned.get('destination_coords', '') or request.POST.get('destination_coords', '')
