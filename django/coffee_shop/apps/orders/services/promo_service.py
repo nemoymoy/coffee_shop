@@ -2,6 +2,8 @@
 from decimal import Decimal
 from typing import Tuple, Optional
 
+from django.utils import timezone
+
 from ..models import PromoCode
 
 
@@ -29,17 +31,15 @@ class PromoService:
         except PromoCode.DoesNotExist:
             return False, None, 'Промокод не найден'
 
-        if not promo.is_valid:
-            if not promo.is_active:
-                return False, None, 'Промокод деактивирован'
-            from django.utils import timezone
-            now = timezone.now()
-            if now < promo.valid_from:
-                return False, None, 'Промокод ещё не активен'
-            if now > promo.valid_to:
-                return False, None, 'Промокод истёк'
-            if promo.max_uses > 0 and promo.used_count >= promo.max_uses:
-                return False, None, 'Промокод исчерпан'
+        now = timezone.now()
+        if not promo.is_active:
+            return False, None, 'Промокод деактивирован'
+        if now < promo.valid_from:
+            return False, None, 'Промокод ещё не активен'
+        if now > promo.valid_to:
+            return False, None, 'Промокод истёк'
+        if promo.max_uses > 0 and promo.used_count >= promo.max_uses:
+            return False, None, 'Промокод исчерпан'
 
         return True, promo, ''
 
@@ -69,7 +69,7 @@ class PromoService:
         Увеличивает used_count на 1.
         """
         promo.used_count += 1
-        promo.save(update_fields=['used_count', 'updated_at'])
+        promo.save(update_fields=['used_count'])
 
     @staticmethod
     def calculate_promo_info(promo: PromoCode) -> dict:
@@ -85,12 +85,19 @@ class PromoService:
         else:
             discount_display = f'{promo.discount_value} ₽'
 
+        remaining_uses = promo.remaining_uses
+        if remaining_uses == 0 and promo.max_uses > 0:
+            remaining_display = 'исчерпан'
+        else:
+            remaining_display = str(remaining_uses) if remaining_uses > 0 else 'безлимит'
+
         return {
             'id': promo.id,
             'code': promo.code,
             'discount_type': promo.discount_type,
             'discount_value': str(promo.discount_value),
             'discount_display': discount_display,
-            'remaining_uses': promo.remaining_uses,
+            'remaining_uses': remaining_uses,
+            'remaining_display': remaining_display,
             'is_valid': promo.is_valid,
         }
