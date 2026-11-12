@@ -14,8 +14,7 @@ urlpatterns = [
     path('favicon.ico', views.favicon, name='favicon'),
     path('', views.home, name='home'),
     path('catalog/', include('coffee_shop.apps.catalog.urls', namespace='catalog')),
-    path('cart/', include('coffee_shop.apps.orders.urls', namespace='cart')),
-    path('', include('coffee_shop.apps.orders.urls', namespace='checkout')),
+    path('orders/', include('coffee_shop.apps.orders.urls', namespace='orders')),
     # Catalog API
     path('api/catalog/', include('coffee_shop.apps.catalog.api.urls', namespace='catalog_api')),
     # News API

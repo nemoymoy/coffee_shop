@@ -51,7 +51,7 @@ class TestCheckoutWithDelivery:
         }
 
         with patch(
-            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.services.delivery_creator.YandexDeliveryService'
         ) as MockService:
             MockService.return_value = MagicMock()
 
@@ -101,7 +101,7 @@ class TestCheckoutWithDelivery:
         }
 
         with patch(
-            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.services.delivery_creator.YandexDeliveryService'
         ) as MockService:
             MockService.return_value = MagicMock()
 
@@ -135,7 +135,7 @@ class TestCheckoutWithDelivery:
         }
 
         with patch(
-            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.services.delivery_creator.YandexDeliveryService'
         ) as MockService:
             MockService.return_value = MagicMock()
 
@@ -191,6 +191,7 @@ class TestCheckoutWithDeliveryType:
         }
 
         mock_instance = MagicMock()
+        mock_instance.is_configured.return_value = True
         mock_instance.create_express_claim.return_value = {
             'success': True,
             'claim_id': 'CLAIM-001',
@@ -203,10 +204,9 @@ class TestCheckoutWithDeliveryType:
         }
 
         with patch(
-            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.services.delivery_creator.YandexDeliveryService'
         ) as MockService:
             MockService.return_value = mock_instance
-            MockService.return_value.is_configured.return_value = True
 
             response = client.post(
                 reverse('orders:checkout'),
@@ -240,7 +240,7 @@ class TestCheckoutWithDeliveryType:
         }
 
         with patch(
-            'coffee_shop.apps.orders.order_views.YandexDeliveryService'
+            'coffee_shop.apps.orders.services.delivery_creator.YandexDeliveryService'
         ) as MockService:
             MockService.return_value = MagicMock()
 

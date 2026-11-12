@@ -37,7 +37,7 @@ class TestRefreshOrderStatusView:
         )
 
         response = logged_in_client.post(
-            f'/refresh-status/{order.pk}/',
+            f'/orders/refresh-status/{order.pk}/',
             {},
             content_type='application/json',
         )
@@ -50,7 +50,7 @@ class TestRefreshOrderStatusView:
     def test_refresh_status_order_not_found(self, logged_in_client, user):
         """Returns 404 for non-existent order."""
         response = logged_in_client.post(
-            '/refresh-status/99999/',
+            '/orders/refresh-status/99999/',
             {},
             content_type='application/json',
         )
@@ -75,7 +75,7 @@ class TestRefreshOrderStatusView:
         )
 
         response = client.post(
-            f'/refresh-status/{order.pk}/',
+            f'/orders/refresh-status/{order.pk}/',
             {},
             content_type='application/json',
         )
@@ -100,7 +100,7 @@ class TestRefreshOrderStatusView:
         )
 
         response = logged_in_client.get(
-            f'/refresh-status/{order.pk}/',
+            f'/orders/refresh-status/{order.pk}/',
         )
 
         assert response.status_code == 405  # Method Not Allowed

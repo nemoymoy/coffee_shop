@@ -182,7 +182,7 @@ class TestCartAddEmailVerificationBlocked:
         client.force_login(user)
 
         response = client.post(
-            '/cart/add/',
+            '/orders/add/',
             {
                 'product_id': 1,
                 'weight': '100',
@@ -236,7 +236,7 @@ class TestOAuthUserNotBlocked:
         client.force_login(user)
 
         response = client.post(
-            '/cart/add/',
+            '/orders/add/',
             {
                 'product_id': 1,
                 'weight': '100',
