@@ -29,9 +29,3 @@ class PromotionAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('title',)}
     list_editable = ['is_active']
     date_hierarchy = 'start_date'
-
-    def get_list_display(self, request):
-        return self.list_display
-
-    def get_search_results(self, request, qs, search_params):
-        return qs, False

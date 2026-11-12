@@ -23,7 +23,6 @@ urlpatterns = [
     path('api/orders/', include('coffee_shop.apps.orders.api.urls', namespace='orders_api')),
     path('about/', views.about, name='about'),
     path('news/', include('coffee_shop.apps.news.urls', namespace='news')),
-    path('news/list/', views.news_view, name='news'),
     # CSP Report
     path('csp-report/', views.csp_report, name='csp_report'),
     # Users

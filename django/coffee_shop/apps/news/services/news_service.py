@@ -1,4 +1,5 @@
 """News service - business logic for news app."""
+from django.db.models import Q
 from django.utils import timezone
 
 from ..models import News, Promotion
@@ -12,7 +13,7 @@ class NewsService:
         """Получить список опубликованных новостей.
 
         Args:
-            limit: محدود تعداد نتایج
+            limit: Ограничение количества результатов.
 
         Returns:
             QuerySet[News]
@@ -60,12 +61,7 @@ class NewsService:
             is_published=True,
             published_at__lte=timezone.now(),
         ).filter(
-            title__icontains=query
-        ) | News.objects.filter(
-            is_published=True,
-            published_at__lte=timezone.now(),
-        ).filter(
-            content__icontains=query
+            Q(title__icontains=query) | Q(content__icontains=query)
         )
 
 
@@ -77,7 +73,7 @@ class PromotionService:
         """Получить список активных акций.
 
         Args:
-            limit: محدود تعداد نتایج
+            limit: Ограничение количества результатов.
 
         Returns:
             QuerySet[Promotion]
@@ -96,7 +92,7 @@ class PromotionService:
 
     @staticmethod
     def get_promotion_by_slug(slug):
-        """Получить акцию по slug.
+        """Получить активную акцию по slug.
 
         Args:
             slug: URL-адрес акции
@@ -104,19 +100,13 @@ class PromotionService:
         Returns:
             Promotion или None
         """
+        now = timezone.now()
         try:
             return Promotion.objects.get(
                 slug=slug,
                 is_active=True,
+                start_date__lte=now,
+                end_date__gte=now,
             )
         except Promotion.DoesNotExist:
             return None
-
-    @staticmethod
-    def get_current_promotions():
-        """Получить только текущие активные акции.
-
-        Returns:
-            QuerySet[Promotion]
-        """
-        return PromotionService.get_active_promotions()

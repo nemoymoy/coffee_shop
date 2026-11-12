@@ -154,8 +154,12 @@ class TestPromotionService:
         result = PromotionService.get_promotion_by_slug('nonexistent')
         assert result is None
 
-    def test_get_current_promotions(self, promo_data):
-        """Текущие акции."""
-        result = PromotionService.get_current_promotions()
-        slugs = list(result.values_list('slug', flat=True))
-        assert 'active-promo' in slugs
+    def test_get_promotion_by_slug_expired(self, promo_data):
+        """Поиск акции по slug исключает истёкшие."""
+        result = PromotionService.get_promotion_by_slug('expired-promo')
+        assert result is None
+
+    def test_get_promotion_by_slug_inactive(self, promo_data):
+        """Поиск акции по slug исключает неактивные."""
+        result = PromotionService.get_promotion_by_slug('inactive-promo')
+        assert result is None

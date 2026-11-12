@@ -18,7 +18,12 @@ def news_list(request):
 
 def news_detail(request, slug):
     """Детальная страница новости."""
-    news = get_object_or_404(News, slug=slug, is_published=True)
+    news = get_object_or_404(
+        News,
+        slug=slug,
+        is_published=True,
+        published_at__lte=timezone.now(),
+    )
 
     context = {
         'news': news,

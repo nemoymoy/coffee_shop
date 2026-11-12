@@ -170,21 +170,6 @@ def profile_view(request):
     })
 
 
-def news_view(request):
-    """Страница новостей."""
-    from coffee_shop.apps.news.models import News
-    from django.utils import timezone
-
-    news = News.objects.filter(
-        is_published=True,
-        published_at__lte=timezone.now()
-    ).order_by('-published_at')[:10]
-
-    return render(request, 'news.html', {
-        'news': news,
-    })
-
-
 @require_POST
 @csrf_exempt
 @staff_member_required

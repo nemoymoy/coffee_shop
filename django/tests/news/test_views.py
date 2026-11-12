@@ -95,6 +95,12 @@ class TestNewsDetailView:
         )
         assert response.status_code == 404
 
+    def test_news_detail_hides_future(self, client, future_news):
+        response = client.get(
+            reverse('news:news_detail', args=['future-news'])
+        )
+        assert response.status_code == 404
+
 
 class TestPromotionsListView:
     """Тесты promotions_list."""

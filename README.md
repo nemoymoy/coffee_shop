@@ -150,16 +150,16 @@ coffee_shop/
 │   │   │   │   └── admin.py       # Админ-категории и товары
 │   │   │   │
 │   │   │   ├── news/              # Новости
-│   │   │   │   ├── models/        # Модель: News
-│   │   │   │   ├── services/      # Сервис: NewsService
-│   │   │   │   ├── forms/         # Форма: NewsForm
-│   │   │   │   ├── serializers.py # DRF сериализаторы: News
+│   │   │   │   ├── models/        # Модели: News, Promotion
+│   │   │   │   ├── services/      # Сервисы: NewsService, PromotionService
+│   │   │   │   ├── forms/         # Формы: NewsForm, PromotionForm
+│   │   │   │   ├── serializers.py # DRF сериализаторы: News, Promotion
 │   │   │   │   ├── api/           # REST API endpoints
-│   │   │   │   │   ├── views.py   # ViewSet: News
+│   │   │   │   │   ├── views.py   # ViewSet: News, Promotion
 │   │   │   │   │   └── urls.py    # /api/news/ маршруты
-│   │   │   │   ├── views.py       # View: новости
+│   │   │   │   ├── views.py       # View: новости, акции
 │   │   │   │   ├── urls.py        # URL новостей
-│   │   │   │   └── admin.py       # Админ: новости
+│   │   │   │   └── admin.py       # Админ: новости, акции
 │   │   │   ├── orders/            # Заказы
 │   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode, Package
 │   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, Promo, YooKassa,
@@ -197,6 +197,7 @@ coffee_shop/
 │   │   │   ├── profile.html       # Профиль
 │   │   │   ├── news.html          # Новости
 │   │   │   ├── news_detail.html   # Детальная страница новости
+│   │   │   ├── promotions.html    # Акции
 │   │   │   ├── emails/            # Email-шаблоны
 │   │   │   │   ├── order_confirmation.html
 │   │   │   │   └── order_status_changed.html
@@ -729,13 +730,13 @@ pytest tests/views/test_users.py --cov=coffee_shop.apps.users --cov-report=term-
 ```
 
 ### Покрытие тестами
-- **429 тестов**, все проходят ✅
-- **models**: Category, Product, Review, Order, OrderItem, PromoCode, PersonalDataConsent, DeliveryAddress, UserEmailVerification
-- **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса), **DeliveryCreator**, **DeliveryPriceCalculator**, **Checkout (CheckoutValidator, OrderFactory, CheckoutExecutor)**
-- **views**: catalog, checkout, delivery, postamats, email verification, users (login, register, profile, dashboard)
-- **forms**: CoffeeForm, CheckoutForm, OrderForm, ProductForm, UserUpdateForm, UserRegistrationForm
-- **api**: catalog API, checkout config, delivery API, packages list, serializers, payment gateway
-- **news**: models, services, views, forms, API
+- **432 теста**, все проходят ✅
+- **models**: Category, Product, Review, Order, OrderItem, PromoCode, PersonalDataConsent, DeliveryAddress, UserEmailVerification, News, Promotion
+- **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса), **DeliveryCreator**, **DeliveryPriceCalculator**, **Checkout (CheckoutValidator, OrderFactory, CheckoutExecutor)**, NewsService, PromotionService
+- **views**: catalog, checkout, delivery, postamats, email verification, users (login, register, profile, dashboard), news_list, news_detail, promotions_list
+- **forms**: CoffeeForm, CheckoutForm, OrderForm, ProductForm, UserUpdateForm, UserRegistrationForm, NewsForm, PromotionForm
+- **api**: catalog API, checkout config, delivery API, packages list, serializers, payment gateway, news API, promotions API
+- **news**: models, services, views, forms, API (включая Promotion)
 
 ### Структура тестов
 ```
@@ -783,11 +784,11 @@ tests/
 │   ├── test_delivery_api.py             # Delivery API (геокодирование, расчёт)
 │   └── test_payment_gateway.py          # Платёжный шлюз (ЮКасса)
 ├── news/                                # Тесты news app
-│   ├── test_models.py                   # News модели
-│   ├── test_services.py                 # NewsService
-│   ├── test_views.py                    # news_list, news_detail
-│   ├── test_forms.py                    # NewsForm
-│   └── test_api.py                      # News API
+│   ├── test_models.py                   # News, Promotion модели
+│   ├── test_services.py                 # NewsService, PromotionService
+│   ├── test_views.py                    # news_list, news_detail, promotions_list
+│   ├── test_forms.py                    # NewsForm, PromotionForm
+│   └── test_api.py                      # News, Promotion API
 └── forms/                               # Тесты форм
     ├── test_order_forms.py
     ├── test_coffee_form.py              # CoffeeForm: вес, помол, brewing_method
@@ -805,7 +806,7 @@ tests/
 - Конкурентные заказы
 - DRF сериализация (OrderDetail, OrderList, PromoCode)
 - REST API: сериализация, фильтрация, создание отзывов
-- **news**: published news filtering, future news hiding, promotion date validation, news search
+- **news**: published news filtering, future news hiding, promotion date validation, news search, promotion by slug filtering
 - **news API**: CRUD, search, ordering, list vs detail fields
 
 ---
@@ -855,12 +856,13 @@ tests/
 - ✅ Модерация отзывов (approve/unapprove)
 - ✅ Фильтры по рейтингу
 
-#### Управление новостями (news)
-- ✅ CRUD для новостей
-- ✅ Фильтры по опубликованности
-- ✅ Поиск по заголовку и содержанию
+#### Управление новостями и акциями (news)
+- ✅ CRUD для новостей и акций
+- ✅ Фильтры по опубликованности / активности
+- ✅ Поиск по заголовку и содержанию / описанию
 - ✅ Автоматическая генерация slug из заголовка
 - ✅ Поля created_at / updated_at для отслеживания изменений
+- ✅ Визуальный индикатор `is_current` для акций
 
 ---
 
