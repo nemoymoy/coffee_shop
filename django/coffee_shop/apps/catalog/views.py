@@ -53,7 +53,7 @@ def product_detail(request, slug):
 
     # Количество товаров в корзине
     cart = request.session.get('cart', {})
-    cart_count = len(cart)
+    cart_count = sum(item.get('quantity', 1) for item in cart.values())
 
     context = {
         'product': product,

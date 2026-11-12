@@ -1,5 +1,6 @@
 from django import forms
 from ..services.coffee_service import CoffeeService
+from ..models import Product
 
 
 class CoffeeForm(forms.Form):
@@ -24,18 +25,7 @@ class CoffeeForm(forms.Form):
         label='Форма кофе'
     )
     brewing_method = forms.ChoiceField(
-        choices=[
-            ('turka', 'Турка (джезва)'),
-            ('espresso', 'Эспрессо-машина'),
-            ('geyser', 'Гейзер (мокка)'),
-            ('pourover', 'Пуровер (воронка)'),
-            ('siphon', 'Сифон (габет)'),
-            ('aeropress', 'Аэропресс'),
-            ('chemex', 'Кемекс'),
-            ('french_press', 'Френч-пресс'),
-            ('capping', 'Помол на каппинг'),
-            ('filter_machine', 'Фильтр-машина'),
-        ],
+        choices=[],
         widget=forms.Select(attrs={'class': 'form-select'}),
         required=False,
         label='Способ заваривания'
@@ -52,6 +42,7 @@ class CoffeeForm(forms.Form):
         else:
             self.fields['weight'].choices = []
             self.fields['weight'].widget.attrs['disabled'] = 'disabled'
+        self.fields['brewing_method'].choices = Product.BREWING_CHOICES
 
     def clean_weight(self):
         weight = self.cleaned_data.get('weight')

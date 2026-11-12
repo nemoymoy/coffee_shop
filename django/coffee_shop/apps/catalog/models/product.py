@@ -1,7 +1,10 @@
+import logging
 import re
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.db import models
+
+logger = logging.getLogger(__name__)
 
 
 class Product(models.Model):
@@ -183,10 +186,23 @@ class Product(models.Model):
         Доступный остаток товара (stock - зарезервировано).
         Используется в шаблонах как {{ product.available_stock }}.
         """
+        if hasattr(self, '_available_stock_cache'):
+            cached = self._available_stock_cache
+            # Invalidate if stock changed (e.g. after save in tests)
+            if cached != self.stock:
+                delattr(self, '_available_stock_cache')
+            else:
+                return cached
         try:
             from coffee_shop.apps.orders.services.stock_service import StockService
-            return StockService.get_available_stock(self)
-        except Exception:
+            result = StockService.get_available_stock(self)
+            self._available_stock_cache = result
+            return result
+        except Exception as exc:
+            logger.warning(
+                'StockService failed for product %s (%s): %s',
+                self.pk, self.slug, exc
+            )
             return self.stock
 
     @property

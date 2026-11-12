@@ -1,1 +1,1 @@
-# Catalog app
+"""Catalog app."""

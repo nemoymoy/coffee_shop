@@ -5,6 +5,8 @@ from django.conf import settings
 class Review(models.Model):
     """Отзыв на товар."""
 
+    RATING_CHOICES = [(i, str(i)) for i in range(1, 6)]
+
     product = models.ForeignKey(
         'catalog.Product',
         on_delete=models.CASCADE,
@@ -19,7 +21,7 @@ class Review(models.Model):
     )
     rating = models.IntegerField(
         verbose_name='Рейтинг',
-        choices=[(i, f'{i}') for i in range(1, 6)]
+        choices=RATING_CHOICES
     )
     comment = models.TextField(blank=True, verbose_name='Комментарий')
     is_approved = models.BooleanField(default=False, verbose_name='Одобрен')

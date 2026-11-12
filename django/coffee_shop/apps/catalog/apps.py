@@ -1,4 +1,4 @@
-# Catalog app
+"""Catalog app config."""
 from django.apps import AppConfig
 
 

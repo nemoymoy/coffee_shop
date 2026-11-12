@@ -4,6 +4,7 @@ from rest_framework.decorators import action, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAdminUser
 from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Avg, Count, Q
 
 from coffee_shop.apps.catalog.models import Category, Product, Review
 from coffee_shop.apps.catalog.serializers import (
@@ -16,7 +17,9 @@ from coffee_shop.apps.catalog.serializers import (
 class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only API for categories."""
 
-    queryset = Category.objects.filter(is_active=True)
+    queryset = Category.objects.filter(is_active=True).prefetch_related(
+        'children', 'products'
+    )
     serializer_class = CategorySerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['parent', 'is_active']
@@ -38,7 +41,10 @@ class CategoryViewSet(viewsets.ReadOnlyModelViewSet):
 class ProductViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only API for products."""
 
-    queryset = Product.objects.select_related('category').filter(is_available=True)
+    queryset = Product.objects.select_related('category').filter(is_available=True).annotate(
+        review_count=Count('reviews', filter=Q(reviews__is_approved=True)),
+        avg_rating=Avg('reviews__rating', filter=Q(reviews__is_approved=True))
+    )
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [

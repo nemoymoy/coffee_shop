@@ -48,12 +48,20 @@ class ProductSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'slug']
 
     def get_average_rating(self, obj):
+        avg = getattr(obj, 'avg_rating', None)
+        if avg is not None:
+            return round(avg, 1)
+        # Fallback for direct serialization without annotation
         approved_reviews = obj.reviews.filter(is_approved=True)
         if approved_reviews.exists():
             return round(approved_reviews.aggregate(Avg('rating'))['rating__avg'], 1)
         return None
 
     def get_review_count(self, obj):
+        count = getattr(obj, 'review_count', 0)
+        if count:
+            return count
+        # Fallback for direct serialization without annotation
         return obj.reviews.filter(is_approved=True).count()
 
 

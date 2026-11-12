@@ -3,7 +3,9 @@ from django.contrib import admin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from simple_history.admin import SimpleHistoryAdmin
+from django.core.exceptions import ValidationError
 from .models import Category, Product, Review
+from .forms import ProductStockForm
 import json
 
 
@@ -63,32 +65,6 @@ class BrewingMethodsWidget(forms.Widget):
         return format_html(''.join(html))
 
 
-class ProductAdminForm(forms.ModelForm):
-    """Кастомная форма для Product с виджетом brewing methods."""
-
-    class Meta:
-        model = Product
-        fields = '__all__'
-        widgets = {
-            'available_brewing_methods': BrewingMethodsWidget,
-        }
-
-    def clean(self):
-        cleaned_data = super().clean()
-        stock_unit = cleaned_data.get('stock_unit')
-        price_per_50g = cleaned_data.get('price_per_50g')
-
-        if stock_unit == Product.STOCK_UNIT_GRAM and not price_per_50g:
-            raise ValidationError({
-                'price_per_50g': 'Обязательное поле для товаров в граммах (кофе)'
-            })
-
-        if stock_unit == Product.STOCK_UNIT_UNIT:
-            cleaned_data['price_per_50g'] = None
-
-        return cleaned_data
-
-
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
     list_display = ['name', 'slug', 'parent', 'order', 'is_active']
@@ -99,7 +75,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 
 class ProductAdmin(admin.ModelAdmin):
-    form = ProductAdminForm
+    form = ProductStockForm
     list_display = [
         'name', 'category', 'stock_unit', 'price_display', 'stock_display',
         'sca_score', 'is_available', 'created_at'
@@ -208,7 +184,7 @@ class ProductAdmin(admin.ModelAdmin):
 
 
 @admin.register(Product)
-class VisibleProductAdmin(SimpleHistoryAdmin):
+class VisibleProductAdmin(ProductAdmin, SimpleHistoryAdmin):
     pass
 
 

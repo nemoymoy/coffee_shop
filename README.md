@@ -140,7 +140,7 @@ coffee_shop/
 │   │   │   ├── catalog/           # Каталог товаров
 │   │   │   │   ├── models/        # Модели: Category, Product, Review
 │   │   │   │   ├── services/      # Сервисы: Cart, Coffee, Pricing
-│   │   │   │   ├── forms/         # Формы: CoffeeForm, ProductForm
+│   │   │   │   ├── forms/         # Формы: CoffeeForm, ProductForm, ProductStockForm
 │   │   │   │   ├── serializers.py # DRF сериализаторы: Category, Product, Review
 │   │   │   │   ├── api/           # REST API endpoints
 │   │   │   │   │   ├── views.py   # ViewSet: Product, Category, Review
@@ -730,9 +730,10 @@ pytest tests/views/test_users.py --cov=coffee_shop.apps.users --cov-report=term-
 ```
 
 ### Покрытие тестами
-- **432 теста**, все проходят ✅
+- **431 теста**, все проходят ✅
 - **models**: Category, Product, Review, Order, OrderItem, PromoCode, PersonalDataConsent, DeliveryAddress, UserEmailVerification, News, Promotion
 - **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса), **DeliveryCreator**, **DeliveryPriceCalculator**, **Checkout (CheckoutValidator, OrderFactory, CheckoutExecutor)**, NewsService, PromotionService
+- **catalog рефакторинг (2026-11-12)**: устранено дублирование `ProductAdminForm`, унифицированы brewing/processing choices с моделями, объединён расчёт цены (`_calc_price` → `coffee_price`), оптимизированы N+1 запросы в API через `prefetch_related`/`annotate`, добавлено кэширование `available_stock` с логированием
 - **views**: catalog, checkout, delivery, postamats, email verification, users (login, register, profile, dashboard), news_list, news_detail, promotions_list
 - **forms**: CoffeeForm, CheckoutForm, OrderForm, ProductForm, UserUpdateForm, UserRegistrationForm, NewsForm, PromotionForm
 - **api**: catalog API, checkout config, delivery API, packages list, serializers, payment gateway, news API, promotions API

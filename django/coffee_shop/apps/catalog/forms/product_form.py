@@ -18,18 +18,11 @@ class ProductForm(forms.Form):
         product_types = kwargs.pop('product_types', [])
         categories = kwargs.pop('categories', [])
         super().__init__(*args, **kwargs)
-        from ..models import Product
         self.fields['roast_level'].choices = Product.ROAST_CHOICES
-        self.fields['processing_method'].choices = [
-            ('natural', 'Натуральная'),
-            ('washed', 'Мытая'),
-            ('honey', 'Медовая'),
-            ('anaerobic', 'Анаэробная'),
-            ('other', 'Другая'),
-        ]
+        self.fields['processing_method'].choices = Product.PROCESSING_CHOICES
 
 
-class ProductAdminForm(forms.ModelForm):
+class ProductStockForm(forms.ModelForm):
     """Кастомная форма для Product с валидацией по stock_unit."""
 
     class Meta:

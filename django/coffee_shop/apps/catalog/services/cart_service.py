@@ -3,6 +3,7 @@ from typing import Optional
 from django.db import transaction
 from decimal import Decimal
 from coffee_shop.apps.catalog.models import Product
+from .pricing_service import coffee_price
 
 
 class CartService:
@@ -10,11 +11,8 @@ class CartService:
 
     @staticmethod
     def _calc_price(weight: int, price_per_50g: Decimal) -> Decimal:
-        """Внутренний расчёт цены кофе."""
-        if weight <= 0:
-            return Decimal('0.00')
-        units = weight // 50
-        return units * price_per_50g
+        """Расчёт цены кофе (обёртка над coffee_price для обратной совместимости)."""
+        return coffee_price(weight, price_per_50g)
 
     @staticmethod
     def get_cart_item_data(
@@ -27,7 +25,7 @@ class CartService:
         Подготавливает данные для корзины.
         """
         if product.stock_unit == Product.STOCK_UNIT_GRAM:
-            price = CartService._calc_price(weight, product.price_per_50g)
+            price = coffee_price(weight, product.price_per_50g)
         else:
             price = product.base_price or Decimal('0.00')
 
@@ -58,7 +56,7 @@ class CartService:
                 raise ValueError(f'На складе только {product.stock} {product.stock_unit_label}')
             product.stock -= weight
             product.save(update_fields=['stock'])
-            price = CartService._calc_price(weight, product.price_per_50g)
+            price = coffee_price(weight, product.price_per_50g)
         else:
             if product.stock < 1:
                 raise ValueError('Товар закончился')
