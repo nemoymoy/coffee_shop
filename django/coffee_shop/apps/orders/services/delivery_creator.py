@@ -33,7 +33,7 @@ class DeliveryCreator:
     # ------------------------------------------------------------------
 
     def create(self, address, coords, delivery_cost,
-               existing_claim_id=None):
+               existing_claim_id=None, existing_offer_id=None):
         """Create a delivery order in Yandex Delivery.
 
         Args:
@@ -41,6 +41,7 @@ class DeliveryCreator:
             coords: [longitude, latitude] list.
             delivery_cost: Decimal delivery cost in RUB.
             existing_claim_id: Optional Express claim ID from price calc.
+            existing_offer_id: Optional Other Day offer ID from price calc.
 
         Returns:
             dict with 'success', 'claim_id'/'request_id', 'status', etc.
@@ -55,7 +56,8 @@ class DeliveryCreator:
         if self.order.delivery_api_type == 'express':
             return self._create_express(address, coords, existing_claim_id)
         else:
-            return self._create_other_day(address, delivery_cost)
+            return self._create_other_day(address, delivery_cost,
+                                          existing_offer_id=existing_offer_id)
 
     # ------------------------------------------------------------------
     # Express API
@@ -222,8 +224,14 @@ class DeliveryCreator:
     # Other Day API (PVZ / Postamat)
     # ------------------------------------------------------------------
 
-    def _create_other_day(self, address, delivery_cost):
+    def _create_other_day(self, address, delivery_cost, existing_offer_id=None):
         """Create an Other Day delivery order (PVZ or postamat).
+
+        Args:
+            address: Full delivery address string.
+            delivery_cost: Decimal delivery cost in RUB (from frontend estimate).
+            existing_offer_id: Optional offer_id from frontend price calc.
+                               If provided, uses it directly instead of creating new.
 
         Returns:
             {'success': True, 'request_id': '...', 'offer_id': '...',
@@ -250,6 +258,7 @@ class DeliveryCreator:
             email=self.order.email,
             delivery_cost=float(delivery_cost),
             payment_method='already_paid',
+            existing_offer_id=existing_offer_id if existing_offer_id else None,
         )
 
         if not result.get('success'):

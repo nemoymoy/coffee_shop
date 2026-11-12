@@ -725,7 +725,8 @@ class YandexDeliveryService:
                      destination_address, delivery_type='courier', pvz_id=None,
                      recipient_name='', recipient_phone='', email='',
                      delivery_interval_from=None, delivery_interval_to=None,
-                     delivery_cost=0, payment_method='already_paid') -> dict:
+                     delivery_cost=0, payment_method='already_paid',
+                     existing_offer_id=None) -> dict:
         """Create a delivery order via Other Day API.
 
         Full flow: offers/info → offers/create → offers/confirm → request/info
@@ -829,8 +830,25 @@ class YandexDeliveryService:
             method_used = None
             offer_id = None
 
-            # ── Step 2a: Offers exist → offers/create → offers/confirm ─
-            if valid_offers:
+            # ── Step 2a: Use existing offer_id from frontend price calc ──
+            if existing_offer_id:
+                logger.info('[OtherDay] Using existing offer_id: %s', existing_offer_id)
+                confirm_payload = {'offer_id': existing_offer_id}
+                confirm_url = f'{self.platform_base_url}/offers/confirm'
+                resp = self._post(confirm_url, confirm_payload)
+                confirmed = resp.json()
+                logger.info('[OtherDay] offers/confirm (existing): %s',
+                           json.dumps(confirmed, ensure_ascii=False)[:1000])
+                request_id = confirmed.get('request_id')
+                offer_id = existing_offer_id
+                method_used = 'existing_offer'
+                if not request_id:
+                    return {
+                        'success': False,
+                        'error': 'Нет request_id в ответе offers/confirm (existing offer)',
+                    }
+            # ── Step 2b: Offers exist → offers/create → offers/confirm ─
+            elif valid_offers:
                 logger.info('[OtherDay] Found %d intervals. Taking nearest.',
                            len(valid_offers))
 

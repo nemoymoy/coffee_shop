@@ -124,6 +124,8 @@ class CheckoutValidator:
             'delivery_cost': cleaned.get('delivery_cost')
                              or request.POST.get('delivery_cost', '0'),
             'express_claim_id': request.POST.get('express_claim_id', ''),
+            'yandex_offer_id': cleaned.get('yandex_offer_id', '')
+                               or request.POST.get('yandex_offer_id', ''),
             'delivery_date': cleaned.get('delivery_date', '')
                              or request.POST.get('delivery_date', ''),
             'yandex_request_id': cleaned.get('yandex_request_id', '')
@@ -335,6 +337,7 @@ class CheckoutExecutor:
                     coords=coords,
                     delivery_cost=delivery_price,
                     existing_claim_id=existing_claim_id or None,
+                    existing_offer_id=delivery_info.get('yandex_offer_id', ''),
                 )
 
                 if result.get('success'):
