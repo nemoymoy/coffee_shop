@@ -199,7 +199,7 @@ const YandexDeliveryWidget = (() => {
     async function loadPackagesFromAPI() {
         if (cartState.packagesLoaded) return;
         try {
-            const result = await apiGet('/checkout/packages/');
+            const result = await apiGet('/orders/checkout/packages/');
             if (result.success && result.packages?.length) {
                 cartState.packages = result.packages;
                 cartState.packagesLoaded = true;
@@ -1036,7 +1036,7 @@ const YandexDeliveryWidget = (() => {
             let data;
             if (type === 'postomat') {
                 // Для постоматов используем отдельный endpoint
-                data = await apiGet('/checkout/postamats/');
+                data = await apiGet('/orders/checkout/postamats/');
             } else {
                 // Для ПВЗ используем стандартный endpoint
                 data = await apiGet(`${CONFIG.PVZ_LOCATIONS_URL}?type=pvz`);
