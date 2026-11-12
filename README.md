@@ -162,12 +162,13 @@ coffee_shop/
 │   │   │   │   └── admin.py       # Админ: новости
 │   │   │   ├── orders/            # Заказы
 │   │   │   │   ├── models/        # Модели: Order, OrderItem, PromoCode, Package
-│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, Promo, YooKassa, Geocoder
+│   │   │   │   ├── services/      # Сервисы: Stock, Delivery, Payment, Promo, YooKassa,
+│   │   │   │   │                        Geocoder, DeliveryCreator, DeliveryPriceCalculator, Checkout
 │   │   │   │   ├── forms/         # Формы: CheckoutForm, OrderForm (с промокодом)
 │   │   │   │   ├── serializers.py # DRF сериализаторы: OrderDetail, OrderList, PromoCode
 │   │   │   │   ├── views/         # View: delivery_views
 │   │   │   │   ├── order_views.py # View: корзина, оформление, промокод, webhook
-│   │   │   │   ├── urls.py        # URL заказов
+│   │   │   │   ├── urls.py        # URL заказов (все маршруты под /orders/)
 │   │   │   │   └── admin.py       # Админ-заказы и промокоды
 │   │   │   │
 │   │   │   ├── users/             # Пользователи
@@ -647,21 +648,33 @@ YANDEX_OAUTH_CLIENT_SECRET=
 ### Корзина и заказы
 | Эндпоинт | Описание |
 |----------|----------|
-| `/cart/` | Корзина |
-| `/cart/add/` (POST) | Добавить товар в корзину (AJAX) |
-| `/cart/remove/` (POST) | Удалить товар из корзины (AJAX) |
-| `/cart/promo/check/` (POST) | AJAX-валидация промокода |
-| `/checkout/` | Оформление заказа |
-| `/checkout/calculate-delivery/` (POST) | Расчёт Яндекс Доставки (AJAX) |
-| `/checkout/pvz-locations/` (GET) | Получение точек самовывоза (PVZ) |
-| `/checkout/postamats/` (GET) | Список постоматов |
-| `/checkout/geocode-address/` (GET) | Геокодирование адреса (AJAX) |
-| `/checkout/packages/` (GET) | Список тары (весовые категории) |
-| `/success/<order_id>/` | Страница успешного заказа |
-| `/detail/<pk>/` | Детали заказа |
-| `/cart/webhook/` (POST) | ЮКасса webhook-обработчик |
-| `/delivery/auth/` | Яндекс Доставка OAuth |
-| `/delivery/callback/` | Яндекс Доставка OAuth callback |
+| `/orders/cart/` | Корзина |
+| `/orders/add/` (POST) | Добавить товар в корзину (AJAX) |
+| `/orders/remove/` (POST) | Удалить товар из корзины (AJAX) |
+| `/orders/update/` (POST) | Обновить количество товара (AJAX) |
+| `/orders/promo/check/` (POST) | AJAX-валидация промокода |
+| `/orders/checkout/` | Оформление заказа |
+| `/orders/checkout/create-express-delivery/` (POST) | Создание Express-доставки (AJAX) |
+| `/orders/checkout/cancel-express-delivery/` (POST) | Отмена Express-доставки (AJAX) |
+| `/orders/checkout/calculate-delivery/` (POST) | Рас��ёт Яндекс Доставки (AJAX) |
+| `/orders/checkout/offers-info/` (POST) | Получение интервалов доставки (AJAX) |
+| `/orders/checkout/pvz-locations/` (GET) | Получение точек самовывоза (PVZ) |
+| `/orders/checkout/postamats/` (GET) | Список постоматов |
+| `/orders/checkout/geocode-address/` (POST) | Геокодирование адреса (AJAX) |
+| `/orders/checkout/packages/` (GET) | Список тары (весовые категории) |
+| `/orders/checkout/yandex-webhook/` (POST) | Webhook от виджета Яндекс Доставки |
+| `/orders/success/<order_id>/` | Страница успешного заказа |
+| `/orders/detail/<pk>/` | Детали заказа |
+| `/orders/pay/<order_id>/` | Оплата заказа (ЮКасса) |
+| `/orders/webhook/` (POST) | ЮКасса webhook-обработчик |
+| `/orders/api/pay/` (POST) | API создания платежа ЮКасса |
+| `/orders/api/payment/status/<payment_id>/` (GET) | Проверка статуса платежа |
+| `/orders/api/refund/` (POST) | API возврата платежа |
+| `/orders/payment/result/` (GET) | Результат оплаты (callback ЮКассы) |
+| `/orders/refresh-status/<order_id>/` (POST) | Обновление статуса Яндекс Доставки |
+| `/orders/api/checkout/config/` (GET) | API ключи Яндекс для фронтенда |
+| `/orders/delivery/status/` (GET) | Статус интеграции (staff only) |
+| `/orders/api/checkout/config/` (GET) | API ключи Яндекс для фронтенда |
 
 ### Пользователи
 | Эндпоинт | Описание |
@@ -716,9 +729,9 @@ pytest tests/views/test_users.py --cov=coffee_shop.apps.users --cov-report=term-
 ```
 
 ### Покрытие тестами
-- **428 тестов**, все проходят ✅
+- **429 тестов**, все проходят ✅
 - **models**: Category, Product, Review, Order, OrderItem, PromoCode, PersonalDataConsent, DeliveryAddress, UserEmailVerification
-- **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса)
+- **services**: CartService, CoffeeService, Pricing, StockService, UserService, EmailVerificationService, YandexDeliveryService (Express + Other Day API), GeocoderService, PostamatsService, PaymentService (ЮКасса), **DeliveryCreator**, **DeliveryPriceCalculator**, **Checkout (CheckoutValidator, OrderFactory, CheckoutExecutor)**
 - **views**: catalog, checkout, delivery, postamats, email verification, users (login, register, profile, dashboard)
 - **forms**: CoffeeForm, CheckoutForm, OrderForm, ProductForm, UserUpdateForm, UserRegistrationForm
 - **api**: catalog API, checkout config, delivery API, packages list, serializers, payment gateway
@@ -939,9 +952,9 @@ CELERY_BEAT_SCHEDULE = {
 
 | Эндпоинт | Лимит | Период |
 |----------|-------|--------|
-| `/cart/add/` | 30 запросов | 60 секунд |
-| `/checkout/` | 10 запросов | 60 секунд |
-| `/cart/webhook/` | 5 запросов | 60 секунд |
+| `/orders/add/` | 30 запросов | 60 секунд |
+| `/orders/checkout/` | 10 запросов | 60 секунд |
+| `/orders/webhook/` | 5 запросов | 60 секунд |
 
 ### Best practices
 - Секреты только в `.env` / Docker secrets
@@ -1184,13 +1197,16 @@ YANDEX_DELIVERY_TEST_WAREHOUSE_ID=<ваш_warehouse_id>
 
 | Эндпоинт | Метод | Описание |
 |----------|-------|----------|
-| `/checkout/calculate-delivery/` | POST | Расчёт стоимости доставки |
-| `/checkout/postamats/` | GET | Список постоматов |
-| `/checkout/pvz-locations/` | GET | Список ПВЗ |
-| `/checkout/geocode-address/` | POST | Геокодирование адреса |
-| `/checkout/packages/` | GET | Список тары (весовые категории) |
-| `/delivery/webhook/` | POST | Webhook от виджета Яндекс Доставки |
-| `/delivery/status/` | GET | Статус интеграции (только staff) |
+| `/orders/checkout/calculate-delivery/` | POST | Расчёт стоимости доставки |
+| `/orders/checkout/create-express-delivery/` | POST | Создание Express-доставки |
+| `/orders/checkout/cancel-express-delivery/` | POST | Отмена Express-доставки |
+| `/orders/checkout/offers-info/` | POST | Получение интервалов доставки |
+| `/orders/checkout/postamats/` | GET | Список постоматов |
+| `/orders/checkout/pvz-locations/` | GET | Список ПВЗ |
+| `/orders/checkout/geocode-address/` | POST | Геокодирование адреса |
+| `/orders/checkout/packages/` | GET | Список тары (весовые категории) |
+| `/orders/checkout/yandex-webhook/` | POST | Webhook от виджета Яндекс Доставки |
+| `/orders/delivery/status/` | GET | Статус интеграции (только staff) |
 
 ---
 
