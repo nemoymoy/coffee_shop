@@ -444,7 +444,7 @@ class DeliveryPriceCalculator:
 
         if total_weight_grams > 0:
             package = Package.for_weight(total_weight_grams)
-            total_weight_kg = total_weight_grams / 1000.0
+            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
             return [{
                 'quantity': total_quantity,
                 'weight': round(total_weight_kg, 3),
@@ -477,7 +477,7 @@ class DeliveryPriceCalculator:
 
         if total_weight_grams > 0:
             package = Package.for_weight(total_weight_grams)
-            total_weight_kg = total_weight_grams / 1000.0
+            total_weight_kg = (total_weight_grams / 1000.0) + float(package.tare_weight)
             return [{
                 'quantity': total_quantity,
                 'weight': round(total_weight_kg, 3),
