@@ -29,16 +29,23 @@ var CoffeeShop = window.CoffeeShop || {};
                 try {
                     json = JSON.parse(text);
                 } catch (e) {
-                    if (!resp.ok) {
-                        return Promise.reject({
-                            error: 'Серверная ошибка',
-                            redirect: '/accounts/login/'
-                        });
-                    }
-                    return JSON.parse('{}');
+                    json = null;
+                }
+                // Handle auth errors before generic error handling
+                if (resp.status === 401 || resp.status === 403) {
+                    return Promise.reject(json || {
+                        error: 'Требуется авторизация',
+                        redirect: '/accounts/login/'
+                    });
                 }
                 if (!resp.ok) {
-                    return Promise.reject(json);
+                    return Promise.reject(json || {
+                        error: 'Серверная ошибка',
+                        redirect: null
+                    });
+                }
+                if (!json) {
+                    return JSON.parse('{}');
                 }
                 return json;
             });
