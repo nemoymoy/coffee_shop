@@ -74,12 +74,12 @@ const YandexDeliveryWidget = (() => {
 
     /* ==================== Config ==================== */
     const CONFIG = {
-        CREATE_EXPRESS_URL: '/checkout/create-express-delivery/',
-        CANCEL_EXPRESS_URL: '/checkout/cancel-express-delivery/',
-        CALCULATE_DELIVERY_URL: '/checkout/calculate-delivery/',
-        OFFERS_INFO_URL: '/checkout/offers-info/',
-        GEOCODE_URL: '/checkout/geocode-address/',
-        PVZ_LOCATIONS_URL: '/checkout/pvz-locations/',
+        CREATE_EXPRESS_URL: '/orders/checkout/create-express-delivery/',
+        CANCEL_EXPRESS_URL: '/orders/checkout/cancel-express-delivery/',
+        CALCULATE_DELIVERY_URL: '/orders/checkout/calculate-delivery/',
+        OFFERS_INFO_URL: '/orders/checkout/offers-info/',
+        GEOCODE_URL: '/orders/checkout/geocode-address/',
+        PVZ_LOCATIONS_URL: '/orders/checkout/pvz-locations/',
         DEBOUNCE_MS: 600,
         SHOP_LAT: window.YANDEX_SHOP_LAT ?? 53.216940239129094,
         SHOP_LON: window.YANDEX_SHOP_LON ?? 50.162688008923745,
