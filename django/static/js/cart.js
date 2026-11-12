@@ -5,9 +5,9 @@
  */
 var Cart = (function () {
 
-    var ADD_URL = '/cart/add/';
-    var REMOVE_URL = '/cart/remove/';
-    var UPDATE_URL = '/cart/update/';
+    var ADD_URL = '/orders/add/';
+    var REMOVE_URL = '/orders/remove/';
+    var UPDATE_URL = '/orders/update/';
 
     /* ==================== Инициализация ==================== */
 

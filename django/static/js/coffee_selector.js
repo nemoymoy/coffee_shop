@@ -158,7 +158,7 @@ var CoffeeSelector = (function () {
 
         /* ---- Отправка в корзину ---- */
         function sendToCart() {
-            var ADD_URL = '/cart/add/';
+            var ADD_URL = '/orders/add/';
             var data = {
                 'product_id': productId,
                 'weight': state.weight,
