@@ -212,11 +212,12 @@ class DeliveryPriceCalculator:
                 except (ValueError, IndexError, TypeError):
                     price = 0
 
-                logger.info('[OtherDay] Final price: %s', price)
+                logger.info('[OtherDay] Final price: %s, offer_id: %s', price, offer.get('offer_id'))
                 return {
                     'success': True,
                     'price': str(price),
                     'delivery_days': 1,
+                    'offer_id': offer.get('offer_id', ''),
                 }
 
             return {'success': False, 'error': 'Нет доступных офферов'}
@@ -575,19 +576,16 @@ class DeliveryPriceCalculator:
                 'dz': int(float(size.get('height', 0.06)) * 100),
             },
             'place_barcode': place_barcode,
+            'weight': round(weight, 3),
         }]
 
         product_weight_grams = int(weight * 1000)
-        try:
-            pkg = Package.for_weight(product_weight_grams)
-            tare_grams = int(float(pkg.tare_weight) * 1000)
-        except Package.DoesNotExist:
-            tare_grams = 0
-
+        # weight already includes tare_weight (added in _build_items_from_frontend)
+        # so weight_gross = product_weight_grams is already correct (product + tare)
         other_day_places = [{
             'barcode': place_barcode,
             'physical_dims': {
-                'weight_gross': product_weight_grams + tare_grams,
+                'weight_gross': product_weight_grams,
                 'dx': int(float(size.get('length', 0.12)) * 100),
                 'dy': int(float(size.get('width', 0.06)) * 100),
                 'dz': int(float(size.get('height', 0.06)) * 100),

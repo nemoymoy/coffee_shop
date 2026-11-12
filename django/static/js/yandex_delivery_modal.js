@@ -2433,6 +2433,9 @@ const YandexDeliveryWidget = (() => {
                 calc = await calculateDelivery(coords, address, state.selectedType, state.selectedPvzId);
                 if (calc.success && calc.price != null && parseFloat(calc.price) > 0) {
                     state.estimatedCost = parseFloat(calc.price);
+                    if (calc.offer_id) {
+                        state.selectedOfferId = calc.offer_id;
+                    }
                     YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
                     if (errorBlock) hide(errorBlock);
                     if (offersContainer) hide(offersContainer);

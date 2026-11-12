@@ -267,6 +267,8 @@ def calculate_delivery_view(request):
         }
         if api_type == 'express' and result.get('claim_id'):
             response_data['claim_id'] = result['claim_id']
+        if api_type == 'other_day' and result.get('offer_id'):
+            response_data['offer_id'] = result['offer_id']
         return JsonResponse(response_data)
     else:
         return JsonResponse({
