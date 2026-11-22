@@ -1,8 +1,8 @@
 """Celery tasks for Coffee Shop."""
+from decimal import Decimal
+
 from django.conf import settings
 from django.contrib.auth.models import User
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
@@ -10,164 +10,96 @@ from celery import shared_task
 from celery.schedules import crontab
 
 from coffee_shop.apps.orders.models import Order, PromoCode, OrderItem
+from coffee_shop.services.email_notification_service import (
+    EmailNotificationService,
+)
+
+
+STATUS_META = {
+    'new':         ('\U0001f4dd', 'Ваш заказ принят в обработку',  '#1565c0', '#e3f2fd'),
+    'in_progress': ('\u2615', 'Ваш заказ в обработке',         '#e65100', '#fff3e0'),
+    'ready':       ('\u2705', 'Ваш заказ готов к выдаче',      '#2e7d32', '#e8f5e9'),
+    'delivered':   ('\U0001f69a', 'Ваш заказ доставлен',           '#00695c', '#e0f2f1'),
+    'cancelled':   ('\u274c', 'Ваш заказ отменён',             '#c62828', '#ffebee'),
+    'refunded':    ('\U0001f4b0', 'Возврат средств оформлен',      '#607d8b', '#eceff1'),
+}
 
 
 @shared_task
 def send_order_confirmation_email(order_id):
-    """Отправка email подтверждения заказа."""
+    """Send order confirmation email to customer."""
     try:
         order = Order.objects.get(pk=order_id)
     except Order.DoesNotExist:
         return
 
-    subject = f'Подтверждение заказа #{order_id}'
-    from_email = settings.EMAIL_FROM or 'noreply@coffeeshop.local'
-    recipient_list = [order.email]
-
-    html_message = render_to_string(
-        'emails/order_confirmation.html', {
+    service = EmailNotificationService()
+    service.send(
+        subject=f'Подтверждение заказа #{order_id}',
+        template_name='emails/order_confirmation.html',
+        context={
             'order': order,
             'STORE_PHONE': settings.STORE_PHONE,
             'STORE_EMAIL': settings.STORE_EMAIL,
-        }
+        },
+        recipient_list=[order.email],
     )
-    plain_message = (
-        f'Заказ #{order_id} успешно оформлен. '
-        f'Сумма: {order.total_amount} ₽'
-    )
-
-    send_mail(
-        subject=subject,
-        message=plain_message,
-        from_email=from_email,
-        recipient_list=recipient_list,
-        html_message=html_message,
-    )
-    return f'Email отправлен на {order.email}'
 
 
 @shared_task
-def send_order_to_store_email(order_id, goods_total):
-    """Отправка уведомления о новом заказе на email магазина."""
+def send_order_to_store_email(order_id):
+    """Send new order notification to store email."""
     try:
-        order = Order.objects.get(pk=order_id)
+        order = Order.objects.prefetch_related('items').get(pk=order_id)
     except Order.DoesNotExist:
         return
 
-    subject = f'Новый заказ #{order.order_number}'
-    from_email = settings.EMAIL_FROM or 'noreply@coffeeshop.local'
-    recipient_list = [settings.STORE_EMAIL]
+    goods_total = sum(
+        (item.total_price for item in order.items.all()),
+        Decimal('0'),
+    )
 
-    html_message = render_to_string(
-        'emails/order_to_store.html', {
+    service = EmailNotificationService()
+    service.send(
+        subject=f'Новый заказ #{order.order_number}',
+        template_name='emails/order_to_store.html',
+        context={
             'order': order,
             'goods_total': goods_total,
             'STORE_PHONE': settings.STORE_PHONE,
             'STORE_EMAIL': settings.STORE_EMAIL,
-        }
+        },
+        recipient_list=[settings.STORE_EMAIL],
     )
-    plain_message = (
-        f'Новый заказ #{order.order_number}\n'
-        f'Сумма: {order.total_amount} ₽\n'
-        f'Клиент: {order.first_name} {order.last_name}\n'
-        f'Email: {order.email}\n'
-        f'Телефон: {order.phone}'
-    )
-
-    send_mail(
-        subject=subject,
-        message=plain_message,
-        from_email=from_email,
-        recipient_list=recipient_list,
-        html_message=html_message,
-    )
-    return f'Уведомление отправлено на {settings.STORE_EMAIL}'
 
 
 @shared_task
 def send_order_status_changed_email(order_id, new_status):
-    """Отправка уведомления об изменении статуса заказа."""
+    """Send order status change notification to customer."""
     try:
         order = Order.objects.get(pk=order_id)
     except Order.DoesNotExist:
         return
 
-    status_config = {
-        'new': {
-            'message': 'Ваш заказ принят в обработку',
-            'icon': '📝',
-            'color': '#1565c0',
-            'bg': '#e3f2fd',
-        },
-        'in_progress': {
-            'message': 'Ваш заказ в обработке',
-            'icon': '☕',
-            'color': '#e65100',
-            'bg': '#fff3e0',
-        },
-        'ready': {
-            'message': 'Ваш заказ готов к выдаче',
-            'icon': '✅',
-            'color': '#2e7d32',
-            'bg': '#e8f5e9',
-        },
-        'delivered': {
-            'message': 'Ваш заказ доставлен',
-            'icon': '🚚',
-            'color': '#00695c',
-            'bg': '#e0f2f1',
-        },
-        'cancelled': {
-            'message': 'Ваш заказ отменён',
-            'icon': '❌',
-            'color': '#c62828',
-            'bg': '#ffebee',
-        },
-        'refunded': {
-            'message': 'Возврат средств по заказу оформлен',
-            'icon': '💰',
-            'color': '#607d8b',
-            'bg': '#eceff1',
-        },
-    }
-
-    config = status_config.get(new_status, {
-        'message': 'Статус заказа обновлён',
-        'icon': '☕',
-        'color': '#616161',
-        'bg': '#f5f5f5',
-    })
-
-    subject = f'Статус заказа #{order_id} обновлён'
-    from_email = settings.EMAIL_FROM or 'noreply@coffeeshop.local'
-    recipient_list = [order.email]
-
-    context = {
-        'order': order,
-        'status_color': config['color'],
-        'status_message': config['message'],
-        'status_icon': config['icon'],
-        'status_bg': config['bg'],
-        'STORE_PHONE': settings.STORE_PHONE,
-        'STORE_EMAIL': settings.STORE_EMAIL,
-    }
-
-    html_message = render_to_string(
-        'emails/order_status_changed.html', context
-    )
-    plain_message = (
-        f'Заказ #{order_id}: {config["message"]}. '
-        f'Текущий статус: {order.get_status_display()}'
+    icon, message, color, bg = STATUS_META.get(
+        new_status, ('\u2615', 'Статус обновлён', '#616161', '#f5f5f5')
     )
 
-    send_mail(
-        subject=subject,
-        message=plain_message,
-        from_email=from_email,
-        recipient_list=recipient_list,
-        html_message=html_message,
+    service = EmailNotificationService()
+    service.send(
+        subject=f'Статус заказа #{order_id} обновлён',
+        template_name='emails/order_status_changed.html',
+        context={
+            'order': order,
+            'status_color': color,
+            'status_message': message,
+            'status_icon': icon,
+            'status_bg': bg,
+            'STORE_PHONE': settings.STORE_PHONE,
+            'STORE_EMAIL': settings.STORE_EMAIL,
+        },
+        recipient_list=[order.email],
     )
-    return f'Email статуса отправлен на {order.email}'
 
 
 # ------------------------------------------------------------------
@@ -463,7 +395,7 @@ def release_expired_reservations():
 
 @shared_task(bind=True, max_retries=3)
 def send_verification_email(self, user_id, token_uuid):
-    """Отправляет письмо с токеном подтверждения email."""
+    """Send email verification token to user."""
     try:
         user = User.objects.get(pk=user_id)
     except User.DoesNotExist:
@@ -483,29 +415,12 @@ def send_verification_email(self, user_id, token_uuid):
         f"{reverse('users:verify_email', args=[token_uuid])}"
     )
 
-    context = {
-        'user': user,
-        'verification_url': verification_url,
-    }
-
-    subject = 'Подтверждение email — Coffee Shop'
-    html_message = render_to_string(
-        'users/email_verification.html', context
-    )
-    plain_message = (
-        f'Здравствуйте, {user.get_full_name() or user.username}!\n'
-        f'Перейдите по ссылке для подтверждения email:\n'
-        f'{verification_url}\n'
-        f'Ссылка действительна 24 часа.'
-    )
-
-    send_mail(
-        subject=subject,
-        message=plain_message,
-        from_email=settings.EMAIL_FROM,
+    service = EmailNotificationService()
+    service.send(
+        subject='Подтверждение email — Coffee Shop',
+        template_name='users/email_verification.html',
+        context={'user': user, 'verification_url': verification_url},
         recipient_list=[user.email],
-        html_message=html_message,
-        fail_silently=False,
     )
 
     return f'Email sent to {user.email}'

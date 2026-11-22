@@ -300,12 +300,8 @@ class CheckoutExecutor:
             del request.session['cart']
 
         # ── Emails ───────────────────────────────────────────────────
-        goods_total = sum(
-            (item.total_price for item in order.items.all()),
-            Decimal('0'),
-        )
         send_order_confirmation_email.delay(order.pk)
-        send_order_to_store_email.delay(order.pk, goods_total)
+        send_order_to_store_email.delay(order.pk)
 
         return order, []
 
