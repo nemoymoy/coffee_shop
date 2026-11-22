@@ -304,10 +304,10 @@ class YandexDeliveryService:
             }
 
         try:
-            # claim_id must be in query parameter, not in body
+            # claim_id in query parameter + body (Yandex Cargo API v2 requirement)
             url = f"{self.EXPRESS_CLAIMS_ACCEPT_URL.format(base=self.express_base_url)}?claim_id={claim_id}"
             # Accept requires 'version' field
-            payload = {'version': version}
+            payload = {'claim_id': claim_id, 'version': version}
 
             response = self.session.post(url, json=payload, timeout=15)
 
@@ -399,9 +399,9 @@ class YandexDeliveryService:
             return {'success': False, 'error': 'Яндекс Доставка не настроена'}
 
         try:
-            # claim_id must be in query parameter, not in body
+            # claim_id in query parameter + body (Yandex Cargo API v2 requirement)
             url = f"{self.EXPRESS_CLAIMS_INFO_URL.format(base=self.express_base_url)}?claim_id={claim_id}"
-            payload = {}
+            payload = {'claim_id': claim_id}
 
             response = self._post(url, payload)
             data = response.json()
@@ -729,14 +729,16 @@ class YandexDeliveryService:
                      existing_offer_id=None) -> dict:
         """Create a delivery order via Other Day API.
 
-        Full flow: offers/info → offers/create → offers/confirm → request/info
-        or: offers/info → request/create (if no offers available)
-
         For PVZ/postamat types:
             1. offers/info — check available intervals
-            2a. If offers exist → offers/create → offers/confirm
-            2b. If no offers → request/create (nearest available time)
-            3. request/info — get price, date, status
+            2. offers/create — create a fresh offer with correct OrderItem prices
+            3. offers/confirm — confirm the offer
+            4. request/info — get price, date, status
+
+        Note: existing_offer_id is accepted for API compatibility but ignored.
+        Estimate offers contain hardcoded items (unit_price: 150000). Reusing
+        them would send incorrect item data to Yandex. A fresh offer is always
+        created via offers/create with correct OrderItem prices.
 
         Args:
             items: Built items payload from build_items_payload
@@ -752,6 +754,7 @@ class YandexDeliveryService:
             delivery_interval_to: datetime for delivery window end
             delivery_cost: Delivery cost in RUB
             payment_method: 'already_paid' | 'recipient'
+            existing_offer_id: Ignored — fresh offer always created
 
         Returns:
             {'success': True, 'request_id': '...', 'tracking_number': '...',
@@ -774,12 +777,20 @@ class YandexDeliveryService:
         try:
             # Build common parts for offers/info
             source_pvz_id = pvz_id or self.pickup_station_id
+            # For offers/info and request/create use platform_station_id
             common_source = {
+                'platform_station_id': self.pickup_station_id,
+            }
+            common_destination = {
+                'platform_station_id': source_pvz_id,
+            }
+            # For offers/create use platform_station format
+            create_source = {
                 'platform_station': {
                     'platform_id': self.pickup_station_id,
                 },
             }
-            common_destination = {
+            create_destination = {
                 'type': 'platform_station',
                 'platform_station': {
                     'platform_id': source_pvz_id,
@@ -820,64 +831,57 @@ class YandexDeliveryService:
             logger.info('[OtherDay] offers/info response: %s',
                        json.dumps(info_data, ensure_ascii=False)[:3000])
 
-            # Filter valid offers (must have offer_id and delivery_interval.from)
+            # Filter valid offers (must have from/to interval)
+            # API returns: {"offers": [{"from": "...", "to": "..."}, ...]}
             valid_offers = [
                 o for o in info_data.get('offers', [])
-                if o.get('offer_id') and o.get('delivery_interval', {}).get('from')
+                if o.get('from') or o.get('to') or o.get('delivery_interval', {}).get('from')
             ]
 
             request_id = None
             method_used = None
             offer_id = None
 
-            # ── Step 2a: Use existing offer_id from frontend price calc ──
-            if existing_offer_id:
-                logger.info('[OtherDay] Using existing offer_id: %s', existing_offer_id)
-                confirm_payload = {'offer_id': existing_offer_id}
-                confirm_url = f'{self.platform_base_url}/offers/confirm'
-                resp = self._post(confirm_url, confirm_payload)
-                confirmed = resp.json()
-                logger.info('[OtherDay] offers/confirm (existing): %s',
-                           json.dumps(confirmed, ensure_ascii=False)[:1000])
-                request_id = confirmed.get('request_id')
-                offer_id = existing_offer_id
-                method_used = 'existing_offer'
-                if not request_id:
-                    return {
-                        'success': False,
-                        'error': 'Нет request_id в ответе offers/confirm (existing offer)',
-                    }
-            # ── Step 2b: Offers exist → offers/create → offers/confirm ─
-            elif valid_offers:
+            # ── Step 2: Create new offer (never reuse estimate offer) ──
+            # Estimate offers are created with hardcoded items (unit_price: 150000).
+            # Reusing them would send wrong item data to Yandex. Always create
+            # a fresh offer via offers/create with correct OrderItem prices.
+            if valid_offers:
+                # Create new offer
+                logger.info('[OtherDay] No existing offer. Creating new offer.')
+                method_used = 'offers'
                 logger.info('[OtherDay] Found %d intervals. Taking nearest.',
                            len(valid_offers))
 
-                valid_offers.sort(
-                    key=lambda o: o['delivery_interval']['from']
-                )
-                nearest = valid_offers[0]
+                # Sort by nearest delivery time
+                # API returns: {"from": "...", "to": "..."} at top level
+                def _get_interval_from(offer):
+                    return (offer.get('from', '')
+                            or offer.get('delivery_interval', {}).get('from', ''))
 
-                delivery_from = nearest['delivery_interval']['from']
-                delivery_to = nearest['delivery_interval']['to']
-                pickup_from = nearest.get('pickup_interval', {}).get(
-                    'min', delivery_from
-                )
-                pickup_to = nearest.get('pickup_interval', {}).get(
-                    'max', delivery_from
-                )
+                valid_offers.sort(key=lambda o: _get_interval_from(o))
+                nearest = valid_offers[0]
+                interval = nearest.get('delivery_interval', {})
+                delivery_from = interval.get('from', nearest.get('from', ''))
+                delivery_to = interval.get('to', nearest.get('to', ''))
+
+                # For self_pickup (PVZ/postamat):
+                # - source: do NOT send interval_utc — API auto-detects pickup window
+                #   from the source station's schedule (offers/info only returns
+                #   delivery intervals, not pickup intervals, so we can't set source
+                #   interval correctly here)
+                # - destination: use delivery_interval from offers/info
+                source_part = dict(create_source)
+                dest_part = dict(create_destination)
+                if delivery_from and delivery_to:
+                    dest_part['interval_utc'] = {'from': delivery_from, 'to': delivery_to}
 
                 create_body = {
                     'info': {
                         'operator_request_id': str(client_order_id),
                     },
-                    'source': {
-                        **common_source,
-                        'interval_utc': {'from': pickup_from, 'to': pickup_to},
-                    },
-                    'destination': {
-                        **common_destination,
-                        'interval_utc': {'from': delivery_from, 'to': delivery_to},
-                    },
+                    'source': source_part,
+                    'destination': dest_part,
                     'items': api_items,
                     'places': api_places,
                     'recipient_info': recipient_info,
@@ -888,6 +892,7 @@ class YandexDeliveryService:
                 }
 
                 logger.info('[OtherDay] === create_order: offers/create ===')
+                logger.info('[OtherDay] create_body: %s', json.dumps(create_body, ensure_ascii=False))
                 create_url = f'{self.platform_base_url}/offers/create'
                 resp = self._post(create_url, create_body)
                 created = resp.json()
@@ -1283,6 +1288,13 @@ class YandexDeliveryService:
         except Package.DoesNotExist:
             size = {'dx': 12, 'dy': 6, 'dz': 6}  # cm
 
+        # Log weight details for debugging
+        logger.info('[OtherDay] === Weight debugging ===')
+        logger.info('[OtherDay] total_weight_grams (items only): %s', total_weight_grams)
+        logger.info('[OtherDay] package.tare_weight (kg): %s', package.tare_weight)
+        logger.info('[OtherDay] tare_weight in grams: %s', int(float(package.tare_weight) * 1000))
+        logger.info('[OtherDay] weight_gross (items+tare): %s', total_weight_grams + int(float(package.tare_weight) * 1000))
+
         product_name = product_names[0] if product_names else 'Кофе'
         inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
 
@@ -1291,11 +1303,18 @@ class YandexDeliveryService:
         for item in order_items:
             if item.unit_price:
                 try:
-                    total_price_kopecks += int(float(item.unit_price) * 100)
-                except (ValueError, TypeError):
+                    price_kopecks = int(float(item.unit_price) * 100)
+                    total_price_kopecks += price_kopecks
+                    logger.info('[OtherDay] OrderItem price: %s -> %s kopecks', item.unit_price, price_kopecks)
+                except (ValueError, TypeError) as e:
+                    logger.warning('[OtherDay] Failed to parse unit_price %s: %s', item.unit_price, e)
                     total_price_kopecks += 150000  # fallback 1500 RUB
+            else:
+                logger.warning('[OtherDay] OrderItem has no unit_price: %s', item)
 
         unit_price_kopecks = total_price_kopecks // total_quantity if total_quantity > 0 else 150000
+        logger.info('[OtherDay] total_price_kopecks: %s, total_quantity: %s', total_price_kopecks, total_quantity)
+        logger.info('[OtherDay] unit_price_kopecks (per item): %s = %.2f RUB', unit_price_kopecks, unit_price_kopecks / 100)
 
         # Common barcode — MUST match between items.place_barcode and places.barcode
         first_item = order_items[0] if hasattr(order_items, '__getitem__') else order_items.first()
@@ -1392,7 +1411,7 @@ class YandexDeliveryService:
     # Pickup Points API
     # ----------------------------------------------------------------
 
-    @retry_with_backoff(max_retries=3, base_delay=3)
+    @retry_with_backoff(max_retries=3, base_delay=5)
     def get_pickup_points(self, operator_ids=None, point_type='pickup_point',
                           center_lat=None, center_lon=None, radius_km=50,
                           max_results=500) -> dict:
@@ -1470,7 +1489,7 @@ class YandexDeliveryService:
             logger.error('get_pickup_points unexpected error: %s', e)
             return {'success': False, 'error': 'Внутренняя ошибка'}
 
-    @retry_with_backoff(max_retries=3, base_delay=3)
+    @retry_with_backoff(max_retries=3, base_delay=5)
     def get_postamats(self, operator_ids=None, center_lat=None, center_lon=None,
                       radius_km=50, max_results=500) -> dict:
         """Get postamat (terminal) list from Yandex Delivery API.

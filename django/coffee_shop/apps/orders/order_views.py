@@ -766,6 +766,7 @@ def _create_delivery_for_paid_order(order):
         order.delivery_method != Order.DeliveryMethod.DELIVERY
         or (
             not order.express_claim_id
+            and not order.yandex_offer_id
             and order.yandex_order_id
         )
     ):
@@ -774,8 +775,11 @@ def _create_delivery_for_paid_order(order):
     if order.express_claim_id:
         # Express API — accept existing claim
         DeliveryCreator.accept_express_claim_for_paid(order)
+    elif order.delivery_api_type == 'other_day' and order.yandex_offer_id:
+        # Other Day API — create fresh order (estimate offer has hardcoded items)
+        DeliveryCreator.create_other_day_for_paid(order)
     elif not order.yandex_order_id:
-        # Other Day API — create new order
+        # Other Day API — create new order (fallback)
         DeliveryCreator.create_other_day_for_paid(order)
 
 

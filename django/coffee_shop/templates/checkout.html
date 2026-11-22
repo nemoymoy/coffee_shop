@@ -22,7 +22,7 @@
                     {% if item.coffee_weight_grams %}
                     <small>{{ item.coffee_weight_grams }} г</small>
                     {% elif item.product_weight_grams %}
-                    <small>{{ item.quantity|default:1 }} шт</small>
+                    <small>{{ item.product_weight_grams }} г</small>
                     {% endif %}
                 </div>
                 <span>{{ item.price|floatformat:2 }} ₽</span>
@@ -179,7 +179,7 @@
                         {% if item.coffee_weight_grams %}
                         <br><small class="text-muted">{{ item.coffee_weight_grams }} г</small>
                         {% elif item.product_weight_grams %}
-                        <br><small class="text-muted">{{ item.quantity|default:1 }} шт</small>
+                        <br><small class="text-muted">{{ item.product_weight_grams }} г</small>
                         {% endif %}
                     </div>
                     <span>{{ item.price|floatformat:2 }} ₽</span>

@@ -428,6 +428,47 @@ const YandexDeliveryWidget = (() => {
         }
     }
 
+    async function getDeliveryPriceEstimate(coords, address, deliveryType, pvzId) {
+        // offers/info не возвращает цену — используем calculateDelivery (offers/create)
+        // Цена будет использована при оформлении заказа — один вызов offers/create
+        try {
+            if (cartState.items.length === 0) { loadCartFromPage(); }
+            if (!cartState.packagesLoaded) { await loadPackagesFromAPI(); }
+
+            const recipient = {
+                first_name: $('#id_first_name')?.value || '',
+                last_name: $('#id_last_name')?.value || '',
+                phone: $('#id_phone')?.value || '',
+                email: $('#id_email')?.value || '',
+            };
+
+            const deliveryTypeMap = { courier: 'courier', pvz: 'pickup', postomat: 'postamat' };
+            const backendDeliveryType = deliveryTypeMap[deliveryType] || deliveryType;
+
+            const payload = {
+                destination_coords: coords,
+                destination_address: address,
+                pvz_id: pvzId || null,
+                delivery_type: backendDeliveryType,
+                cart_items: cartState.items.length > 0 ? cartState.items : [],
+                recipient: recipient,
+            };
+
+            const data = await apiPost(CONFIG.CALCULATE_DELIVERY_URL, payload);
+            if (data.success && data.price != null) {
+                return {
+                    success: true,
+                    price: parseFloat(data.price),
+                    offer_id: data.offer_id || '',
+                };
+            }
+            return { success: false, error: data.error || 'Не удалось получить цену' };
+        } catch (err) {
+            console.error('[YandexDelivery] Price estimate error:', err);
+            return { success: false, error: 'Сетевая ошибка' };
+        }
+    }
+
     async function calculateDelivery(coords, address, deliveryType, pvzId) {
         try {
             // Load cart items from DOM if not already loaded
@@ -1548,14 +1589,28 @@ const YandexDeliveryWidget = (() => {
         state.selectedCoords = coords;
         state.selectedAddress = addr;
 
-        YandexDeliveryUtils.showLoading(costEl);
-        const calc = await calculateDelivery(coords.join(','), addr, state.selectedType, state.selectedPvzId);
+        // Для ПВЗ/постомат — расчёт цены через offers/create
+        const calcResult = await getDeliveryPriceEstimate(
+            state.selectedCoords.join(','),
+            state.selectedAddress,
+            state.selectedType,
+            state.selectedPvzId
+        );
 
-        if (calc.success && calc.price != null) {
-            state.estimatedCost = calc.price;
-            renderCalcResult(costEl, etaEl, etaLabelEl, courierPriceBlock, confirmBtn, calc);
+        if (calcResult.success && calcResult.price != null) {
+            state.estimatedCost = calcResult.price;
+            // Сохраняем offer_id для использования при оформлении заказа
+            if (calcResult.offer_id) {
+                state.selectedOfferId = calcResult.offer_id;
+                // Сохраняем offer_id в скрытое поле формы
+                const offerIdField = $('#id_yandex_offer_id');
+                if (offerIdField) {
+                    offerIdField.value = calcResult.offer_id;
+                }
+            }
+            renderCalcResult(costEl, etaEl, etaLabelEl, courierPriceBlock, confirmBtn, calcResult);
         } else {
-            showDeliveryError(costEl, courierPriceBlock, calc.error);
+            showDeliveryError(costEl, courierPriceBlock, calcResult.error);
         }
     }
 
@@ -1666,7 +1721,7 @@ const YandexDeliveryWidget = (() => {
         YandexDeliveryUtils.setFieldValue('id_yandex_station_id', state.selectedPvzId);
         YandexDeliveryUtils.setFieldValue('id_yandex_station_name', state.selectedPvzName || state.selectedAddress);
         YandexDeliveryUtils.setFieldValue('id_yandex_delivery_cost', state.estimatedCost);
-        // Сохраняем selected offer_id для Other Day API
+        // Сохраняем offer_id для offers/confirm при оформлении заказа
         if (state.selectedOfferId) {
             YandexDeliveryUtils.setFieldValue('id_yandex_offer_id', state.selectedOfferId);
         }
@@ -2282,16 +2337,20 @@ const YandexDeliveryWidget = (() => {
         offers.forEach((offer, index) => {
             console.log(`[YandexDelivery] Offer ${index}:`, offer);
             const isSelected = index === 0 ? ' selected border-primary' : '';
+            // Поддержка двух форматов: старый (formatted_interval/formatted_date) и новый (delivery_date/delivery_time)
+            const displayDate = offer.formatted_date || offer.delivery_date || '';
+            const displayTime = offer.formatted_interval || offer.delivery_time || '';
+            const displayPrice = offer.formatted_price || YandexDeliveryUtils.formatPrice(offer.price || 0);
+            const dateAndTime = [displayDate, displayTime].filter(Boolean).join(' ');
             html += `
                 <div class="list-group-item list-group-item-action${isSelected} delivery-offer-item" 
                      data-offer-index="${index}" data-offer-id="${offer.offer_id || ''}">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
-                            <strong>${offer.formatted_interval || '\u2014'}</strong>
-                            ${offer.formatted_date ? `<br><small class="text-muted">${offer.formatted_date}</small>` : ''}
+                            <strong>${dateAndTime || '\u2014'}</strong>
                         </div>
                         <div class="text-end">
-                            <div class="fw-bold text-success">${offer.formatted_price || '\u2014'}</div>
+                            <div class="fw-bold text-success">${displayPrice}</div>
                         </div>
                     </div>
                 </div>
@@ -2313,11 +2372,15 @@ const YandexDeliveryWidget = (() => {
                 item.classList.add('selected', 'border-primary');
                 const idx = parseInt(item.dataset.offerIndex);
                 const offer = offers[idx];
-                state.estimatedCost = parseFloat(offer.price);
-                state.selectedOfferId = offer.offer_id || '';
+                state.estimatedCost = parseFloat(offer.price) || 0;
+                // Больше не сохраняем offer_id — бэкенд создаст новый при оформлении
                 const costEl = $('#widgetCost');
                 if (costEl) {
-                    YandexDeliveryUtils.setTextContent(costEl, offer.formatted_price || `${offer.price} \u20bd`);
+                    const displayPrice = offer.formatted_price || YandexDeliveryUtils.formatPrice(offer.price || 0);
+                    const displayDate = offer.formatted_date || offer.delivery_date || '';
+                    const displayTime = offer.formatted_interval || offer.delivery_time || '';
+                    const info = [displayPrice + ' ₽', displayDate, displayTime].filter(Boolean).join(' • ');
+                    YandexDeliveryUtils.setTextContent(costEl, info);
                 }
                 updateConfirmButton();
             });
@@ -2385,16 +2448,15 @@ const YandexDeliveryWidget = (() => {
                 return;
             }
 
-            if (offersData.success && offersData.offers?.length) {
-                // Показываем интервалы
-                renderDeliveryOffers(offersData.offers);
+            if (offersData.success && offersData.formatted_offers?.length) {
+                // Показываем интервалы из formatted_offers (бэкенд уже отформатировал)
+                renderDeliveryOffers(offersData.formatted_offers);
                 hide($('#deliveryErrorBlock'));
 
-                // Используем первый оффер для стоимости
-                state.estimatedCost = parseFloat(offersData.offers[0].price);
-                state.selectedOfferId = offersData.offers[0].offer_id || '';
+                // offers/info не возвращает цену — получаем через offers/create
+                state.estimatedCost = 0;
 
-                YandexDeliveryUtils.setTextContent(costEl, offersData.offers[0].formatted_price || `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽`);
+                YandexDeliveryUtils.setTextContent(costEl, `${offersData.formatted_offers[0].delivery_date || 'ближайшее время'}`);
 
                 // Показываем информацию о выбранном ПВЗ/постомате
                 const pvzInfo = $('#selectedPvzInfo');
@@ -2412,6 +2474,33 @@ const YandexDeliveryWidget = (() => {
 
                 // Затемняем карту
                 setMapOverlay(true);
+
+                // Получаем цену через offers/create (один вызов при расчете + оформлении)
+                console.log('[YandexDelivery] Getting price estimate via offers/create...');
+                const priceEstimate = await getDeliveryPriceEstimate(coords, address, state.selectedType, state.selectedPvzId);
+                console.log('[YandexDelivery] Price estimate result:', priceEstimate);
+                if (priceEstimate.success && priceEstimate.price > 0) {
+                    state.estimatedCost = priceEstimate.price;
+                    state.selectedOfferId = priceEstimate.offer_id || '';
+                    // Сохраняем offer_id в скрытое поле формы
+                    if (priceEstimate.offer_id) {
+                        const offerIdField = $('#id_yandex_offer_id');
+                        if (offerIdField) {
+                            offerIdField.value = priceEstimate.offer_id;
+                        }
+                    }
+                    console.log('[YandexDelivery] Set state.estimatedCost =', state.estimatedCost);
+                    const primary = offersData.formatted_offers[0];
+                    const deliveryInfo = primary.delivery_time
+                        ? `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽ • ${primary.delivery_date} ${primary.delivery_time}`
+                        : `${YandexDeliveryUtils.formatPrice(state.estimatedCost)} ₽ • ${primary.delivery_date || 'ближайшее время'}`;
+                    YandexDeliveryUtils.setTextContent(costEl, deliveryInfo);
+                    // Активируем кнопку подтверждения
+                    console.log('[YandexDelivery] Calling updateConfirmButton after price received');
+                    updateConfirmButton();
+                } else {
+                    console.warn('[YandexDelivery] Failed to get price estimate:', priceEstimate);
+                }
             } else {
                 // Показываем ошибку если offers/info вернул ошибку
                 const errorBlock = $('#deliveryErrorBlock');
@@ -2435,6 +2524,11 @@ const YandexDeliveryWidget = (() => {
                     state.estimatedCost = parseFloat(calc.price);
                     if (calc.offer_id) {
                         state.selectedOfferId = calc.offer_id;
+                        // Сохраняем offer_id в скрытое поле формы
+                        const offerIdField = $('#id_yandex_offer_id');
+                        if (offerIdField) {
+                            offerIdField.value = calc.offer_id;
+                        }
                     }
                     YandexDeliveryUtils.setTextContent(costEl, `${YandexDeliveryUtils.formatPrice(calc.price)} ₽`);
                     if (errorBlock) hide(errorBlock);

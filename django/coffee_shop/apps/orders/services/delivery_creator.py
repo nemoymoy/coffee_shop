@@ -33,7 +33,7 @@ class DeliveryCreator:
     # ------------------------------------------------------------------
 
     def create(self, address, coords, delivery_cost,
-               existing_claim_id=None, existing_offer_id=None):
+               existing_claim_id=None):
         """Create a delivery order in Yandex Delivery.
 
         Args:
@@ -41,7 +41,6 @@ class DeliveryCreator:
             coords: [longitude, latitude] list.
             delivery_cost: Decimal delivery cost in RUB.
             existing_claim_id: Optional Express claim ID from price calc.
-            existing_offer_id: Optional Other Day offer ID from price calc.
 
         Returns:
             dict with 'success', 'claim_id'/'request_id', 'status', etc.
@@ -56,8 +55,7 @@ class DeliveryCreator:
         if self.order.delivery_api_type == 'express':
             return self._create_express(address, coords, existing_claim_id)
         else:
-            return self._create_other_day(address, delivery_cost,
-                                          existing_offer_id=existing_offer_id)
+            return self._create_other_day(address, delivery_cost)
 
     # ------------------------------------------------------------------
     # Express API
@@ -224,14 +222,15 @@ class DeliveryCreator:
     # Other Day API (PVZ / Postamat)
     # ------------------------------------------------------------------
 
-    def _create_other_day(self, address, delivery_cost, existing_offer_id=None):
+    def _create_other_day(self, address, delivery_cost):
         """Create an Other Day delivery order (PVZ or postamat).
+
+        Always creates a fresh offer via offers/info → offers/create →
+        offers/confirm with correct OrderItem prices.
 
         Args:
             address: Full delivery address string.
             delivery_cost: Decimal delivery cost in RUB (from frontend estimate).
-            existing_offer_id: Optional offer_id from frontend price calc.
-                               If provided, uses it directly instead of creating new.
 
         Returns:
             {'success': True, 'request_id': '...', 'offer_id': '...',
@@ -239,6 +238,16 @@ class DeliveryCreator:
              'delivery_date': '...', 'delivery_time': '...',
              'price': '...'}
         """
+        # Log order details for debugging
+        logger.info('[DeliveryCreator/OtherDay] === Order details ===')
+        logger.info('[DeliveryCreator/OtherDay] order.pk: %s', self.order.pk)
+        logger.info('[DeliveryCreator/OtherDay] order.delivery_cost: %s', self.order.delivery_cost)
+        logger.info('[DeliveryCreator/OtherDay] order.delivery_type: %s', self.order.delivery_type)
+        logger.info('[DeliveryCreator/OtherDay] order.pvz_id: %s', self.order.pvz_id)
+        for oi in self.order.items.all():
+            logger.info('[DeliveryCreator/OtherDay] OrderItem: product=%s, weight_grams=%s, unit_price=%s',
+                        oi.product.name if oi.product else 'N/A', oi.weight_grams, oi.unit_price)
+
         other_day_items, other_day_places = (
             self.service._build_items_payload_for_other_day(
                 self.order.items.all(), pvz_id=self.order.pvz_id
@@ -258,7 +267,9 @@ class DeliveryCreator:
             email=self.order.email,
             delivery_cost=float(delivery_cost),
             payment_method='already_paid',
-            existing_offer_id=existing_offer_id if existing_offer_id else None,
+            # Don't pass existing_offer_id — estimate offers have hardcoded
+            # items (unit_price: 150000). A fresh offer is created via
+            # offers/create with correct OrderItem prices.
         )
 
         if not result.get('success'):
@@ -405,6 +416,9 @@ class DeliveryCreator:
         """Create an Other Day delivery for a paid order.
 
         Called from payment_webhook and payment_result after payment confirmation.
+
+        Args:
+            order: Order instance.
         """
         service = YandexDeliveryService()
         if not service.is_configured():
@@ -429,6 +443,9 @@ class DeliveryCreator:
             email=order.email,
             delivery_cost=float(order.delivery_cost),
             payment_method='already_paid',
+            # Don't pass existing_offer_id — estimate offers have hardcoded
+            # items (unit_price: 150000). A fresh offer is created via
+            # offers/create with correct OrderItem prices.
         )
 
         if not result.get('success'):

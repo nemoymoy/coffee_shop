@@ -244,17 +244,19 @@ def calculate_delivery_view(request):
             items_payload, destination_coords, data.get('destination_address', ''),
         )
     else:
-        recipient = data.get('recipient', {})
-        result = calculator.calculate_other_day(
+        # For PVZ/postamat: call offers/create directly to get price
+        # (offers/info doesn't return pricing)
+        result = calculator.create_price_estimate(
             items_payload, destination_coords,
             data.get('destination_address', ''),
             delivery_type,
             pvz_id=data.get('pvz_id', ''),
             recipient_name=(
-                recipient.get('first_name', '') + ' ' + recipient.get('last_name', '')
+                data.get('recipient', {}).get('first_name', '') + ' '
+                + data.get('recipient', {}).get('last_name', '')
             ).strip(),
-            recipient_phone=recipient.get('phone', ''),
-            email=recipient.get('email', ''),
+            recipient_phone=data.get('recipient', {}).get('phone', ''),
+            email=data.get('recipient', {}).get('email', ''),
         )
 
     if result.get('success'):
@@ -402,6 +404,7 @@ def pvz_locations_view(request):
     from django.core.cache import cache
     cached = cache.get(cache_key)
     if cached:
+        logger.info('pvz_locations: returning cached result for type=%s', delivery_type)
         points = cached.get('points', [])
         if delivery_type == 'pvz':
             points = [p for p in points if p.get('type') == 'pickup_point']
@@ -429,7 +432,7 @@ def pvz_locations_view(request):
         error = result.get('error', '')
         if '429' in error or 'rate' in error.lower():
             if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 5
+                wait_time = (attempt + 1) * 10
                 logger.warning(
                     'pvz_locations: rate limited, retrying in %ds (attempt %d/%d)',
                     wait_time, attempt + 1, max_retries,
