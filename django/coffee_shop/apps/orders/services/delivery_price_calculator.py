@@ -136,10 +136,141 @@ class DeliveryPriceCalculator:
             )
             return {'success': False, 'error': 'Не удалось получить цену доставки'}
 
+    def create_price_estimate(self, items_payload, destination_coords,
+                              destination_address, delivery_type, pvz_id='',
+                              recipient_name='', recipient_phone='', email=''):
+        """Create price estimate via offers/create for PVZ/postamat.
+
+        offers/info doesn't return pricing, so we call offers/create
+        just to get the price (offer will be created but not confirmed).
+        The actual order creation happens during checkout.
+
+        Returns:
+            {'success': True, 'price': '...', 'offer_id': '...', 'delivery_days': 1}
+        """
+        if not self.service.is_configured():
+            logger.warning('[DeliveryPriceCalc] OtherDay: Yandex Delivery not configured')
+            return {'success': False, 'error': 'Yandex Delivery not configured'}
+
+        if not pvz_id and delivery_type in ('pickup', 'postamat'):
+            pvz_id = self.service.pvz_id
+
+        other_day_items, other_day_places = self._convert_to_other_day_format(
+            items_payload, pvz_id
+        )
+
+        recipient_info = self._build_recipient_info(recipient_name, recipient_phone, email)
+
+        # offers/create requires platform_station format (not platform_station_id)
+        if delivery_type in ('pickup', 'postamat'):
+            source_point = {
+                'platform_station': {
+                    'platform_id': self.service.pickup_station_id,
+                },
+            }
+            destination_point = {
+                'type': 'platform_station',
+                'platform_station': {
+                    'platform_id': pvz_id or self.service.pickup_station_id,
+                },
+            }
+            last_mile_policy = 'self_pickup'
+        else:
+            source_point = {
+                'platform_station': {
+                    'platform_id': self.service.test_warehouse_id or self.service.pvz_id,
+                },
+            }
+            destination_point = {
+                'type': 'custom_location',
+                'custom_location': {
+                    'latitude': destination_coords[1] if len(destination_coords) > 1 else 0,
+                    'longitude': destination_coords[0] if len(destination_coords) > 0 else 0,
+                    'details': {'full_address': destination_address},
+                },
+            }
+            last_mile_policy = 'time_interval'
+
+        payload = {
+            'info': {
+                'operator_request_id': 'estimate-' + str(timezone.now().timestamp()),
+                'comment': 'Расчёт стоимости доставки',
+            },
+            'source': source_point,
+            'destination': destination_point,
+            'items': other_day_items,
+            'places': other_day_places,
+            'billing_info': {
+                'payment_method': 'already_paid',
+                'delivery_cost': 0,
+            },
+            'recipient_info': recipient_info,
+            'last_mile_policy': last_mile_policy,
+            'particular_items_refuse': False,
+            'forbid_unboxing': False,
+        }
+
+        try:
+            create_url = f'{self.service.platform_base_url}/offers/create'
+            response = self.service._post(create_url, payload)
+            data = response.json()
+
+            logger.info('[OtherDay] === offers/create for price estimate ===')
+            logger.info('[OtherDay] Full response: %s', json.dumps(data, ensure_ascii=False)[:2000])
+
+            offers = data.get('offers', [])
+            if offers:
+                offer = offers[0]
+                offer_id = offer.get('offer_id')
+
+                # Call request/info to get final price (without confirm)
+                logger.info('[OtherDay] Calling request/info for price estimate...')
+                request_info_result = self.service.get_request_info(offer_id)
+                if request_info_result.get('success'):
+                    raw = request_info_result.get('raw', {})
+                    price_total = raw.get('pricing', {}).get('total', '0')
+                    logger.info('[OtherDay] Final price from request/info: %s', price_total)
+                    return {
+                        'success': True,
+                        'price': str(price_total),
+                        'delivery_days': 1,
+                        'offer_id': offer_id,
+                    }
+                else:
+                    logger.warning('[OtherDay] request/info failed, using offer price')
+
+                # Fallback to offer price
+                offer_details = offer.get('offer_details', {})
+                pricing = offer_details.get('pricing', '0')
+                logger.info('[OtherDay] pricing raw: %s', repr(pricing))
+
+                try:
+                    price = float(pricing.split()[0])
+                except (ValueError, IndexError, TypeError):
+                    price = 0
+
+                logger.info('[OtherDay] Price estimate: %s, offer_id: %s',
+                           price, offer_id)
+                return {
+                    'success': True,
+                    'price': str(price),
+                    'delivery_days': 1,
+                    'offer_id': offer_id,
+                }
+
+            return {'success': False, 'error': 'Нет доступных офферов'}
+
+        except Exception as e:
+            logger.error('[OtherDay] Price calculation error: %s', e)
+            return {'success': False, 'error': str(e)}
+
     def calculate_other_day(self, items_payload, destination_coords,
                             destination_address, delivery_type, pvz_id='',
                             recipient_name='', recipient_phone='', email=''):
-        """Calculate Other Day delivery price via offers/create.
+        """Calculate Other Day delivery price via offers/info.
+
+        Returns delivery intervals with estimated pricing (no reservation).
+        The actual price is finalized during order creation (offers/create).
 
         Args:
             items_payload: List of item dicts from build_items_from_cart.
@@ -152,7 +283,8 @@ class DeliveryPriceCalculator:
             email: Email address.
 
         Returns:
-            {'success': True, 'price': '...', 'delivery_days': 1}
+            {'success': True, 'price': '...', 'delivery_days': 1,
+             'offers': [{'offer_id': '...', 'delivery_interval': {...}}, ...]}
         """
         if not self.service.is_configured():
             logger.warning('[DeliveryPriceCalc] OtherDay: Yandex Delivery not configured')
@@ -193,18 +325,20 @@ class DeliveryPriceCalculator:
         }
 
         try:
-            create_url = f'{self.service.platform_base_url}/offers/create'
-            response = self.service._post(create_url, payload)
+            info_url = f'{self.service.platform_base_url}/offers/info'
+            response = self.service._post(info_url, payload)
             data = response.json()
 
-            logger.info('[OtherDay] === API response ===')
+            logger.info('[OtherDay] === offers/info response ===')
             logger.info('[OtherDay] Full response: %s', json.dumps(data, ensure_ascii=False)[:2000])
 
             offers = data.get('offers', [])
             if offers:
+                # Use first offer's interval and estimate pricing
                 offer = offers[0]
+                # offers/info may return pricing at top level or inside offer_details
                 offer_details = offer.get('offer_details', {})
-                pricing = offer_details.get('pricing', '0')
+                pricing = offer_details.get('pricing', offer.get('pricing', '0'))
                 logger.info('[OtherDay] pricing raw: %s', repr(pricing))
 
                 try:
@@ -212,12 +346,14 @@ class DeliveryPriceCalculator:
                 except (ValueError, IndexError, TypeError):
                     price = 0
 
-                logger.info('[OtherDay] Final price: %s, offer_id: %s', price, offer.get('offer_id'))
+                logger.info('[OtherDay] Estimated price: %s, offer_id: %s',
+                           price, offer.get('offer_id'))
                 return {
                     'success': True,
                     'price': str(price),
                     'delivery_days': 1,
                     'offer_id': offer.get('offer_id', ''),
+                    'offers': offers,
                 }
 
             return {'success': False, 'error': 'Нет доступных офферов'}
@@ -229,12 +365,14 @@ class DeliveryPriceCalculator:
     def get_offers_with_price(self, items_payload, destination_coords,
                               destination_address, delivery_type, pvz_id='',
                               recipient_name='', recipient_phone='', email=''):
-        """Get available delivery intervals and price (offers/info + offers/create).
+        """Get available delivery intervals and estimated price (offers/info only).
 
         Used for PVZ/postamat delivery type selection.
+        Pricing is estimated from offers/info — actual price is finalized
+        during order creation (offers/create).
 
         Returns:
-            JsonResponse-compatible dict with offers or pre-created order.
+            JsonResponse-compatible dict with offers and estimated pricing.
         """
         if not self.service.is_configured():
             return {
@@ -311,100 +449,121 @@ class DeliveryPriceCalculator:
             }
 
         # Filter offers with valid intervals
-        valid_offers = [
-            o for o in result.get('offers', [])
-            if o.get('offer_details', {}).get('delivery_interval', {}).get('from')
-        ]
+        # API returns offers with 'from'/'to' at top level:
+        # {"offers": [{"from": "2026-11-17T05:00:00Z", "to": "..."}, ...]}
+        def _has_valid_interval(offer):
+            # Check top-level from/to
+            if offer.get('from') and offer.get('to'):
+                return True
+            # Check delivery_interval at top level
+            if offer.get('delivery_interval', {}).get('from'):
+                return True
+            # Check offer_details.delivery_interval
+            if offer.get('offer_details', {}).get('delivery_interval', {}).get('from'):
+                return True
+            return False
+
+        def _get_interval_from(offer):
+            # Top-level from/to
+            if offer.get('from'):
+                return offer['from']
+            # delivery_interval at top level
+            if offer.get('delivery_interval', {}).get('from'):
+                return offer['delivery_interval']['from']
+            # offer_details.delivery_interval
+            if offer.get('offer_details', {}).get('delivery_interval', {}).get('from'):
+                return offer['offer_details']['delivery_interval']['from']
+            return ''
+
+        def _get_interval_max(offer):
+            if offer.get('to'):
+                return offer['to']
+            if offer.get('delivery_interval', {}).get('to'):
+                return offer['delivery_interval']['to']
+            if offer.get('offer_details', {}).get('delivery_interval', {}).get('to'):
+                return offer['offer_details']['delivery_interval']['to']
+            return ''
+
+        def _get_pricing(offer):
+            # Try offer_details.pricing first, then top-level pricing
+            offer_details = offer.get('offer_details', {})
+            if offer_details.get('pricing'):
+                return offer_details['pricing']
+            if offer.get('pricing'):
+                return offer['pricing']
+            return '0'
+
+        valid_offers = [o for o in result.get('offers', []) if _has_valid_interval(o)]
+
+        if not valid_offers:
+            return {
+                'success': False,
+                'error': 'Нет доступных интервалов доставки',
+            }
 
         logger.info(
             '[offers_info] Total offers from API: %d, valid offers: %d',
             len(result.get('offers', [])), len(valid_offers),
         )
 
-        # offers/info doesn't include pricing — use offers/create
-        logger.info('[offers_info] Using offers/create to get price')
+        # Sort by nearest delivery time
+        valid_offers.sort(key=lambda o: _get_interval_from(o))
+        nearest = valid_offers[0]
 
-        create_payload = {
-            'info': {
-                'operator_request_id': 'offers-create-' + str(timezone.now().timestamp()),
-                'comment': 'Расчёт стоимости доставки',
-            },
-            'source': {
-                'platform_station': {
-                    'platform_id': self.service.pickup_station_id,
-                },
-            },
-            'destination': {
-                'type': 'platform_station',
-                'platform_station': {
-                    'platform_id': pvz_id or self.service.pickup_station_id,
-                },
-            },
-            'items': other_day_items,
-            'places': other_day_places,
-            'recipient_info': recipient_info,
-            'billing_info': {
-                'payment_method': 'already_paid',
-                'delivery_cost': 0,
-            },
-            'last_mile_policy': 'self_pickup',
-        }
-
-        create_url = f'{self.service.platform_base_url}/offers/create'
-        resp = self.service._post(create_url, create_payload)
-        created = resp.json()
-
-        logger.info('[offers_info] offers/create response: %s',
-                    json.dumps(created, ensure_ascii=False)[:2000])
-
-        offers = created.get('offers', [])
-        if not offers:
-            return {
-                'success': False,
-                'error': 'Нет доступных интервалов доставки',
-            }
-
-        offer = offers[0]
-        offer_details = offer.get('offer_details', {})
-        pricing_raw = offer_details.get('pricing', '0')
-
+        # Extract estimated pricing
+        pricing_raw = _get_pricing(nearest)
         try:
             price_value = float(pricing_raw.split()[0]) if isinstance(pricing_raw, str) else float(pricing_raw)
         except (ValueError, IndexError, TypeError):
             price_value = 0
 
-        logger.info('[offers_info] Price from offers/create: %s', price_value)
+        logger.info('[offers_info] Estimated price from offers/info: %s', price_value)
 
-        # Format interval
-        interval = offer_details.get('delivery_interval', {})
-        interval_min = interval.get('min', '')
-        interval_max = interval.get('max', '')
-        delivery_date = ''
-        delivery_time = ''
-        if interval_min and interval_max:
-            try:
-                from datetime import datetime as dt_datetime, timedelta as dt_timedelta
-                tz_local = timezone(dt_timedelta(hours=4))
-                dt_from = dt_datetime.fromisoformat(
-                    interval_min.replace('Z', '+00:00')
-                ).astimezone(tz_local)
-                dt_to = dt_datetime.fromisoformat(
-                    interval_max.replace('Z', '+00:00')
-                ).astimezone(tz_local)
-                delivery_date = dt_from.strftime('%d.%m.%Y')
-                delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
-            except Exception as e:
-                logger.warning('[offers_info] Failed to parse interval: %s', e)
+        # Format intervals for all valid offers
+        formatted_offers = []
+        for offer in valid_offers:
+            # For top-level from/to, use directly; otherwise use delivery_interval
+            interval_min = _get_interval_from(offer)
+            interval_max = _get_interval_max(offer)
+
+            delivery_date = ''
+            delivery_time = ''
+            if interval_min and interval_max:
+                try:
+                    from datetime import datetime as dt_datetime, timedelta as dt_timedelta, timezone as dt_timezone
+                    tz_local = dt_timezone(dt_timedelta(hours=4))
+                    dt_from = dt_datetime.fromisoformat(
+                        interval_min.replace('Z', '+00:00')
+                    ).astimezone(tz_local)
+                    dt_to = dt_datetime.fromisoformat(
+                        interval_max.replace('Z', '+00:00')
+                    ).astimezone(tz_local)
+                    delivery_date = dt_from.strftime('%d.%m.%Y')
+                    delivery_time = f"{dt_from.strftime('%H:%M')}–{dt_to.strftime('%H:%M')}"
+                except Exception as e:
+                    logger.warning('[offers_info] Failed to parse interval: %s', e)
+
+            # Pricing - use helper that checks both locations
+            price = _get_pricing(offer)
+            formatted_offers.append({
+                'offer_id': offer.get('offer_id', ''),
+                'delivery_date': delivery_date,
+                'delivery_time': delivery_time,
+                'price': price,
+            })
+
+        # Return nearest offer as primary
+        primary = formatted_offers[0]
 
         return {
             'success': True,
-            'created': True,
-            'request_id': offer.get('offer_id', ''),
+            'created': False,  # Not created yet — just estimation
             'price': str(price_value),
-            'delivery_date': delivery_date,
-            'delivery_time': delivery_time,
+            'delivery_date': primary.get('delivery_date', ''),
+            'delivery_time': primary.get('delivery_time', ''),
             'status': 'pending',
-            'offer_id': offer.get('offer_id', ''),
+            'offer_id': nearest.get('offer_id', ''),
+            'formatted_offers': formatted_offers,
         }
 
     # ------------------------------------------------------------------
@@ -434,12 +593,17 @@ class DeliveryPriceCalculator:
         """Build items from frontend cart data."""
         total_weight_grams = 0
         total_quantity = 0
+        total_price = 0.0
         for item in cart_items_frontend:
             try:
                 weight_grams = int(item.get('weight', 0))
                 quantity = int(item.get('quantity', 1))
                 total_weight_grams += weight_grams * quantity
                 total_quantity += quantity
+                # Use price from frontend if available (sent by YandexDeliveryWidget)
+                item_price = item.get('price')
+                if item_price is not None:
+                    total_price += float(item_price) * quantity
             except (ValueError, TypeError):
                 continue
 
@@ -455,6 +619,7 @@ class DeliveryPriceCalculator:
                     'height': float(package.height),
                 },
                 'title': 'Товар',
+                'price': total_price,
             }]
         return []
 
@@ -463,6 +628,7 @@ class DeliveryPriceCalculator:
         """Build items from session cart data."""
         total_weight_grams = 0
         total_quantity = 0
+        total_price = 0.0
         product_name = 'Товар'
 
         for key, value in session_cart.items():
@@ -473,6 +639,10 @@ class DeliveryPriceCalculator:
                 total_weight_grams += weight_grams * quantity
                 total_quantity += quantity
                 product_name = product.name
+                # Use price from session cart
+                item_price = value.get('price', 0)
+                if item_price is not None:
+                    total_price += float(item_price) * quantity
             except (Product.DoesNotExist, ValueError):
                 continue
 
@@ -488,6 +658,7 @@ class DeliveryPriceCalculator:
                     'height': float(package.height),
                 },
                 'title': product_name,
+                'price': total_price,
             }]
         return []
 
@@ -557,7 +728,14 @@ class DeliveryPriceCalculator:
         weight = float(first_item.get('weight', 0.1))
 
         inn = getattr(settings, 'YANDEX_MERCHANT_INN', '7707083893')
-        unit_price_kopecks = 150000
+
+        # Use real price from items_payload if available (set by _build_items_from_frontend/session)
+        # Fall back to hardcoded 1500 RUB if price is not available
+        total_price = first_item.get('price', 0) or 0
+        unit_price_kopecks = (
+            int(total_price * 100) // quantity if quantity > 0 and total_price > 0 else 150000
+        )
+
         place_barcode = 'BOX-001'
 
         other_day_items = [{
